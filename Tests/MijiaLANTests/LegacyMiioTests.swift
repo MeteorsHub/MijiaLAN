@@ -12,6 +12,13 @@ private final class ConfigBox: @unchecked Sendable {
     var value: LocalHomeConfig { lock.withLock { config } }
 }
 
+private final class WattsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var watts: [String: Double] = [:]
+    var value: [String: Double] { lock.withLock { watts } }
+    func set(_ new: [String: Double]) { lock.withLock { watts = new } }
+}
+
 private func device(_ did: String, _ model: String, host: String) -> LocalDevice {
     LocalDevice(did: did, name: model, model: model, host: host, token: token)
 }
@@ -63,7 +70,7 @@ struct LegacyLANTests {
         #expect(await api.currentHealth()["306"]?.state == .online)
     }
 
-    @Test("A pre-MIoT model without a table is reported as such, not as a wrong token")
+    @Test("Repeated unsupported commands do not permanently exclude an answering device")
     func unknownLegacyModel() async throws {
         let network = FakeMiioNetwork()
         let old = network.add(host: "192.168.1.30", token: token, deviceID: 30)
@@ -76,13 +83,13 @@ struct LegacyLANTests {
         _ = try await api.getProps(keys)
         _ = try await api.getProps(keys)
         let health = try #require(await api.currentHealth()["30"])
-        #expect(health.state == .unsupported)
-        #expect(health.lastError?.contains("lumi.acpartner.v9") == true)
+        #expect(health.state == .offline)
+        #expect(health.lastError != nil)
 
-        // Not probed again (and flipped back online) on every refresh.
+        // The next scheduled device probe may recover it; a timeout is not proof of a legacy dialect.
         let probes = old.receivedMethods.filter { $0 == "miIO.info" }.count
-        #expect(try await api.deviceList().first?.isOnline == false)
-        #expect(old.receivedMethods.filter { $0 == "miIO.info" }.count == probes)
+        #expect(try await api.deviceList().first?.isOnline == true)
+        #expect(old.receivedMethods.filter { $0 == "miIO.info" }.count == probes + 1)
     }
 
     @Test("An IP with nothing behind it is offline right away, with a plain explanation")
@@ -101,34 +108,47 @@ struct LegacyLANTests {
     }
 }
 
-/// The AC companion end to end: legacy reads become a climate device, and the panel's mode change becomes
-/// `set_power` + `set_mode` on the device.
+/// The AC companion end to end: legacy reads become a climate device, the panel's mode change becomes
+/// `set_power` + `set_mode` on the device, and swing and power, which MijiaCore does not read, ride along.
 struct LegacyIntegrationTests {
-    @Test("小米空调伴侣 2 shows up as an AC and takes mode changes")
+    @Test("小米空调伴侣 2 shows up as an AC with swing and power, and takes mode, fan and swing changes")
     @MainActor
     func acPartner() async throws {
         let network = FakeMiioNetwork()
         let ac = network.add(host: "192.168.1.134", token: token, deviceID: 683)
         ac.legacyProps = ["power": .string("off"), "mode": .string("cool"), "tar_temp": .number(29),
-                          "fan_level": .string("auto_fan"), "ver_swing": .string("on"), "load_power": .number(0)]
+                          "fan_level": .string("auto_fan"), "ver_swing": .string("on"), "load_power": .number(84)]
         let config = ConfigBox(LocalHomeConfig(devices: [device("683", "lumi.acpartner.mcn02", host: "192.168.1.134")]))
         let api = LANMiotAPI(config: { config.value }, transport: network)
         let provider = LocalHomeProvider.make(api: api, specSource: StubSpecSource(),
                                               pollInterval: .milliseconds(100), closedPollInterval: .milliseconds(100))
+        let watts = WattsBox()
+        await provider.observePower { watts.set($0) }
         let store = HomeStore(provider: provider, defaultsSuiteName: "test.mijialan.legacy.\(UUID().uuidString)")
 
         let climate = try await waitFor { () -> ClimateSpec? in
-            guard case .climate(let spec) = store.devices.first(where: { $0.id == "683" })?.kind else { return nil }
+            guard case .climate(let spec) = store.devices.first(where: { $0.id == "683" })?.kind, spec.swingMode != nil else { return nil }
             return spec
         }
         #expect(!climate.isOn)
         #expect(climate.targetTemperature == 29)
         #expect(climate.availableModes.contains("heat"))
         #expect(climate.fanMode == "Auto")
+        #expect(climate.swingMode == "vertical")
+        #expect(climate.availableSwingModes == ["off", "vertical"])
+        _ = try await waitFor { watts.value["683"] == 84 ? true : nil }
+        // Companions share the device's one get_prop per poll.
+        let lastRead = try #require(ac.receivedPayloads.last.flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0.prefix { $0 != 0 }) })
+        #expect(lastRead["params"]?.arrayValue?.compactMap(\.stringValue).contains("load_power") == true)
 
         store.setClimateMode("683", mode: "heat")
         _ = try await waitFor { ac.legacyCalls.count >= 2 ? true : nil }
         #expect(ac.legacyCalls.prefix(2) == [#"set_power ["on"]"#, #"set_mode ["heat"]"#])
+
+        store.setClimateFanMode("683", fanMode: "High")
+        _ = try await waitFor { ac.legacyCalls.contains(#"set_fan_level ["large_fan"]"#) ? true : nil }
+        store.setClimateSwingMode("683", swingMode: "off")
+        _ = try await waitFor { ac.legacyCalls.contains(#"set_ver_swing ["off"]"#) ? true : nil }
         #expect(!ac.receivedMethods.contains("get_properties"))
         await provider.shutdown()
     }

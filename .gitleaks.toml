@@ -1,0 +1,23 @@
+title = "MijiaLAN secret scanning"
+
+[extend]
+useDefault = true
+
+# These sequential bytes are public protocol fixtures, including the python-miio
+# golden vector. Do not exempt test files or arbitrary device tokens.
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Exact synthetic miIO test tokens in named protocol tests"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)Tests/MijiaLANTests/(?:LegacyMiioTests|MiioProtocolTests|LocalHomeTests|DeviceCapabilityTests)\.swift$''']
+regexes = ['''^(?:00112233445566778899aabbccddeeff|ffeeddccbbaa99887766554433221100)$''']
+
+[[rules.allowlists]]
+description = "Swift type declaration, not a private key value"
+condition = "AND"
+regexTarget = "line"
+paths = ['''(?:^|/)Vendor/hap-swift/Sources/HAPCrypto/HAPIdentity\.swift$''']
+regexes = ['''^\s*private let privateKey: Curve25519\.Signing\.PrivateKey\s*$''']

@@ -1,0 +1,958 @@
+{
+  "type": "urn:miot-spec-v2:device:cooker:0000A00B:chunmi-cmwy3:1",
+  "description": "Cooker",
+  "services": [
+    {
+      "iid": 1,
+      "type": "urn:miot-spec-v2:service:device-information:00007801:chunmi-cmwy3:1",
+      "description": "Device Information",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:manufacturer:00000001:chunmi-cmwy3:1",
+          "description": "Device Manufacturer",
+          "format": "string",
+          "access": [
+            "read"
+          ]
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:property:model:00000002:chunmi-cmwy3:1",
+          "description": "Device Model",
+          "format": "string",
+          "access": [
+            "read"
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:property:serial-number:00000003:chunmi-cmwy3:1",
+          "description": "Device ID",
+          "format": "string",
+          "access": [
+            "read"
+          ],
+          "comment": "设备ID"
+        },
+        {
+          "iid": 4,
+          "type": "urn:miot-spec-v2:property:firmware-revision:00000005:chunmi-cmwy3:1",
+          "description": "Current Firmware Version",
+          "format": "string",
+          "access": [
+            "read"
+          ]
+        },
+        {
+          "iid": 5,
+          "type": "urn:miot-spec-v2:property:serial-no:000000FF:chunmi-cmwy3:1",
+          "description": "Serial Number",
+          "format": "string",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "comment": "SN码"
+        }
+      ],
+      "comment": "设备信息"
+    },
+    {
+      "iid": 2,
+      "type": "urn:miot-spec-v2:service:cooker:00007815:chunmi-cmwy3:1",
+      "description": "Cooker",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:status:00000007:chunmi-cmwy3:1",
+          "description": "Status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 1,
+              "description": "Idle",
+              "comment": "待机中"
+            },
+            {
+              "value": 2,
+              "description": "Running",
+              "comment": "烹饪中"
+            },
+            {
+              "value": 3,
+              "description": "AptRunning",
+              "comment": "预约中"
+            },
+            {
+              "value": 4,
+              "description": "KeepWarm",
+              "comment": "保温中"
+            },
+            {
+              "value": 5,
+              "description": "Error",
+              "comment": "错误"
+            },
+            {
+              "value": 6,
+              "description": "Updating",
+              "comment": "固件升级中"
+            },
+            {
+              "value": 7,
+              "description": "CookFinish",
+              "comment": "烹饪完成"
+            }
+          ],
+          "comment": "工作状态"
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:property:fault:00000009:chunmi-cmwy3:1",
+          "description": "Device Fault",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "No Faults"
+            },
+            {
+              "value": 1,
+              "description": "E02",
+              "comment": "无锅"
+            },
+            {
+              "value": 2,
+              "description": "E03",
+              "comment": "电压高"
+            },
+            {
+              "value": 3,
+              "description": "E04",
+              "comment": "电压低"
+            },
+            {
+              "value": 4,
+              "description": "E05",
+              "comment": "底部高温"
+            },
+            {
+              "value": 5,
+              "description": "E06",
+              "comment": "顶部高温"
+            },
+            {
+              "value": 6,
+              "description": "E07",
+              "comment": "IGBT高温"
+            },
+            {
+              "value": 7,
+              "description": "E08",
+              "comment": "IGBT损坏"
+            },
+            {
+              "value": 8,
+              "description": "E09",
+              "comment": "顶部传感器损坏"
+            },
+            {
+              "value": 9,
+              "description": "E10",
+              "comment": "底部传感器损坏"
+            },
+            {
+              "value": 10,
+              "description": "E11",
+              "comment": "通信故障"
+            },
+            {
+              "value": 11,
+              "description": "E12",
+              "comment": "电路故障"
+            }
+          ],
+          "comment": "故障"
+        },
+        {
+          "iid": 5,
+          "type": "urn:miot-spec-v2:property:cook-mode:00000037:chunmi-cmwy3:1",
+          "description": "Cook Mode",
+          "format": "uint8",
+          "access": [],
+          "value-list": [
+            {
+              "value": 1,
+              "description": "Fine Cook",
+              "comment": "精煮饭"
+            },
+            {
+              "value": 2,
+              "description": "Quick Cook",
+              "comment": "快煮饭"
+            },
+            {
+              "value": 3,
+              "description": "Cook Congee",
+              "comment": "煮粥"
+            },
+            {
+              "value": 4,
+              "description": "Keep Warm",
+              "comment": "保温"
+            },
+            {
+              "value": 5,
+              "description": "Custom",
+              "comment": "自定义"
+            }
+          ],
+          "comment": "烹饪模式"
+        }
+      ],
+      "actions": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:action:start-cook:00002806:chunmi-cmwy3:1",
+          "description": "Start Cook",
+          "in": [
+            5
+          ],
+          "out": [],
+          "comment": "开始烹饪"
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:action:cancel-cooking:00002807:chunmi-cmwy3:1",
+          "description": "Cancel Cooking",
+          "in": [],
+          "out": [],
+          "comment": "停止烹饪"
+        }
+      ],
+      "events": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:event:cooking-finished:0000501C:chunmi-cmwy3:1",
+          "description": "Cooking Finished",
+          "arguments": [],
+          "comment": "烹饪完成"
+        }
+      ],
+      "comment": "电饭煲"
+    },
+    {
+      "iid": 4,
+      "type": "urn:miot-spec-v2:service:self-check:000078D7:chunmi-cmwy3:1",
+      "description": "Self Check",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:self-check-items:0000020D:chunmi-cmwy3:1",
+          "description": "Self Check Items",
+          "format": "uint8",
+          "access": [],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "NULL",
+              "comment": "null"
+            },
+            {
+              "value": 1,
+              "description": "Voltage",
+              "comment": "电压"
+            },
+            {
+              "value": 2,
+              "description": "SensorBottom",
+              "comment": "底部传感器"
+            },
+            {
+              "value": 3,
+              "description": "SensorTop",
+              "comment": "顶部传感器"
+            },
+            {
+              "value": 4,
+              "description": "SensortIGBT",
+              "comment": "IGBT传感器"
+            },
+            {
+              "value": 5,
+              "description": "Communication",
+              "comment": "通信"
+            },
+            {
+              "value": 6,
+              "description": "FanStatus",
+              "comment": "风扇状态"
+            },
+            {
+              "value": 7,
+              "description": "HeatStatus",
+              "comment": "加热状态"
+            },
+            {
+              "value": 8,
+              "description": "LidStatus",
+              "comment": "盖子状态"
+            }
+          ],
+          "gatt-access": [],
+          "comment": "自检项"
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:property:self-check-results:0000020E:chunmi-cmwy3:1",
+          "description": "Self Check Results",
+          "format": "string",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "gatt-access": [],
+          "comment": "自检结果, 小于0代表有故障，>= 0为当前检测参数数值大小。电压检测:-1高压，-2低压，其它为实际电压值；温度传感器检测：-1开路，-2短路，-3高温，其它为温度值，通讯检测：-1故障，0无故障，总结果：检测成功：ok 检测失败：not ok 未检测：Untested。"
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:property:manual-check-results:000002A3:chunmi-cmwy3:1",
+          "description": "Manual Check Results",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Normal",
+              "comment": "Normal"
+            },
+            {
+              "value": 1,
+              "description": "Abnormal",
+              "comment": "Abnormal"
+            }
+          ],
+          "comment": "手动检测结果"
+        }
+      ],
+      "actions": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:action:start-check:00002891:chunmi-cmwy3:1",
+          "description": "Start Check",
+          "in": [
+            1
+          ],
+          "out": [
+            2
+          ],
+          "comment": "开始自检"
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:action:stop-check:0000289E:chunmi-cmwy3:1",
+          "description": "Stop Check",
+          "in": [],
+          "out": [],
+          "comment": "终止自检"
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:action:sync-manual-check:000028B9:chunmi-cmwy3:1",
+          "description": "Sync Manual Check",
+          "in": [
+            1,
+            3
+          ],
+          "out": [],
+          "comment": "同步手动检测项及结果"
+        }
+      ],
+      "comment": "自检服务"
+    },
+    {
+      "iid": 3,
+      "type": "urn:chunmi-spec:service:custom:00007801:chunmi-cmwy3:1",
+      "description": "custom",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:chunmi-spec:property:menu-id:00000001:chunmi-cmwy3:1",
+          "description": "menu-id",
+          "format": "uint32",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-range": [
+            0,
+            4294967295,
+            1
+          ],
+          "comment": "食谱标识，0值：无效的Menu Id."
+        },
+        {
+          "iid": 2,
+          "type": "urn:chunmi-spec:property:cook-total-time:00000002:chunmi-cmwy3:1",
+          "description": "cook-total-time",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "minutes",
+          "value-range": [
+            0,
+            1440,
+            1
+          ],
+          "comment": "食谱烹饪总时长"
+        },
+        {
+          "iid": 3,
+          "type": "urn:chunmi-spec:property:left-time:00000003:chunmi-cmwy3:1",
+          "description": "left-time",
+          "format": "uint32",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "seconds",
+          "value-range": [
+            0,
+            86400,
+            1
+          ],
+          "comment": "剩余时长"
+        },
+        {
+          "iid": 4,
+          "type": "urn:chunmi-spec:property:keepwarm-time:00000004:chunmi-cmwy3:1",
+          "description": "keepwarm-time",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "minutes",
+          "value-range": [
+            0,
+            1440,
+            1
+          ],
+          "comment": "保温计时时间"
+        },
+        {
+          "iid": 5,
+          "type": "urn:chunmi-spec:property:auto-keepwarm-flag:00000005:chunmi-cmwy3:1",
+          "description": "auto-keepwarm-flag",
+          "format": "bool",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "comment": "自动保温标志"
+        },
+        {
+          "iid": 6,
+          "type": "urn:chunmi-spec:property:recipe-type:00000006:chunmi-cmwy3:1",
+          "description": "recipe-type",
+          "format": "int8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Native",
+              "comment": "Native"
+            },
+            {
+              "value": 1,
+              "description": "Official",
+              "comment": "Official"
+            },
+            {
+              "value": 2,
+              "description": "Custom",
+              "comment": "Custom"
+            }
+          ],
+          "comment": "食谱类型"
+        },
+        {
+          "iid": 7,
+          "type": "urn:chunmi-spec:property:pre-left-time:00000007:chunmi-cmwy3:1",
+          "description": "pre-left-time",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "minutes",
+          "value-range": [
+            0,
+            1440,
+            1
+          ],
+          "comment": "预约剩余时间"
+        },
+        {
+          "iid": 8,
+          "type": "urn:chunmi-spec:property:rice-type:00000008:chunmi-cmwy3:1",
+          "description": "rice-type",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-range": [
+            0,
+            65535,
+            1
+          ],
+          "comment": "米种信息,0:无效的米种。"
+        },
+        {
+          "iid": 9,
+          "type": "urn:chunmi-spec:property:taste:00000009:chunmi-cmwy3:1",
+          "description": "taste",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Soft",
+              "comment": "Soft"
+            },
+            {
+              "value": 1,
+              "description": "Fit",
+              "comment": "Fit"
+            },
+            {
+              "value": 2,
+              "description": "Hard",
+              "comment": "Hard"
+            }
+          ],
+          "comment": "口感"
+        },
+        {
+          "iid": 10,
+          "type": "urn:chunmi-spec:property:cook-data:0000000a:chunmi-cmwy3:1",
+          "description": "cook-data",
+          "format": "string",
+          "access": [],
+          "comment": "烹饪数据"
+        },
+        {
+          "iid": 11,
+          "type": "urn:chunmi-spec:property:set-menu-data:0000000b:chunmi-cmwy3:1",
+          "description": "set-menu-data",
+          "format": "string",
+          "access": [],
+          "comment": "\"info_CookData\",\"bell_aa\"\nCookData:表示食谱数据，共266字符；\naa，表示响铃标志，aa=00，表示不响铃，aa=01，表示响铃。"
+        },
+        {
+          "iid": 12,
+          "type": "urn:chunmi-spec:property:setting-data:0000000c:chunmi-cmwy3:1",
+          "description": "setting-data",
+          "format": "string",
+          "access": [],
+          "gatt-access": [],
+          "comment": "设置参数设置数据aabbcc,aa:表示是否熄屏，00:熄，01：不熄；bb:表示待机多长时间熄屏，02、03、04....~10分钟，步长1分钟。cc：表示烹饪完成后是否推送，00：推送，01：不推送。"
+        },
+        {
+          "iid": 13,
+          "type": "urn:chunmi-spec:property:log-index:0000000d:chunmi-cmwy3:1",
+          "description": "log-index",
+          "format": "uint32",
+          "access": [],
+          "value-range": [
+            0,
+            9999,
+            1
+          ],
+          "comment": "日志索引"
+        },
+        {
+          "iid": 14,
+          "type": "urn:chunmi-spec:property:log-string:0000000e:chunmi-cmwy3:1",
+          "description": "log-string",
+          "format": "string",
+          "access": [],
+          "comment": "日志数据"
+        },
+        {
+          "iid": 15,
+          "type": "urn:chunmi-spec:property:inspection-data:0000000f:chunmi-cmwy3:1",
+          "description": "inspection-data",
+          "format": "string",
+          "access": [],
+          "comment": "检测数据"
+        },
+        {
+          "iid": 16,
+          "type": "urn:chunmi-spec:property:error-event-inf:00000010:chunmi-cmwy3:1",
+          "description": "error-event-inf",
+          "format": "string",
+          "access": [],
+          "comment": "错误事件信息"
+        },
+        {
+          "iid": 17,
+          "type": "urn:chunmi-spec:property:event-runstatus-inf:00000011:chunmi-cmwy3:1",
+          "description": "event-runstatus-inf",
+          "format": "string",
+          "access": [],
+          "comment": "EventRunStatus信息"
+        },
+        {
+          "iid": 18,
+          "type": "urn:chunmi-spec:property:temp-history-data:00000012:chunmi-cmwy3:1",
+          "description": "temp-history-data",
+          "format": "string",
+          "access": [],
+          "comment": "精煮和快煮的温度历史数据\n最长为4+304*2个16进制字符；前4个字符表示温度点的个字；后面的字符每两个字符表示一个16进制温度点。"
+        },
+        {
+          "iid": 19,
+          "type": "urn:chunmi-spec:property:selfcheck-cmd:00000013:chunmi-cmwy3:1",
+          "description": "selfcheck-cmd",
+          "format": "uint8",
+          "access": [],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Null",
+              "comment": "Null"
+            },
+            {
+              "value": 1,
+              "description": "Voltage",
+              "comment": "Voltage"
+            },
+            {
+              "value": 2,
+              "description": "SensorBottom",
+              "comment": "SensorBottom"
+            },
+            {
+              "value": 3,
+              "description": "SensorTop",
+              "comment": "SensorTop"
+            },
+            {
+              "value": 4,
+              "description": "SensorIGBT",
+              "comment": "SensorIGBT"
+            },
+            {
+              "value": 5,
+              "description": "Communication",
+              "comment": "Communication"
+            }
+          ],
+          "comment": "自检项参数 1:电压检测；2:底部温度传感器检测；3顶部:温度传感器检测；4:IGBT温度传感器检测；5:通讯检测"
+        },
+        {
+          "iid": 20,
+          "type": "urn:chunmi-spec:property:selfcheck-value:00000014:chunmi-cmwy3:1",
+          "description": "selfcheck-value",
+          "format": "int16",
+          "access": [],
+          "value-range": [
+            -32768,
+            32767,
+            1
+          ],
+          "comment": "设备参数自检返回值，小于0代表有故障，大于0为当前检测参数数值大小；电压检测:-1高压，-2低压，其它为实际电压值；温度传感器检测：-1开路，-2短路，-3高温，其它为温度值，通讯检测：-1故障，0无故障"
+        },
+        {
+          "iid": 21,
+          "type": "urn:chunmi-spec:property:no-pan-flag:00000015:chunmi-cmwy3:1",
+          "description": "no-pan-flag",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "HavePan",
+              "comment": "HavePan"
+            },
+            {
+              "value": 1,
+              "description": "NoPan",
+              "comment": "NoPan"
+            }
+          ],
+          "gatt-access": [],
+          "comment": "有锅时 0， 无锅时 1"
+        },
+        {
+          "iid": 22,
+          "type": "urn:chunmi-spec:property:bell:00000016:chunmi-cmwy3:1",
+          "description": "",
+          "format": "uint8",
+          "access": [],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "No Bell",
+              "comment": "No Bell"
+            },
+            {
+              "value": 1,
+              "description": "Bell",
+              "comment": "Bell"
+            }
+          ],
+          "comment": "设置食谱时响铃标志"
+        }
+      ],
+      "actions": [
+        {
+          "iid": 1,
+          "type": "urn:chunmi-spec:action:cooking-start:00002801:chunmi-cmwy3:1",
+          "description": "cooking-start",
+          "in": [
+            10
+          ],
+          "out": [],
+          "comment": "开始烹饪"
+        },
+        {
+          "iid": 2,
+          "type": "urn:chunmi-spec:action:cooking-cancel:00002802:chunmi-cmwy3:1",
+          "description": "cooking-cancel",
+          "in": [],
+          "out": [],
+          "comment": "取消烹饪"
+        },
+        {
+          "iid": 3,
+          "type": "urn:chunmi-spec:action:set-menu:00002803:chunmi-cmwy3:1",
+          "description": "set-menu",
+          "in": [
+            10,
+            22
+          ],
+          "out": [],
+          "comment": "设置食谱"
+        },
+        {
+          "iid": 4,
+          "type": "urn:chunmi-spec:action:factory-reset:00002804:chunmi-cmwy3:1",
+          "description": "factory-reset",
+          "in": [],
+          "out": [],
+          "comment": "恢复到出厂设置"
+        },
+        {
+          "iid": 5,
+          "type": "urn:chunmi-spec:action:set-setting:00002805:chunmi-cmwy3:1",
+          "description": "set-setting",
+          "in": [
+            12
+          ],
+          "out": [],
+          "comment": "设置设备参数"
+        },
+        {
+          "iid": 6,
+          "type": "urn:chunmi-spec:action:get-setting:00002806:chunmi-cmwy3:1",
+          "description": "get-setting",
+          "in": [],
+          "out": [
+            12
+          ],
+          "comment": "获取设备参数"
+        },
+        {
+          "iid": 7,
+          "type": "urn:chunmi-spec:action:get-inspection-data:00002807:chunmi-cmwy3:1",
+          "description": "get-inspection-data",
+          "in": [],
+          "out": [
+            15
+          ],
+          "comment": "获得检测数据"
+        },
+        {
+          "iid": 8,
+          "type": "urn:chunmi-spec:action:get-log-data:00002808:chunmi-cmwy3:1",
+          "description": "get-log-data",
+          "in": [
+            13
+          ],
+          "out": [
+            14
+          ],
+          "comment": "获取日志数据；\nlog-index为0时返回的数据表示一共有多少个错误记录，无错误数据记录时返回“No Error\"；非0时的数N时，数据将返回最后N*50个错误记录。\n每个错误记录的格式tttt--ssssaaaaaaaabbcc：\ntttt：10进制字符，表示返回错误记录的数量；\nssss：10进制字符，表示序号，从0001开始；\naaaaaaaa：16进制字符，表示时间戳；\nbb：16进制字符，表示错误代码；\ncc：16进制字符表示错误信息。\n"
+        },
+        {
+          "iid": 9,
+          "type": "urn:chunmi-spec:action:get-temp-history:00002809:chunmi-cmwy3:1",
+          "description": "get-temp-history",
+          "in": [],
+          "out": [
+            18
+          ],
+          "comment": "获取精煮或快煮的温度历史"
+        },
+        {
+          "iid": 10,
+          "type": "urn:chunmi-spec:action:get-selfcheck:0000280a:chunmi-cmwy3:1",
+          "description": "get-selfcheck",
+          "in": [
+            19
+          ],
+          "out": [
+            20
+          ],
+          "comment": "获取自检故障数据"
+        }
+      ],
+      "events": [
+        {
+          "iid": 1,
+          "type": "urn:chunmi-spec:event:cook-finish:00005001:chunmi-cmwy3:1",
+          "description": "cook-finish",
+          "arguments": [
+            1
+          ],
+          "comment": "烹饪结束"
+        },
+        {
+          "iid": 2,
+          "type": "urn:chunmi-spec:event:cook-complete:00005002:chunmi-cmwy3:1",
+          "description": "cook-complete",
+          "arguments": [],
+          "comment": "烹饪完成用于配置自动化，不可关闭"
+        },
+        {
+          "iid": 3,
+          "type": "urn:chunmi-spec:event:high-voltage:00005003:chunmi-cmwy3:1",
+          "description": "high-voltage",
+          "arguments": [
+            16
+          ],
+          "comment": "高压保护"
+        },
+        {
+          "iid": 4,
+          "type": "urn:chunmi-spec:event:low-voltage:00005004:chunmi-cmwy3:1",
+          "description": "low-voltage",
+          "arguments": [
+            16
+          ],
+          "comment": "低压保护"
+        },
+        {
+          "iid": 5,
+          "type": "urn:chunmi-spec:event:b-sensor-high:00005005:chunmi-cmwy3:1",
+          "description": "b-sensor-high",
+          "arguments": [
+            16
+          ],
+          "comment": "底部传感器高温"
+        },
+        {
+          "iid": 6,
+          "type": "urn:chunmi-spec:event:t-sensor-high:00005006:chunmi-cmwy3:1",
+          "description": "t-sensor-high",
+          "arguments": [
+            16
+          ],
+          "comment": "顶部传感器高温"
+        },
+        {
+          "iid": 7,
+          "type": "urn:chunmi-spec:event:igbt-sensor-high:00005007:chunmi-cmwy3:1",
+          "description": "igbt-sensor-high",
+          "arguments": [
+            16
+          ],
+          "comment": "IGBT传感器高温"
+        },
+        {
+          "iid": 8,
+          "type": "urn:chunmi-spec:event:igbt-sensor-bad:00005008:chunmi-cmwy3:1",
+          "description": "igbt-sensor-bad",
+          "arguments": [
+            16
+          ],
+          "comment": "IGBT传感器损坏"
+        },
+        {
+          "iid": 9,
+          "type": "urn:chunmi-spec:event:t-sensor-bad:00005009:chunmi-cmwy3:1",
+          "description": "t-sensor-bad",
+          "arguments": [
+            16
+          ],
+          "comment": "顶部传感器损坏"
+        },
+        {
+          "iid": 10,
+          "type": "urn:chunmi-spec:event:b-sensor-bad:0000500a:chunmi-cmwy3:1",
+          "description": "b-sensor-bad",
+          "arguments": [
+            16
+          ],
+          "comment": "底部传感器损坏"
+        },
+        {
+          "iid": 11,
+          "type": "urn:chunmi-spec:event:com-exception:0000500b:chunmi-cmwy3:1",
+          "description": "com-exception",
+          "arguments": [
+            16
+          ],
+          "comment": "通信异常"
+        },
+        {
+          "iid": 12,
+          "type": "urn:chunmi-spec:event:circuit-bad:0000500c:chunmi-cmwy3:1",
+          "description": "circuit-bad",
+          "arguments": [
+            16
+          ],
+          "comment": "电路损坏"
+        },
+        {
+          "iid": 13,
+          "type": "urn:chunmi-spec:event:event-runstatus:0000500d:chunmi-cmwy3:1",
+          "description": "event-runstatus",
+          "arguments": [
+            17
+          ],
+          "comment": "EventRunStatus"
+        }
+      ],
+      "comment": "自定义"
+    }
+  ],
+  "model": "chunmi.cooker.cmwy3"
+}

@@ -4,3 +4,32 @@
 /build
 *.app
 xcuserdata/
+
+# Local credentials and provisioning material.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.mobileprovision
+/secrets/
+/credentials/
+devices.local.json
+local-home*.json
+seed-config*.json
+tokens*.json
+credentials*.json
+
+# Private diagnostic exports, screenshots and local QA notes.
+/artifacts/
+/outputs/
+/diagnostics/
+/screenshots/
+*.log
+*.trace/
+/design-qa.md
+/docs/*-2026-*.md
+!/docs/device-interface-matrix-2026-10-31.md

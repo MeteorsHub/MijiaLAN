@@ -1,0 +1,2 @@
+"CFBundleDisplayName" = "米家局域网桥";
+"NSLocalNetworkUsageDescription" = "MijiaLAN 直接在局域网里控制米家 Wi-Fi 设备，并作为 HomeKit 桥让 iPhone 的「家庭」App 连接这台 Mac。";

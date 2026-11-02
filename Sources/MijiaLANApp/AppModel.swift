@@ -29,7 +29,12 @@ final class AppModel {
     private(set) var config: LocalHomeConfig
     /// The Keychain item exists but could not be read (prompt declined); nothing is saved until it can be.
     private(set) var vaultUnavailable: Bool
-    private(set) var health: [String: LANDeviceHealth] = [:]
+    var health: [String: LANDeviceHealth] { devices.snapshots.mapValues(\.health) }
+    /// Climate devices' power draw in watts, which MijiaCore does not carry.
+    var powerWatts: [String: Double] { devices.snapshots.compactMapValues { s in
+        s.capabilities.first { $0.name == "electric-power" }.flatMap { s.value($0.id)?.doubleValue }
+    } }
+    let devices: DeviceController
     var importState: ImportState = .idle
     private(set) var lastImportSummary: String?
     var importRegion: String = "cn"
@@ -37,6 +42,8 @@ final class AppModel {
     private(set) var isAddingManually = false
     private(set) var isRediscovering = false
     private(set) var lastRediscoveryNote: String?
+    private(set) var lastRediscoveryAt: Date?
+    private(set) var retryingDeviceIDs: Set<String> = []
 
     let store: HomeStore
     let bridge: HomeKitBridgeController
@@ -46,16 +53,26 @@ final class AppModel {
     @ObservationIgnored private var importTask: Task<Void, Never>?
     @ObservationIgnored private var rediscoveryTask: Task<Void, Never>?
     @ObservationIgnored private var bridgeAttached = false
+    @ObservationIgnored private let usesPreviewDevices: Bool
     @ObservationIgnored private let logger = Logger(subsystem: "com.mijialan.MijiaLAN", category: "App")
 
     /// `MIJIALAN_EPHEMERAL=1` (development): secrets in memory and separate defaults, so a test run never touches
     /// the Keychain item or the real pairing. `MIJIALAN_SEED_CONFIG=<file>` then supplies the device config as JSON.
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
-        let ephemeral = environment["MIJIALAN_EPHEMERAL"] == "1"
+        #if DEBUG
+        let preview = environment["MIJIALAN_UI_PREVIEW"] == "1"
+        #else
+        let preview = false
+        #endif
+        usesPreviewDevices = preview
+        let ephemeral = preview || environment["MIJIALAN_EPHEMERAL"] == "1"
         let vault = SecretVault(storage: ephemeral ? .memory() : .keychain(service: Self.keychainService, account: "secrets"))
         if ephemeral, let seed = environment["MIJIALAN_SEED_CONFIG"], let data = FileManager.default.contents(atPath: seed) {
             vault.set(data, for: Self.configAccount)
         }
+        #if DEBUG
+        if preview, let seed = ControlCenterPreview.config.encoded() { vault.set(seed, for: Self.configAccount) }
+        #endif
         let defaultsSuite = ephemeral ? "com.mijialan.MijiaLAN.dev" : "com.mijialan.MijiaLAN.home"
         if ephemeral { UserDefaults.standard.removePersistentDomain(forName: defaultsSuite) }
         let bridgeDefaults = ephemeral ? (UserDefaults(suiteName: defaultsSuite) ?? .standard) : .standard
@@ -71,21 +88,25 @@ final class AppModel {
         vaultUnavailable = unavailable
         let box = ConfigBox(loaded)
         configBox = box
-        let api = LANMiotAPI(config: { box.value })
+        let api: LANMiotAPI
+        #if DEBUG
+        api = preview ? LANMiotAPI(config: { box.value }, transport: ControlCenterPreviewTransport()) : LANMiotAPI(config: { box.value })
+        #else
+        api = LANMiotAPI(config: { box.value })
+        #endif
         self.api = api
-        store = HomeStore(provider: LocalHomeProvider.make(api: api), defaultsSuiteName: defaultsSuite)
+        let controller = DeviceController(api: api, config: { box.value })
+        devices = controller
+        let provider = CapabilityHomeProvider(controller: controller)
+        store = HomeStore(provider: provider, defaultsSuiteName: defaultsSuite)
         bridge = HomeKitBridgeController(vault: HomeKitBridgeVault(
             load: { vault.lookup(AppModel.bridgeAccount) },
             save: { vault.set($0, for: AppModel.bridgeAccount) }
         ), defaults: bridgeDefaults)
 
-        Task { [weak self] in
-            await api.observeHealth { health in
-                Task { @MainActor in self?.health = health }
-            }
-        }
+        if preview || (ephemeral && environment["MIJIALAN_SNAPSHOT"] != nil) { bridge.isEnabled = false }
         attachBridgeIfNeeded()
-        startRediscoveryLoop()
+        if !preview { startRediscoveryLoop() }
     }
 
     // MARK: Devices
@@ -97,8 +118,20 @@ final class AppModel {
     }
 
     func togglePower(_ device: LocalDevice) {
-        guard let smart = smartDevice(for: device) else { return }
-        _ = store.togglePrimary(smart)
+        guard let snapshot = devices.snapshots[device.did],
+              let power = snapshot.primaryPower, let on = snapshot.value(power.id)?.boolValue else { return }
+        Task { try? await devices.execute(did: device.did, .set(power.id, .bool(!on))) }
+    }
+
+    func retryDevices(_ ids: [String]) {
+        let pending = Set(ids).subtracting(retryingDeviceIDs)
+        retryingDeviceIDs.formUnion(pending)
+        for did in pending {
+            Task {
+                await devices.retry(did: did)
+                retryingDeviceIDs.remove(did)
+            }
+        }
     }
 
     /// A device kept out of Apple Home (say, one that is HomeKit-native already) is hidden in the store, which the
@@ -111,7 +144,7 @@ final class AppModel {
 
     /// Whether Apple Home has an accessory type for this device at all.
     func homeKitSupports(_ device: LocalDevice) -> Bool {
-        smartDevice(for: device).flatMap { HomeKitAccessoryMapper.plan(for: $0, name: $0.name) } != nil
+        devices.snapshots[device.did]?.controls.isEmpty == false
     }
 
     func remove(_ device: LocalDevice) {
@@ -163,9 +196,9 @@ final class AppModel {
         next.importedAt = Date()
         apply(next)
         importState = .idle
-        lastImportSummary = "导入 \(result.devices.count) 台可走局域网的设备" +
-            (result.skipped.isEmpty ? "" : "，\(result.skipped.count) 台不能（见下方）") +
-            (result.region == "cn" ? "" : "（服务器：\(result.region)）") + "。登录状态已丢弃。"
+        lastImportSummary = L10n.tr("导入 \(result.devices.count) 台可走局域网的设备", "Imported LAN devices: \(result.devices.count)") +
+            (result.skipped.isEmpty ? "" : L10n.tr("，\(result.skipped.count) 台不能（见下方）", "; skipped: \(result.skipped.count) (see device details)")) +
+            (result.region == "cn" ? "" : L10n.tr("（服务器：\(result.region)）", " (server: \(result.region))")) + L10n.tr("。登录状态已丢弃。", ". The login session has been discarded.")
         logger.info("Imported \(result.devices.count, privacy: .public) devices, skipped \(result.skipped.count, privacy: .public)")
     }
 
@@ -196,7 +229,7 @@ final class AppModel {
                 var next = self.config
                 next.merge([device])
                 self.apply(next)
-                self.lastImportSummary = "已添加 \(device.name)（\(device.model)）"
+                self.lastImportSummary = L10n.tr("已添加 \(device.name)（\(device.model)）", "Added \(device.name) (\(device.model)).")
             } catch {
                 self?.manualAddError = Self.describe(error)
             }
@@ -220,18 +253,24 @@ final class AppModel {
     }
 
     private func rediscover() async {
+        if usesPreviewDevices {
+            lastRediscoveryAt = Date()
+            lastRediscoveryNote = L10n.tr("预览环境使用模拟设备", "The preview uses simulated devices.")
+            return
+        }
         guard !isRediscovering else { return }
         isRediscovering = true
         defer { isRediscovering = false }
         do {
             let found = try await MiioDiscovery.discover()
+            lastRediscoveryAt = Date()
             var next = config
             let moved = next.updateHosts(from: found)
             let known = Set(config.devices.map(\.did))
             let unknown = found.filter { !known.contains($0.did) }.count
             lastRediscoveryNote = found.isEmpty
-                ? "局域网广播暂时没有设备回应（路由器的设备隔离也会拦住广播）"
-                : "局域网里找到 \(found.count) 台 miIO 设备" + (unknown > 0 ? "，其中 \(unknown) 台还没有 token" : "")
+                ? L10n.tr("局域网广播暂时没有设备回应（路由器的设备隔离也会拦住广播）", "No devices responded to the LAN broadcast. Router client isolation can also block discovery.")
+                : L10n.tr("局域网里找到 \(found.count) 台 miIO 设备", "miIO devices found on the LAN: \(found.count)") + (unknown > 0 ? L10n.tr("，其中 \(unknown) 台还没有 token", "; without a token: \(unknown)") : "")
             if moved {
                 logger.info("Device IPs changed; saving")
                 apply(next)
@@ -252,6 +291,7 @@ final class AppModel {
         vaultUnavailable = false
         config = next
         configBox.value = next
+        devices.reconcileConfiguration()
         store.refreshNow()
         attachBridgeIfNeeded()
     }
@@ -260,7 +300,7 @@ final class AppModel {
     private func attachBridgeIfNeeded() {
         guard !bridgeAttached, !config.devices.isEmpty else { return }
         bridgeAttached = true
-        bridge.attach(to: store)
+        bridge.attach(to: store, capabilities: devices)
     }
 
     static func describe(_ error: any Error) -> String {

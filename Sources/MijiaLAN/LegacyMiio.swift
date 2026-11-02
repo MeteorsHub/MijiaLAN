@@ -41,7 +41,7 @@ public struct LegacyMiioProfile: Sendable {
             switch format {
             case .onOff:
                 if case .bool = legacy { return legacy }
-                guard let text = legacy.stringValue else { return nil }
+                guard let text = legacy.stringValue, ["on", "off"].contains(text) else { return nil }
                 return .bool(text == "on")
             case .number:
                 return legacy.doubleValue.map(JSONValue.number)
@@ -132,7 +132,10 @@ extension MiioClient {
                   let argument = property.legacyArgument(write.value) else {
                 throw MiioError.unsupportedByLegacyDevice
             }
-            _ = try await call(setter, params: .array([argument] + property.setterSuffix))
+            let result = try await call(setter, params: .array([argument] + property.setterSuffix))
+            guard result == .array([.string("ok")]) || result == .string("ok") else {
+                throw MiioError.badResponse(L10n.tr("旧 miIO 写入没有返回 ok", "The legacy miIO write did not return ok."))
+            }
         }
     }
 }

@@ -1,7 +1,8 @@
 import Foundation
 import MijiaCore
 
-/// Builds MenuBarMijia's `MiCloudProvider` on top of the LAN API instead of the cloud client.
+/// Builds MenuBarMijia's `MiCloudProvider` on top of the LAN API instead of the cloud client, wrapped in
+/// `LANHomeProvider` for the climate controls MijiaCore does not read.
 public enum LocalHomeProvider {
     /// `MiCloudProvider` wants a session before it starts polling. This one is never sent anywhere: the API
     /// factory ignores it and answers from the LAN.
@@ -19,8 +20,8 @@ public enum LocalHomeProvider {
         specSource: any MiotSpecSource = MiotSpecStore(cacheDirectory: specCacheDirectory),
         pollInterval: Duration = .seconds(3),
         closedPollInterval: Duration = .seconds(5)
-    ) -> MiCloudProvider {
-        MiCloudProvider(
+    ) -> LANHomeProvider {
+        let inner = MiCloudProvider(
             sessionLoader: { placeholderSession },
             apiFactory: { _ in api },
             specSource: specSource,
@@ -30,5 +31,6 @@ public enum LocalHomeProvider {
             followUpDelay: .milliseconds(500),
             selectedHomeLoader: { nil }
         )
+        return LANHomeProvider(inner: inner, api: api, specSource: specSource)
     }
 }

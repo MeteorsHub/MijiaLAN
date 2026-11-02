@@ -1,14 +1,6 @@
 {
-  "originHash" : "28dfcf748a1e0eb43998c40430a63429c45176a8e1396420786eaa2ad40042d0",
+  "originHash" : "ff03157bcb69f065821319ac540018befdc6562961ca1c6200613916155cd52d",
   "pins" : [
-    {
-      "identity" : "hap-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/acumen-dev/hap-swift.git",
-      "state" : {
-        "revision" : "638001bd3590082a8909fd4046ec226ab1349f20"
-      }
-    },
     {
       "identity" : "mdns-swift",
       "kind" : "remoteSourceControl",

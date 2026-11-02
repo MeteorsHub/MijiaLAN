@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="${1:-release}"
 VERSION="0.1.0"
-APP="$ROOT/build/MijiaLAN.app"
+APP="${MIJIALAN_APP_OUTPUT:-$ROOT/build/MijiaLAN.app}"
 
 cd "$ROOT"
 swift build -c "$CONFIG" --product MijiaLANApp
@@ -19,6 +19,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/MijiaLANApp" "$APP/Contents/MacOS/MijiaLAN"
 # MijiaCore's translation tables; MijiaCore finds them under Contents/Resources.
 cp -R "$BIN_DIR/MenuBarMijia_MijiaCore.bundle" "$APP/Contents/Resources/"
+cp -R "$BIN_DIR/MijiaLAN_MijiaLAN.bundle" "$APP/Contents/Resources/"
+cp -R "$ROOT/Resources/en.lproj" "$ROOT/Resources/zh-Hans.lproj" "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -26,9 +28,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>zh_CN</string>
+    <string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array><string>en</string><string>zh-Hans</string></array>
     <key>CFBundleDisplayName</key>
-    <string>米家局域网桥</string>
+    <string>MijiaLAN</string>
     <key>CFBundleExecutable</key>
     <string>MijiaLAN</string>
     <key>CFBundleIdentifier</key>
@@ -48,7 +52,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key>
     <true/>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>MijiaLAN 直接在局域网里控制米家 Wi-Fi 设备，并作为 HomeKit 桥让 iPhone 的「家庭」App 连接这台 Mac。</string>
+    <string>MijiaLAN controls Mijia Wi-Fi devices directly over your local network and provides a HomeKit bridge for the Home app on your iPhone.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_hap._tcp</string>

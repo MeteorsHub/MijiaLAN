@@ -16,6 +16,16 @@ public actor MiioClient {
     private var deviceID: UInt32?
     private var clock: (stamp: UInt32, at: ContinuousClock.Instant)?
     private var nextRequestID = Int.random(in: 1...9_000)
+    private var calling = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    private func acquire() async {
+        if !calling { calling = true; return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    private func release() {
+        if waiters.isEmpty { calling = false } else { waiters.removeFirst().resume() }
+    }
 
     /// Re-hello after this much silence; some firmware resets its clock when it reconnects to Wi-Fi.
     static let clockMaxAge: Duration = .seconds(120)
@@ -52,10 +62,14 @@ public actor MiioClient {
     /// A device drops a packet it cannot verify instead of answering, so "hello answered, request never" is how a
     /// wrong token shows up; that case throws `MiioError.noEncryptedReply` rather than `.timeout`.
     /// `timeout` overrides the client's per-attempt wait for this call.
-    public func call(_ method: String, params: JSONValue = .array([]), timeout: Duration? = nil) async throws -> JSONValue {
+    public func call(_ method: String, params: JSONValue = .array([]), timeout: Duration? = nil, retryCount: Int? = nil) async throws -> JSONValue {
+        await acquire()
+        defer { release() }
+        try Task.checkCancellation()
         var lastError: any Error = MiioError.timeout
         var helloAnswered = false
-        for _ in 0...retries {
+        let attempts = method == "action" ? 0 : max(0, retryCount ?? retries)
+        for _ in 0...attempts {
             do {
                 if needsHandshake {
                     try await handshake(timeout: timeout)
@@ -92,7 +106,7 @@ public actor MiioClient {
         let reply = try await transport.exchange(packet, host: host, port: port, timeout: timeout)
         let (header, payload) = try MiioPacket.decode(reply, token: token)
         self.clock = (header.stamp, .now)
-        guard let json = Self.parseJSON(payload) else { throw MiioError.badResponse("无法解析 JSON") }
+        guard let json = Self.parseJSON(payload) else { throw MiioError.badResponse(L10n.tr("无法解析 JSON", "Could not parse JSON.")) }
         if let error = json["error"] {
             throw MiioError.deviceError(code: error["code"]?.intValue ?? 0, message: error["message"]?.stringValue ?? "")
         }
@@ -146,14 +160,19 @@ extension MiioClient {
 
     public func info(timeout: Duration? = nil) async throws -> MiioInfo {
         let result = try await call("miIO.info", timeout: timeout)
-        guard let model = result["model"]?.stringValue, !model.isEmpty else { throw MiioError.badResponse("miIO.info 没有 model") }
+        guard let model = result["model"]?.stringValue, !model.isEmpty else { throw MiioError.badResponse(L10n.tr("miIO.info 没有 model", "miIO.info did not include a model.")) }
         return MiioInfo(model: model, mac: result["mac"]?.stringValue, firmware: result["fw_ver"]?.stringValue)
     }
 
     /// Values keyed by `did` (as passed in), siid and piid. Properties the device reports as failed are left out.
     /// Results are matched to the request by siid/piid: some firmware echoes its own did instead of ours.
     public func getProperties(did: String, _ props: [(siid: Int, piid: Int)]) async throws -> [MiotPropKey: JSONValue] {
-        var values: [MiotPropKey: JSONValue] = [:]
+        try await readProperties(did: did, props).compactMapValues { $0.isAvailable ? $0.value : nil }
+    }
+
+    /// Every requested property has a result, including omissions and negative return codes.
+    public func readProperties(did: String, _ props: [(siid: Int, piid: Int)]) async throws -> [MiotPropKey: DeviceReading] {
+        var values: [MiotPropKey: DeviceReading] = [:]
         var start = 0
         while start < props.count {
             let chunk = props[start..<min(start + Self.propertiesPerRequest, props.count)]
@@ -162,10 +181,17 @@ extension MiioClient {
                 .object(["did": .string(did), "siid": .number(Double($0.siid)), "piid": .number(Double($0.piid))])
             })
             let result = try await call("get_properties", params: params)
+            for p in chunk {
+                values[MiotPropKey(did: did, siid: p.siid, piid: p.piid)] = DeviceReading(error: L10n.tr("设备未返回此属性", "The device did not return this property."))
+            }
             for item in result.arrayValue ?? [] {
                 guard let siid = item["siid"]?.intValue, let piid = item["piid"]?.intValue,
-                      (item["code"]?.intValue ?? 0) == 0, let value = item["value"] else { continue }
-                values[MiotPropKey(did: did, siid: siid, piid: piid)] = value
+                      chunk.contains(where: { $0.siid == siid && $0.piid == piid }) else { continue }
+                let code = item["code"]?.intValue
+                let value = item["value"]
+                values[MiotPropKey(did: did, siid: siid, piid: piid)] = DeviceReading(
+                    value: code == 0 ? value : nil, updatedAt: Date(), code: code,
+                    error: code == 0 && value != nil ? nil : Self.propertyError(code))
             }
         }
         return values
@@ -177,22 +203,32 @@ extension MiioClient {
             .object(["did": .string($0.did), "siid": .number(Double($0.siid)), "piid": .number(Double($0.piid)), "value": $0.value])
         })
         let result = try await call("set_properties", params: params)
-        try Self.checkCodes(result.arrayValue ?? [])
+        guard let items = result.arrayValue, items.count == writes.count else { throw MiioError.badResponse(L10n.tr("写入结果数量不符", "The number of write results does not match.")) }
+        try Self.checkCodes(items)
     }
 
     public func action(_ call: MiotActionCall) async throws {
         let result = try await self.call("action", params: .object([
             "did": .string(call.did), "siid": .number(Double(call.siid)),
             "aiid": .number(Double(call.aiid)), "in": .array(call.inputs),
-        ]))
+        ]), retryCount: 0)
         try Self.checkCodes([result])
     }
 
     /// MIoT per-item codes: 0 done, 1 accepted; negatives are errors (e.g. -4004 invalid value, -4003 not writable).
     static func checkCodes(_ items: [JSONValue]) throws {
         for item in items {
-            let code = item["code"]?.intValue ?? 0
-            if code < 0 { throw MiioError.deviceError(code: code, message: "设备拒绝了这个指令") }
+            guard let code = item["code"]?.intValue else { throw MiioError.badResponse(L10n.tr("响应缺少返回码", "The response is missing a result code.")) }
+            if code != 0 && code != 1 { throw MiioError.deviceError(code: code, message: Self.propertyError(code)) }
+        }
+    }
+
+    static func propertyError(_ code: Int?) -> String {
+        switch code {
+        case -4003: return L10n.tr("不支持或没有访问权限（-4003）", "Unsupported or access denied (-4003).")
+        case -4004: return L10n.tr("参数错误（-4004）", "Invalid arguments (-4004).")
+        case .some(let code): return L10n.tr("设备返回错误（\(code)）", "Device error (\(code)).")
+        case nil: return L10n.tr("设备响应缺少返回码或读数", "The response is missing a result code or reading.")
         }
     }
 }

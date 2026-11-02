@@ -1,3 +1,4 @@
+import MijiaCore
 import CommonCrypto
 import CryptoKit
 import Foundation
@@ -155,16 +156,16 @@ public enum MiioError: LocalizedError, Equatable, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .malformedPacket: return "收到的数据包格式不对"
-        case .checksumMismatch: return "token 不匹配（设备可能已重新配网，需要重新导入）"
-        case .invalidToken: return "token 应为 32 位十六进制"
-        case .timeout: return "设备没有响应（离线、IP 变了，或不在同一局域网）"
-        case .noEncryptedReply: return "设备回应了握手，但不回应加密指令：token 多半不对或已变（重新配网后会变）"
-        case .hostUnreachable: return "这个 IP 上没有设备：可能断电、离线或换了 IP（也可能 App 没有「本地网络」权限）"
-        case .unsupportedByLegacyDevice: return "这款老设备在局域网里不支持这个操作"
-        case .socket(let message): return "网络错误：\(message)"
-        case .badResponse(let what): return "设备响应异常：\(what)"
-        case .deviceError(let code, let message): return "设备返回错误 \(code)：\(message)"
+        case .malformedPacket: return L10n.tr("收到的数据包格式不对", "Received a malformed packet.")
+        case .checksumMismatch: return L10n.tr("token 不匹配（设备可能已重新配网，需要重新导入）", "Token mismatch. The device may have been set up again; re-import it.")
+        case .invalidToken: return L10n.tr("token 应为 32 位十六进制", "The token must contain 32 hexadecimal characters.")
+        case .timeout: return L10n.tr("设备没有响应（离线、IP 变了，或不在同一局域网）", "No response. The device may be offline, have a new IP, or be on another network.")
+        case .noEncryptedReply: return L10n.tr("设备回应了握手，但不回应加密指令：token 多半不对或已变（重新配网后会变）", "The device responds to the handshake but not encrypted commands. Its token may be incorrect or have changed after setup.")
+        case .hostUnreachable: return L10n.tr("这个 IP 上没有设备：可能断电、离线或换了 IP（也可能 App 没有「本地网络」权限）", "No device at this IP. It may be powered off, offline, or using a new IP; Local Network access may also be denied.")
+        case .unsupportedByLegacyDevice: return L10n.tr("这款老设备在局域网里不支持这个操作", "This legacy device does not support this operation over the LAN.")
+        case .socket(let message): return L10n.tr("网络错误：\(message)", "Network error: \(message)")
+        case .badResponse(let what): return L10n.tr("设备响应异常：\(what)", "Unexpected device response: \(what)")
+        case .deviceError(let code, let message): return L10n.tr("设备返回错误 \(code)：\(message)", "Device error \(code): \(message)")
         }
     }
 }

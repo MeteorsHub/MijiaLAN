@@ -1,0 +1,466 @@
+{
+  "type": "urn:miot-spec-v2:device:air-purifier:0000A007:zhimi-rma1:1",
+  "description": "Air Purifier",
+  "services": [
+    {
+      "iid": 1,
+      "type": "urn:miot-spec-v2:service:device-information:00007801:zhimi-rma1:1",
+      "description": "Device Information",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:manufacturer:00000001:zhimi-rma1:1",
+          "description": "Device Manufacturer",
+          "format": "string",
+          "access": [
+            "read"
+          ]
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:property:model:00000002:zhimi-rma1:1",
+          "description": "Device Model",
+          "format": "string",
+          "access": [
+            "read"
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:property:serial-number:00000003:zhimi-rma1:1",
+          "description": "Device ID",
+          "format": "string",
+          "access": [
+            "read"
+          ],
+          "comment": "设备ID"
+        },
+        {
+          "iid": 4,
+          "type": "urn:miot-spec-v2:property:firmware-revision:00000005:zhimi-rma1:1",
+          "description": "Current Firmware Version",
+          "format": "string",
+          "access": [
+            "read"
+          ]
+        },
+        {
+          "iid": 5,
+          "type": "urn:miot-spec-v2:property:serial-no:000000FF:zhimi-rma1:1",
+          "description": "Serial Number",
+          "format": "string",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "comment": "SN码"
+        }
+      ],
+      "comment": "设备信息"
+    },
+    {
+      "iid": 2,
+      "type": "urn:miot-spec-v2:service:air-purifier:00007811:zhimi-rma1:1",
+      "description": "Air Purifier",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:on:00000006:zhimi-rma1:1",
+          "description": "Switch Status",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "unit": "none",
+          "comment": "开关"
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:property:fault:00000009:zhimi-rma1:1",
+          "description": "Device Fault",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "No Faults",
+              "comment": "无错误"
+            },
+            {
+              "value": 2,
+              "description": "Motor Stop",
+              "comment": "电机堵转错误"
+            },
+            {
+              "value": 3,
+              "description": "Sensor Lost",
+              "comment": "颗粒物传感器异常"
+            }
+          ],
+          "comment": "故障"
+        },
+        {
+          "iid": 4,
+          "type": "urn:miot-spec-v2:property:mode:00000008:zhimi-rma1:1",
+          "description": "Mode",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Auto",
+              "comment": "自动"
+            },
+            {
+              "value": 1,
+              "description": "Sleep",
+              "comment": "睡眠"
+            },
+            {
+              "value": 2,
+              "description": "Favorite",
+              "comment": "最爱"
+            }
+          ],
+          "comment": "模式"
+        }
+      ],
+      "actions": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:action:toggle:00002811:zhimi-rma1:1",
+          "description": "Toggle",
+          "in": [],
+          "out": [],
+          "comment": "开关状态切换"
+        }
+      ],
+      "comment": "空气净化器"
+    },
+    {
+      "iid": 3,
+      "type": "urn:miot-spec-v2:service:environment:0000780A:zhimi-rma1:1",
+      "description": "Environment",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:relative-humidity:0000000C:zhimi-rma1:1",
+          "description": "Relative Humidity",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "percentage",
+          "value-range": [
+            0,
+            100,
+            1
+          ],
+          "comment": "湿度"
+        },
+        {
+          "iid": 4,
+          "type": "urn:miot-spec-v2:property:pm2.5-density:00000034:zhimi-rma1:1",
+          "description": "PM2.5 Density",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "μg/m3",
+          "value-range": [
+            0,
+            600,
+            1
+          ],
+          "comment": "PM2.5"
+        },
+        {
+          "iid": 7,
+          "type": "urn:miot-spec-v2:property:temperature:00000020:zhimi-rma1:1",
+          "description": "Temperature",
+          "format": "float",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "celsius",
+          "value-range": [
+            -30,
+            100,
+            0.1
+          ],
+          "comment": "温度"
+        }
+      ],
+      "comment": "环境参数"
+    },
+    {
+      "iid": 4,
+      "type": "urn:miot-spec-v2:service:filter:0000780B:zhimi-rma1:1",
+      "description": "Filter",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:filter-life-level:0000001E:zhimi-rma1:1",
+          "description": "Filter Life Level",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "percentage",
+          "value-range": [
+            0,
+            100,
+            1
+          ],
+          "comment": "滤芯剩余寿命"
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:property:filter-used-time:00000048:zhimi-rma1:1",
+          "description": "Filter Used Time",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "days",
+          "value-range": [
+            0,
+            200,
+            1
+          ],
+          "comment": "滤芯已使用时间"
+        },
+        {
+          "iid": 4,
+          "type": "urn:miot-spec-v2:property:filter-left-time:0000001F:zhimi-rma1:1",
+          "description": "Filter Left Time",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "days",
+          "value-range": [
+            0,
+            1000,
+            1
+          ],
+          "comment": "滤芯剩余时间"
+        }
+      ],
+      "actions": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:action:reset-filter-life:00002803:zhimi-rma1:1",
+          "description": "Reset Filter Life",
+          "in": [
+            3
+          ],
+          "out": [],
+          "comment": "重置滤芯"
+        }
+      ],
+      "comment": "滤芯"
+    },
+    {
+      "iid": 6,
+      "type": "urn:miot-spec-v2:service:alarm:00007804:zhimi-rma1:1",
+      "description": "Alarm",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:alarm:00000012:zhimi-rma1:1",
+          "description": "Alarm",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "comment": "提示音"
+        }
+      ],
+      "comment": "提示音"
+    },
+    {
+      "iid": 8,
+      "type": "urn:miot-spec-v2:service:physical-controls-locked:00007807:zhimi-rma1:1",
+      "description": "Physical Control Locked",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:physical-controls-locked:0000001D:zhimi-rma1:1",
+          "description": "Physical Control Locked",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "comment": "物理控制锁"
+        }
+      ],
+      "comment": "物理控制锁"
+    },
+    {
+      "iid": 13,
+      "type": "urn:miot-spec-v2:service:screen:00007806:zhimi-rma1:1",
+      "description": "Screen",
+      "properties": [
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:property:brightness:0000000D:zhimi-rma1:1",
+          "description": "Brightness",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "unit": "percentage",
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Close",
+              "comment": "息屏"
+            },
+            {
+              "value": 1,
+              "description": "Bright",
+              "comment": "微亮"
+            },
+            {
+              "value": 2,
+              "description": "Brightest",
+              "comment": "正常"
+            }
+          ],
+          "comment": "亮度"
+        }
+      ],
+      "comment": "显示屏"
+    },
+    {
+      "iid": 9,
+      "type": "urn:zhimi-spec:service:custom-service:00007801:zhimi-rma1:1",
+      "description": "custom-service",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:zhimi-spec:property:moto-speed-rpm:00000001:zhimi-rma1:1",
+          "description": "moto-speed-rpm",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-range": [
+            0,
+            2500,
+            1
+          ],
+          "comment": "直流电机，每分钟转速。 只上报。 调试使用，不对用户开放。"
+        },
+        {
+          "iid": 2,
+          "type": "urn:zhimi-spec:property:favorite-level:00000002:zhimi-rma1:1",
+          "description": "favorite-level",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify",
+            "write"
+          ],
+          "value-range": [
+            0,
+            14,
+            1
+          ],
+          "comment": "最爱档转速"
+        }
+      ],
+      "actions": [
+        {
+          "iid": 1,
+          "type": "urn:zhimi-spec:action:toggle-mode:00002801:zhimi-rma1:1",
+          "description": "toggle-mode",
+          "in": [],
+          "out": [],
+          "comment": "模式状态切换"
+        }
+      ],
+      "events": [
+        {
+          "iid": 1,
+          "type": "urn:zhimi-spec:event:fault-motor-stuck:00005001:zhimi-rma1:1",
+          "description": "fault-motor-stuck",
+          "arguments": [],
+          "comment": "马达卡转"
+        },
+        {
+          "iid": 2,
+          "type": "urn:zhimi-spec:event:childlock-trigger:00005002:zhimi-rma1:1",
+          "description": "childlock-trigger",
+          "arguments": [],
+          "comment": "童锁状态下，检测到按键被多次"
+        },
+        {
+          "iid": 3,
+          "type": "urn:zhimi-spec:event:door-opened:00005003:zhimi-rma1:1",
+          "description": "door-opened",
+          "arguments": [],
+          "comment": "滤芯舱门被打开"
+        },
+        {
+          "iid": 5,
+          "type": "urn:zhimi-spec:event:filter-exhausted:00005005:zhimi-rma1:1",
+          "description": "filter-exhausted",
+          "arguments": [],
+          "comment": "滤芯耗尽"
+        }
+      ],
+      "comment": "用户自定义服务"
+    },
+    {
+      "iid": 11,
+      "type": "urn:zhimi-spec:service:aqi:00007803:zhimi-rma1:1",
+      "description": "aqi",
+      "properties": [
+        {
+          "iid": 4,
+          "type": "urn:zhimi-spec:property:aqi-updata-heartbeat:00000004:zhimi-rma1:1",
+          "description": "aqi-updata-heartbeat",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify",
+            "write"
+          ],
+          "unit": "none",
+          "value-range": [
+            0,
+            65535,
+            1
+          ],
+          "comment": "aqi同步时间"
+        }
+      ],
+      "comment": "aqi相关"
+    }
+  ],
+  "model": "zhimi.airpurifier.rma1"
+}

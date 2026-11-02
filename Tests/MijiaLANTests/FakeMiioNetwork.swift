@@ -13,6 +13,9 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         var model = "yeelink.light.fake1"
         var props: [String: JSONValue] = [:]
         var offline = false
+        var actionTimeout = false
+        var quantizeSpeed = false
+        var omitWriteCode = false
         /// Answers hellos but no encrypted request, like a device that was re-paired with a new token.
         var ignoresEncrypted = false
         /// Nothing at this IP: sends fail like a failed ARP lookup.
@@ -117,10 +120,15 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
                 let key = "\(item["siid"]?.intValue ?? 0).\(item["piid"]?.intValue ?? 0)"
                 if key == "9.9" { return .object(["code": .number(-4004)]) }
                 device.props[key] = item["value"] ?? .null
+                if device.quantizeSpeed, key == "8.1", let n = item["value"]?.doubleValue { device.props[key] = .number((n / 10).rounded() * 10) }
+                if device.omitWriteCode { return .object([:]) }
                 return .object(["did": item["did"] ?? .null, "siid": item["siid"] ?? .null, "piid": item["piid"] ?? .null, "code": .number(0)])
             })
         case "action":
             device.receivedWrites.append(params)
+            if device.actionTimeout { throw MiioError.timeout }
+            if params["aiid"]?.intValue == 1 { device.props["2.1"] = .number(device.model == "careli.fryer.maf07c" ? 4 : 2) }
+            if params["aiid"]?.intValue == 2 { device.props["2.1"] = .number(1) }
             reply["result"] = .object(["code": .number(0), "out": .array([])])
         default:
             reply["error"] = .object(["code": .number(-32601), "message": .string("Method not found.")])
@@ -161,6 +169,10 @@ extension FakeSpecs {
                          valueList: [.init(value: 0, description: "Auto"), .init(value: 1, description: "Low"),
                                      .init(value: 2, description: "Medium"), .init(value: 3, description: "High")]),
             MiotProperty(iid: 2, type: "urn:miot-spec-v2:property:vertical-swing:00000018:lumi-mcn02:1", format: "bool", access: ["read", "write", "notify"]),
+        ]),
+        MiotService(iid: 5, type: "urn:miot-spec-v2:service:power-consumption:0000780E:lumi-mcn02:1", properties: [
+            MiotProperty(iid: 1, type: "urn:miot-spec-v2:property:electric-power:00000066:lumi-mcn02:1", format: "float",
+                         access: ["read", "notify"], valueRange: [0, 10000, 0.01], unit: "watt"),
         ]),
     ])
 }

@@ -1,3 +1,4 @@
+import MijiaCore
 import Darwin
 import Foundation
 
@@ -57,7 +58,7 @@ public struct UDPMiioTransport: MiioTransport {
                     if (try? socket.send(packet, to: target, port: port)) != nil { sentAny = true }
                 }
                 if round == 0 && !sentAny {
-                    throw MiioError.socket("无法发送局域网广播（检查「本地网络」权限和 Wi-Fi 连接）")
+                    throw MiioError.socket(L10n.tr("无法发送局域网广播（检查「本地网络」权限和 Wi-Fi 连接）", "Could not broadcast on the LAN. Check Local Network access and your Wi-Fi connection."))
                 }
                 let roundEnd = start.addingTimeInterval(total * Double(round + 1) / Double(rounds))
                 while true {
@@ -180,7 +181,7 @@ final class UDPSocket: @unchecked Sendable {
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = port.bigEndian
-        guard inet_pton(AF_INET, host, &address.sin_addr) == 1 else { throw MiioError.socket("不是有效的 IPv4 地址：\(host)") }
+        guard inet_pton(AF_INET, host, &address.sin_addr) == 1 else { throw MiioError.socket(L10n.tr("不是有效的 IPv4 地址：\(host)", "Invalid IPv4 address: \(host)")) }
         return address
     }
 

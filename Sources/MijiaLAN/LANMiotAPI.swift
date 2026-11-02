@@ -33,7 +33,7 @@ public struct LANDeviceHealth: Equatable, Sendable {
 /// `miIO.info` on every device-list refresh until it answers again.
 public actor LANMiotAPI: MiCloudAPI {
     private let logger = Logger(subsystem: "com.mijialan.MijiaLAN", category: "LAN")
-    private let config: @Sendable () -> LocalHomeConfig
+    let config: @Sendable () -> LocalHomeConfig
     private let transport: any MiioTransport
     private let port: UInt16
     private let probeTimeout: Duration
@@ -42,6 +42,10 @@ public actor LANMiotAPI: MiCloudAPI {
     private var health: [String: LANDeviceHealth] = [:]
     private var consecutiveFailures: [String: Int] = [:]
     private var healthObserver: (@Sendable ([String: LANDeviceHealth]) -> Void)?
+    /// Properties MijiaCore does not ask for but the app shows (a climate device's swing and power draw). They are
+    /// read in the same request as the rest of their device, so they cost no extra round trip.
+    private var companions: [String: [MiotPropKey]] = [:]
+    private var latest: [MiotPropKey: JSONValue] = [:]
 
     /// Misses in a row before an online device is shown offline; one lost UDP packet is not an outage.
     static let failuresBeforeOffline = 2
@@ -69,6 +73,25 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     public func currentHealth() -> [String: LANDeviceHealth] { health }
+
+    /// An explicit UI retry probes this device immediately, independently of the background retry interval.
+    public func retryDevice(did: String) async {
+        guard let device = config().devices.first(where: { $0.did == did }) else { return }
+        do {
+            _ = try await client(for: device).info(timeout: probeTimeout)
+            record(did, .online, error: nil)
+        } catch {
+            record(did, Self.isTokenProblem(error) ? .tokenRejected : .offline, error: error)
+        }
+        publishHealth()
+    }
+
+    public func setCompanions(_ keys: [MiotPropKey], for did: String) {
+        companions[did] = keys.isEmpty ? nil : keys
+    }
+
+    /// The last value actually read from the device, companions included.
+    public func latestValue(_ key: MiotPropKey) -> JSONValue? { latest[key] }
 
     // MARK: MiCloudAPI
 
@@ -123,6 +146,7 @@ public actor LANMiotAPI: MiCloudAPI {
     /// Never throws for one device: the rest of the home still updates and the silent one is marked offline.
     public func getProps(_ keys: [MiotPropKey]) async throws -> [MiotPropKey: JSONValue] {
         let devices = Dictionary(config().devices.map { ($0.did, $0) }, uniquingKeysWith: { first, _ in first })
+        let requested = Set(keys)
         let byDid = Dictionary(grouping: keys, by: \.did)
         var values: [MiotPropKey: JSONValue] = [:]
         await withTaskGroup(of: (String, Result<[MiotPropKey: JSONValue], any Error>).self) { group in
@@ -130,7 +154,8 @@ public actor LANMiotAPI: MiCloudAPI {
                 guard let device = devices[did] else { continue }
                 let client = client(for: device)
                 let legacy = LegacyMiioProfile.forModel(device.model)
-                let props = keys.map { (siid: $0.siid, piid: $0.piid) }
+                let extra = (companions[did] ?? []).filter { !requested.contains($0) }
+                let props = (keys + extra).map { (siid: $0.siid, piid: $0.piid) }
                 group.addTask {
                     do {
                         let fresh = if let legacy {
@@ -147,7 +172,8 @@ public actor LANMiotAPI: MiCloudAPI {
             for await (did, outcome) in group {
                 switch outcome {
                 case .success(let fresh):
-                    values.merge(fresh) { _, new in new }
+                    latest.merge(fresh) { _, new in new }
+                    values.merge(fresh.filter { requested.contains($0.key) }) { _, new in new }
                     record(did, .online, error: nil)
                 case .failure(let error):
                     recordFailure(did, error, model: devices[did]?.model)
@@ -193,6 +219,32 @@ public actor LANMiotAPI: MiCloudAPI {
 
     // MARK: Clients & Health
 
+    public func readCapabilities(did: String, capabilities: [DeviceCapability]) async -> [String: DeviceReading] {
+        do {
+            let (device, client) = try client(forDid: did)
+            let props = capabilities.filter { $0.readable }.map { (siid: $0.siid, piid: $0.iid) }
+            let readings: [MiotPropKey: DeviceReading]
+            if let legacy = LegacyMiioProfile.forModel(device.model) {
+                let values = try await client.getProperties(did: did, props, legacy: legacy)
+                readings = Dictionary(uniqueKeysWithValues: props.map { p in
+                    let key = MiotPropKey(did: did, siid: p.siid, piid: p.piid)
+                    return (key, DeviceReading(value: values[key], updatedAt: Date(), code: values[key] == nil ? nil : 0,
+                                              error: values[key] == nil ? L10n.tr("未返回有效读数", "No valid reading was returned.") : nil))
+                })
+            } else {
+                readings = try await client.readProperties(did: did, props)
+            }
+            for (key, reading) in readings where reading.isAvailable { latest[key] = reading.value }
+            record(did, .online, error: nil)
+            publishHealth()
+            return Dictionary(uniqueKeysWithValues: readings.map { (DeviceCapability.propertyID($0.key.siid, $0.key.piid), $0.value) })
+        } catch {
+            recordFailure(did, error, model: nil)
+            publishHealth()
+            return Dictionary(uniqueKeysWithValues: capabilities.filter(\.readable).map { ($0.id, DeviceReading(error: Self.describe(error))) })
+        }
+    }
+
     private func client(for device: LocalDevice) -> MiioClient {
         if let existing = clients[device.did], existing.device.host == device.host, existing.device.token == device.token {
             return existing.client
@@ -210,7 +262,7 @@ public actor LANMiotAPI: MiCloudAPI {
 
     private func client(forDid did: String) throws -> (LocalDevice, MiioClient) {
         guard let device = config().devices.first(where: { $0.did == did }) else {
-            throw MiioError.badResponse("设备 \(did) 不在本地清单里")
+            throw MiioError.badResponse(L10n.tr("设备 \(did) 不在本地清单里", "Device \(did) is not in the local list."))
         }
         return (device, client(for: device))
     }
@@ -222,7 +274,7 @@ public actor LANMiotAPI: MiCloudAPI {
     private func record(_ did: String, _ state: LANDeviceHealth.State, message: String?) {
         var entry = health[did] ?? LANDeviceHealth()
         if entry.state != state {
-            logger.info("\(did, privacy: .public) → \(String(describing: state), privacy: .public)")
+            logger.info("\(did, privacy: .private) → \(String(describing: state), privacy: .public)")
         }
         entry.state = state
         entry.lastError = message
@@ -237,6 +289,11 @@ public actor LANMiotAPI: MiCloudAPI {
     /// problem: a pre-MIoT device without a table answers `get_properties` with `-9999` (or not in time).
     private func recordFailure(_ did: String, _ error: any Error, model: String?) {
         let miio = error as? MiioError
+        if case .deviceError(let code, _) = miio, code != MiioClient.userAckTimeoutCode {
+            // A rejected property proves the transport works; it does not mean the entire device is offline.
+            record(did, .online, error: error)
+            return
+        }
         if miio == .checksumMismatch {
             record(did, .tokenRejected, error: error)
             return
@@ -247,17 +304,12 @@ public actor LANMiotAPI: MiCloudAPI {
         }
         let failures = (consecutiveFailures[did] ?? 0) + 1
         consecutiveFailures[did] = failures
-        var notMiot = miio == .noEncryptedReply
-        if case .deviceError(let code, _) = miio, code == MiioClient.userAckTimeoutCode { notMiot = true }
         guard failures >= Self.failuresBeforeOffline || health[did]?.state != .online else {
             health[did]?.lastError = Self.describe(error)
             return
         }
-        if notMiot, let model, LegacyMiioProfile.forModel(model) == nil {
-            record(did, .unsupported, message: "这款设备在局域网里只认旧版 miIO 指令，MijiaLAN 还没有 \(model) 的翻译表")
-        } else {
-            record(did, .offline, error: error)
-        }
+        // Silence is not evidence of a legacy dialect. Retry offline devices instead of permanently excluding them.
+        record(did, .offline, error: error)
     }
 
     private func publishHealth() {

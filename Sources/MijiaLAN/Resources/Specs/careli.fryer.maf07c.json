@@ -1,0 +1,605 @@
+{
+  "type": "urn:miot-spec-v2:device:air-fryer:0000A0A4:careli-maf07c:1",
+  "description": "Air Fryer",
+  "services": [
+    {
+      "iid": 1,
+      "type": "urn:miot-spec-v2:service:device-information:00007801:careli-maf07c:1",
+      "description": "Device Information",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:manufacturer:00000001:careli-maf07c:1",
+          "description": "Device Manufacturer",
+          "format": "string",
+          "access": [
+            "read"
+          ],
+          "comment": "设备制造商"
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:property:model:00000002:careli-maf07c:1",
+          "description": "Device Model",
+          "format": "string",
+          "access": [
+            "read"
+          ],
+          "comment": "型号"
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:property:serial-number:00000003:careli-maf07c:1",
+          "description": "Device Serial Number",
+          "format": "string",
+          "access": [
+            "read"
+          ],
+          "comment": "编号"
+        },
+        {
+          "iid": 4,
+          "type": "urn:miot-spec-v2:property:firmware-revision:00000005:careli-maf07c:1",
+          "description": "Current Firmware Version",
+          "format": "string",
+          "access": [
+            "read"
+          ],
+          "comment": "当前固件版本"
+        }
+      ],
+      "comment": "设备信息"
+    },
+    {
+      "iid": 2,
+      "type": "urn:miot-spec-v2:service:air-fryer:00007897:careli-maf07c:1",
+      "description": "Air Fryer",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:property:status:00000007:careli-maf07c:1",
+          "description": "Status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Off",
+              "comment": "关机"
+            },
+            {
+              "value": 1,
+              "description": "Idle",
+              "comment": "待机中"
+            },
+            {
+              "value": 2,
+              "description": "Paused",
+              "comment": "暂停中"
+            },
+            {
+              "value": 3,
+              "description": "Delay",
+              "comment": "预约中"
+            },
+            {
+              "value": 4,
+              "description": "Cooking",
+              "comment": "烹饪中"
+            },
+            {
+              "value": 5,
+              "description": "Preheat",
+              "comment": "预热中"
+            },
+            {
+              "value": 6,
+              "description": "Cooking Completed",
+              "comment": "烹饪完成"
+            },
+            {
+              "value": 7,
+              "description": "Preheat Completed",
+              "comment": "预热完成"
+            },
+            {
+              "value": 8,
+              "description": "Preheat Paused",
+              "comment": "预热暂停"
+            },
+            {
+              "value": 9,
+              "description": "Turn Pot Paused",
+              "comment": "抽锅暂停"
+            },
+            {
+              "value": 10,
+              "description": "Keep Warm",
+              "comment": "保温中"
+            },
+            {
+              "value": 11,
+              "description": "Keep Warm Paused",
+              "comment": "保温暂停"
+            },
+            {
+              "value": 12,
+              "description": "Keep Warm Completed",
+              "comment": "保温完成"
+            },
+            {
+              "value": 13,
+              "description": "Crispy",
+              "comment": "脆烤中"
+            },
+            {
+              "value": 14,
+              "description": "Degrease",
+              "comment": "脱脂中"
+            }
+          ],
+          "gatt-access": [],
+          "comment": "工作状态"
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:property:fault:00000009:careli-maf07c:1",
+          "description": "Device Fault",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "No Faults",
+              "comment": "无错误"
+            },
+            {
+              "value": 1,
+              "description": "E1",
+              "comment": "NTC断开"
+            },
+            {
+              "value": 2,
+              "description": "E2",
+              "comment": "NTC短路"
+            },
+            {
+              "value": 3,
+              "description": "E3",
+              "comment": "NTC芯片失效"
+            }
+          ],
+          "gatt-access": [],
+          "comment": "故障"
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:property:target-time:00000078:careli-maf07c:1",
+          "description": "Target Time",
+          "format": "uint16",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "unit": "minutes",
+          "value-range": [
+            1,
+            1440,
+            1
+          ],
+          "comment": "工作时间"
+        },
+        {
+          "iid": 4,
+          "type": "urn:miot-spec-v2:property:target-temperature:00000021:careli-maf07c:1",
+          "description": "Target Temperature",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "unit": "celsius",
+          "value-range": [
+            40,
+            220,
+            5
+          ],
+          "gatt-access": [],
+          "comment": "工作温度"
+        },
+        {
+          "iid": 5,
+          "type": "urn:miot-spec-v2:property:left-time:0000003C:careli-maf07c:1",
+          "description": "Left Time",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "unit": "minutes",
+          "value-range": [
+            0,
+            1440,
+            1
+          ],
+          "comment": "剩余时间"
+        },
+        {
+          "iid": 6,
+          "type": "urn:miot-spec-v2:property:auto-keep-warm:0000002B:careli-maf07c:1",
+          "description": "Auto Keep Warm",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "gatt-access": [],
+          "comment": "自动保温功能  0：保温功能总关闭；1：保温功能总开启"
+        },
+        {
+          "iid": 7,
+          "type": "urn:miot-spec-v2:property:current-keep-warm:00000215:careli-maf07c:1",
+          "description": "Current Keep Warm",
+          "format": "bool",
+          "access": [
+            "read",
+            "notify",
+            "write"
+          ],
+          "gatt-access": [],
+          "comment": "当前保温功能开关  0：保温功能关闭；1：保温功能开启"
+        },
+        {
+          "iid": 8,
+          "type": "urn:miot-spec-v2:property:mode:00000008:careli-maf07c:1",
+          "description": "Mode",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 1,
+              "description": "French Fries",
+              "comment": "薯条"
+            },
+            {
+              "value": 2,
+              "description": "Chicken Wing",
+              "comment": "鸡翅"
+            },
+            {
+              "value": 3,
+              "description": "Steak ",
+              "comment": "牛排"
+            },
+            {
+              "value": 4,
+              "description": "Lamb Chops",
+              "comment": "羊排"
+            },
+            {
+              "value": 5,
+              "description": "Pork Belly",
+              "comment": "五花肉"
+            },
+            {
+              "value": 6,
+              "description": "Fish",
+              "comment": "鱼"
+            },
+            {
+              "value": 7,
+              "description": "Sweet Potato",
+              "comment": "红薯"
+            },
+            {
+              "value": 8,
+              "description": "Cake",
+              "comment": "蛋糕"
+            },
+            {
+              "value": 9,
+              "description": "Egg Tart",
+              "comment": "蛋挞"
+            },
+            {
+              "value": 10,
+              "description": "Defrost",
+              "comment": "解冻"
+            },
+            {
+              "value": 11,
+              "description": "Dried Fruit",
+              "comment": "果干"
+            },
+            {
+              "value": 12,
+              "description": "Yogurt",
+              "comment": "酸奶"
+            },
+            {
+              "value": 0,
+              "description": "Manual",
+              "comment": "手动模式"
+            }
+          ],
+          "gatt-access": [],
+          "comment": "模式"
+        },
+        {
+          "iid": 10,
+          "type": "urn:miot-spec-v2:property:recipe-id:0000020F:careli-maf07c:1",
+          "description": "Recipe Id",
+          "format": "string",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "comment": "食谱id"
+        },
+        {
+          "iid": 11,
+          "type": "urn:miot-spec-v2:property:recipe-name:00000210:careli-maf07c:1",
+          "description": "Recipe Name",
+          "format": "string",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "comment": "食谱名称"
+        },
+        {
+          "iid": 12,
+          "type": "urn:miot-spec-v2:property:recipe-sync:00000212:careli-maf07c:1",
+          "description": "Recipe Sync",
+          "format": "string",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "comment": "食谱同步"
+        },
+        {
+          "iid": 13,
+          "type": "urn:miot-spec-v2:property:target-cooking-measure:00000104:careli-maf07c:1",
+          "description": "Target Cooking Measure",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "unit": "percentage",
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Null",
+              "comment": "无"
+            },
+            {
+              "value": 1,
+              "description": "One Layer",
+              "comment": "单层"
+            },
+            {
+              "value": 2,
+              "description": "Double Layer",
+              "comment": "双层"
+            },
+            {
+              "value": 3,
+              "description": "Half Pot",
+              "comment": "半锅"
+            },
+            {
+              "value": 4,
+              "description": "Full Pot",
+              "comment": "满锅"
+            }
+          ],
+          "gatt-access": [],
+          "comment": "设定食材份量"
+        },
+        {
+          "iid": 14,
+          "type": "urn:miot-spec-v2:property:turn-pot:00000211:careli-maf07c:1",
+          "description": "Turn Pot",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 1,
+              "description": "No Need Turn Over Pot",
+              "comment": "No Need Turn Over Pot"
+            },
+            {
+              "value": 2,
+              "description": "Need Turn Over Pot",
+              "comment": "Need Turn Over Pot"
+            }
+          ],
+          "comment": "抽锅翻动提醒"
+        },
+        {
+          "iid": 15,
+          "type": "urn:miot-spec-v2:property:turn-pot-config:00000213:careli-maf07c:1",
+          "description": "Turn Pot Config",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "comment": "抽锅翻动设置"
+        },
+        {
+          "iid": 16,
+          "type": "urn:miot-spec-v2:property:texture:00000214:careli-maf07c:1",
+          "description": "Texture",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "NONE",
+              "comment": "NONE"
+            },
+            {
+              "value": 1,
+              "description": "Crispy Roast",
+              "comment": "Crispy Roast"
+            },
+            {
+              "value": 2,
+              "description": "Tender Roast",
+              "comment": "Tender Roast"
+            },
+            {
+              "value": 3,
+              "description": "Degrease",
+              "comment": "Degrease"
+            }
+          ],
+          "gatt-access": [],
+          "comment": "口感"
+        },
+        {
+          "iid": 17,
+          "type": "urn:miot-spec-v2:property:reservation-left-time:0000016E:careli-maf07c:1",
+          "description": "Reservation Left Time",
+          "format": "uint16",
+          "access": [
+            "read",
+            "notify",
+            "write"
+          ],
+          "unit": "minutes",
+          "value-range": [
+            0,
+            1440,
+            1
+          ],
+          "gatt-access": [],
+          "comment": "预约剩余时间"
+        },
+        {
+          "iid": 18,
+          "type": "urn:miot-spec-v2:property:cooking-weight:00000287:careli-maf07c:1",
+          "description": "Cooking Weight",
+          "format": "uint16",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-range": [
+            100,
+            1800,
+            100
+          ],
+          "gatt-access": [],
+          "comment": "食材重量（克）"
+        }
+      ],
+      "actions": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:action:start-cook:00002806:careli-maf07c:1",
+          "description": "Start Cook",
+          "in": [],
+          "out": [],
+          "comment": "开始烹饪"
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:action:cancel-cooking:00002807:careli-maf07c:1",
+          "description": "Cancel Cooking",
+          "in": [],
+          "out": [],
+          "comment": "停止烹饪"
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:action:pause:0000280C:careli-maf07c:1",
+          "description": "Pause",
+          "in": [],
+          "out": [],
+          "comment": "暂停"
+        },
+        {
+          "iid": 4,
+          "type": "urn:miot-spec-v2:action:resume-cook:00002893:careli-maf07c:1",
+          "description": "Resume Cook",
+          "in": [],
+          "out": [],
+          "comment": "继续烹饪"
+        },
+        {
+          "iid": 5,
+          "type": "urn:miot-spec-v2:action:start-recipe-cook:00002844:careli-maf07c:1",
+          "description": "Start Recipe Cook",
+          "in": [
+            3,
+            4,
+            7,
+            10,
+            11,
+            13,
+            16,
+            17,
+            18
+          ],
+          "out": [],
+          "comment": "开始菜谱烹饪"
+        }
+      ],
+      "events": [
+        {
+          "iid": 1,
+          "type": "urn:miot-spec-v2:event:cooking-finished:0000501C:careli-maf07c:1",
+          "description": "Cooking Finished",
+          "arguments": [],
+          "comment": "烹饪完成"
+        },
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:event:cooking-start:0000505A:careli-maf07c:1",
+          "description": "Cooking Start",
+          "arguments": [],
+          "comment": "烹饪开始"
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:event:keep-warm-finished:0000505F:careli-maf07c:1",
+          "description": "Keep Warm Finished",
+          "arguments": [],
+          "comment": "保温完成"
+        }
+      ],
+      "comment": "空气炸锅"
+    }
+  ],
+  "model": "careli.fryer.maf07c"
+}

@@ -1,6 +1,8 @@
+import CryptoKit
 import Foundation
 import Testing
 import HAPCore
+import HAPTransport
 import MijiaCore
 @testable import MijiaHomeKitBridge
 
@@ -60,20 +62,25 @@ struct HomeKitAccessoryMapperTests {
         )
     }
 
-    static func climate(isOn: Bool = true, mode: String = "cool", modes: [String] = ["off", "cool", "heat", "auto", "dry"]) -> SmartDevice {
+    static func climate(
+        isOn: Bool = true, mode: String = "cool", modes: [String] = ["off", "cool", "heat", "auto", "dry"],
+        fanMode: String? = "Low", fanModes: [String] = ["Auto", "Low", "Medium", "High"],
+        swing: String? = "off", swingModes: [String] = ["off", "vertical"]
+    ) -> SmartDevice {
         SmartDevice(
             id: "ac_living", name: "客厅空调", roomId: "living", roomName: "客厅",
             model: "xiaomi.aircondition.m9", isOnline: true,
             kind: .climate(ClimateSpec(
                 entityId: "climate.living", isOn: isOn, hvacMode: mode, availableModes: modes,
-                targetTemperature: 24, currentTemperature: 27.5, minTemp: 16, maxTemp: 30, step: 0.5
+                targetTemperature: 24, currentTemperature: 27.5, minTemp: 16, maxTemp: 30, step: 0.5,
+                fanMode: fanMode, availableFanModes: fanModes, swingMode: swing, availableSwingModes: swingModes
             ))
         )
     }
 
     static func characteristic(_ plan: HomeKitAccessoryPlan, _ role: HomeKitRole) -> HAPCharacteristic? {
-        plan.services.first(where: { $0.type == role.serviceType })?
-            .characteristics.first(where: { $0.type == role.characteristicType })
+        guard let index = plan.serviceKeys.firstIndex(of: role.serviceKey) else { return nil }
+        return plan.services[index].characteristics.first(where: { $0.type == role.characteristicType })
     }
 
     @Test("A dimmable white light becomes a lightbulb with its own colour temperature range")
@@ -110,22 +117,113 @@ struct HomeKitAccessoryMapperTests {
         #expect(base.signature != renamed.signature)
     }
 
-    @Test("Air conditioner modes map to HAP thermostat states")
+    @Test("An air conditioner becomes a heater cooler with fan speed and swing, plus a switch per extra mode")
     func climatePlan() throws {
         let plan = try #require(HomeKitAccessoryMapper.plan(for: Self.climate(), name: "客厅空调"))
-        let target = try #require(Self.characteristic(plan, .thermostatTargetState))
-        #expect(target.validValues == [0, 1, 2, 3])
+        #expect(plan.services.map(\.type) == [HomeKitAccessoryMapper.heaterCoolerService, .switch])
+        let target = try #require(Self.characteristic(plan, .climateTargetState))
+        #expect(target.validValues == [0, 1, 2])
         #expect(target.value == .uint8(2))
-        #expect(Self.characteristic(plan, .thermostatTargetTemperature)?.minStep == 0.5)
-        #expect(Self.characteristic(plan, .thermostatCurrentTemperature)?.value == .float(27.5))
+        #expect(Self.characteristic(plan, .climateCurrentState)?.value == .uint8(3))
+        #expect(Self.characteristic(plan, .climateCoolingThreshold)?.minStep == 0.5)
+        #expect(Self.characteristic(plan, .climateHeatingThreshold)?.value == .float(24))
+        #expect(Self.characteristic(plan, .climateCurrentTemperature)?.value == .float(27.5))
+        // Low of three fixed speeds, in whole percent; 0 % is automatic.
+        let speed = try #require(Self.characteristic(plan, .climateFanSpeed))
+        #expect(speed.minStep == 1)
+        #expect(speed.value == .float(33))
+        #expect(HomeKitAccessoryMapper.values(for: Self.climate(fanMode: "High"))[.climateFanSpeed] == .float(100))
+        #expect(Self.characteristic(plan, .climateSwing)?.value == .uint8(0))
+        #expect(Self.characteristic(plan, .climateDryName)?.value == .string("除湿"))
+        #expect(Self.characteristic(plan, .climateDrySwitch)?.value == .bool(false))
+        #expect(Self.characteristic(plan, .climateFanOnlySwitch) == nil)
 
         let off = HomeKitAccessoryMapper.values(for: Self.climate(isOn: false))
-        #expect(off[.thermostatTargetState] == .uint8(0))
-        #expect(off[.thermostatCurrentState] == .uint8(0))
+        #expect(off[.climateActive] == .uint8(0))
+        #expect(off[.climateCurrentState] == .uint8(0))
 
-        let heater = Self.climate(mode: "heat", modes: ["heat"])
+        // Dry runs as "auto" on the heater cooler, with its own switch on.
+        let drying = HomeKitAccessoryMapper.values(for: Self.climate(mode: "dry", fanMode: "Auto", swing: "vertical"))
+        #expect(drying[.climateActive] == .uint8(1))
+        #expect(drying[.climateTargetState] == .uint8(0))
+        #expect(drying[.climateCurrentState] == .uint8(1))
+        #expect(drying[.climateDrySwitch] == .bool(true))
+        #expect(drying[.climateFanSpeed] == .float(0))
+        #expect(drying[.climateSwing] == .uint8(1))
+
+        let heater = Self.climate(mode: "heat", modes: ["heat"], fanMode: nil, fanModes: [], swing: nil, swingModes: [])
         let heaterPlan = try #require(HomeKitAccessoryMapper.plan(for: heater, name: "电暖器"))
-        #expect(Self.characteristic(heaterPlan, .thermostatTargetState)?.validValues == [0, 1])
+        #expect(Self.characteristic(heaterPlan, .climateTargetState)?.validValues == [1])
+        #expect(Self.characteristic(heaterPlan, .climateCoolingThreshold) == nil)
+        #expect(Self.characteristic(heaterPlan, .climateFanSpeed) == nil)
+        #expect(Self.characteristic(heaterPlan, .climateSwing) == nil)
+        #expect(heaterPlan.services.count == 1)
+    }
+
+    /// Apple Home refuses the whole bridge when one value is off its `min + n × step` grid or above the last grid
+    /// point under max (HAP-NodeJS #1077).
+    @Test("Every value sits on its characteristic's step grid, within range")
+    func valuesOnStepGrid() throws {
+        let devices: [SmartDevice] = [
+            Self.light(), Self.light(isOn: false, brightness: 1, kelvin: 6500),
+            Self.climate(), Self.climate(fanMode: "Medium"), Self.climate(fanMode: "High"), Self.climate(isOn: false),
+            Self.climate(fanMode: "Level2", fanModes: ["Level1", "Level2", "Level3", "Level4", "Level5", "Level6", "Level7"]),
+            SmartDevice(
+                id: "ac_odd", name: "空调", roomId: "bed", roomName: "主卧", model: "m", isOnline: true,
+                kind: .climate(ClimateSpec(entityId: "climate.odd", isOn: true, hvacMode: "cool", availableModes: ["cool", "off"],
+                                           targetTemperature: 26.3, currentTemperature: 27.55, minTemp: 17, maxTemp: 30.2, step: 0.5))
+            ),
+            SmartDevice(
+                id: "th", name: "温湿度计", roomId: "bed", roomName: "主卧", model: "m", isOnline: true,
+                kind: .sensor(SensorSpec(temperature: 25.83, humidity: 58.6, battery: 9))
+            ),
+        ]
+        for device in devices {
+            let plan = try #require(HomeKitAccessoryMapper.plan(for: device, name: device.name))
+            for characteristic in plan.services.flatMap(\.characteristics) {
+                guard let step = characteristic.minStep, let value = characteristic.value.flatMap(HomeKitAccessoryMapper.number(from:)) else { continue }
+                let base = characteristic.minValue ?? 0
+                let steps = (value - base) / step
+                let label = "\(device.id) \(characteristic.type.rawValue) = \(value) [\(base), \(characteristic.maxValue ?? .infinity)] step \(step)"
+                #expect(abs(steps - steps.rounded()) < 1e-6, "\(label) is off the grid")
+                if let max = characteristic.maxValue {
+                    let lastOnGrid = base + ((max - base) / step + 1e-9).rounded(.down) * step
+                    #expect(value <= lastOnGrid + 1e-6, "\(label) is past the last grid point \(lastOnGrid)")
+                }
+                #expect(value >= base - 1e-6, "\(label) is below min")
+            }
+        }
+    }
+
+    @Test("The dry and fan-only switches are two services, each found by its order")
+    func twoSwitches() throws {
+        let ac = Self.climate(modes: ["off", "auto", "cool", "dry", "heat", "fan_only"])
+        let plan = try #require(HomeKitAccessoryMapper.plan(for: ac, name: "空调"))
+        #expect(plan.serviceKeys == ["BC", "switch.dry", "switch.fan_only"])
+        #expect(Self.characteristic(plan, .climateFanOnlyName)?.value == .string("送风"))
+
+        // What the bridge stores: its own information service first, instance IDs in order.
+        var iid: UInt64 = 1
+        func numbered(_ service: HAPService) -> HAPService {
+            var service = service
+            iid += 1
+            service.iid = iid
+            service.characteristics = service.characteristics.map { characteristic in
+                iid += 1
+                return HAPCharacteristic(iid: iid, type: characteristic.type, value: characteristic.value,
+                                         permissions: characteristic.permissions, format: characteristic.format)
+            }
+            return service
+        }
+        let info = numbered(HAPService(type: HAPServiceType(rawValue: "3E"), characteristics: []))
+        let stored = [info] + plan.services.map(numbered)
+        let iids = HomeKitBridgeController.iids(in: stored, plan: plan)
+        let drySwitch = try #require(stored[2].characteristics.first(where: { $0.type == .on }))
+        let fanSwitch = try #require(stored[3].characteristics.first(where: { $0.type == .on }))
+        #expect(iids[.climateDrySwitch] == drySwitch.iid)
+        #expect(iids[.climateFanOnlySwitch] == fanSwitch.iid)
+        #expect(iids[.climateActive] != nil)
+        #expect(iids[.lightOn] == nil)
     }
 
     @Test("Sensors expose temperature, humidity and battery; a sensor with neither reading is skipped")
@@ -162,8 +260,12 @@ struct HomeKitAccessoryMapperTests {
         #expect(HomeKitAccessoryMapper.write(.lightOn, value: .bool(true), to: light) == nil)
         #expect(HomeKitAccessoryMapper.write(.lightBrightness, value: .uint8(60), to: light) == nil)
         #expect(HomeKitAccessoryMapper.write(.lightColorTemperature, value: .uint8(250), to: light) == nil)
-        #expect(HomeKitAccessoryMapper.write(.thermostatTargetTemperature, value: .float(24), to: Self.climate()) == nil)
-        #expect(HomeKitAccessoryMapper.write(.thermostatTargetState, value: .uint8(2), to: Self.climate()) == nil)
+        #expect(HomeKitAccessoryMapper.write(.climateCoolingThreshold, value: .float(24), to: Self.climate()) == nil)
+        #expect(HomeKitAccessoryMapper.write(.climateTargetState, value: .uint8(2), to: Self.climate()) == nil)
+        #expect(HomeKitAccessoryMapper.write(.climateActive, value: .uint8(1), to: Self.climate()) == nil)
+        #expect(HomeKitAccessoryMapper.write(.climateFanSpeed, value: .float(30), to: Self.climate()) == nil)
+        #expect(HomeKitAccessoryMapper.write(.climateSwing, value: .uint8(0), to: Self.climate()) == nil)
+        #expect(HomeKitAccessoryMapper.write(.climateDrySwitch, value: .bool(false), to: Self.climate()) == nil)
         // Read-only roles never map to a write.
         #expect(HomeKitAccessoryMapper.write(.outletInUse, value: .bool(true), to: light) == nil)
     }
@@ -181,12 +283,27 @@ struct HomeKitAccessoryMapperTests {
         #expect(HomeKitAccessoryMapper.write(.lightColorTemperature, value: .uint16(200), to: Self.light(isOn: false)) == nil)
 
         let ac = Self.climate()
-        #expect(HomeKitAccessoryMapper.write(.thermostatTargetState, value: .uint8(0), to: ac) == .climateMode("off"))
-        #expect(HomeKitAccessoryMapper.write(.thermostatTargetState, value: .uint8(1), to: ac) == .climateMode("heat"))
-        #expect(HomeKitAccessoryMapper.write(.thermostatTargetState, value: .uint8(3), to: ac) == .climateMode("auto"))
-        #expect(HomeKitAccessoryMapper.write(.thermostatTargetState, value: .uint8(2), to: Self.climate(isOn: false)) == .climateMode("cool"))
-        #expect(HomeKitAccessoryMapper.write(.thermostatTargetTemperature, value: .float(26.2), to: ac) == .targetTemperature(26))
-        #expect(HomeKitAccessoryMapper.write(.thermostatTargetTemperature, value: .float(35), to: ac) == .targetTemperature(30))
+        #expect(HomeKitAccessoryMapper.write(.climateActive, value: .uint8(0), to: ac) == .power(false))
+        #expect(HomeKitAccessoryMapper.write(.climateActive, value: .uint8(1), to: Self.climate(isOn: false)) == .power(true))
+        #expect(HomeKitAccessoryMapper.write(.climateTargetState, value: .uint8(0), to: ac) == .climateMode("auto"))
+        #expect(HomeKitAccessoryMapper.write(.climateTargetState, value: .uint8(1), to: ac) == .climateMode("heat"))
+        #expect(HomeKitAccessoryMapper.write(.climateTargetState, value: .uint8(2), to: Self.climate(isOn: false)) == .climateMode("cool"))
+        // Auto while drying is a real change even though both show as auto.
+        #expect(HomeKitAccessoryMapper.write(.climateTargetState, value: .uint8(0), to: Self.climate(mode: "dry")) == .climateMode("auto"))
+        #expect(HomeKitAccessoryMapper.write(.climateCoolingThreshold, value: .float(26.2), to: ac) == .targetTemperature(26))
+        #expect(HomeKitAccessoryMapper.write(.climateHeatingThreshold, value: .float(35), to: ac) == .targetTemperature(30))
+
+        #expect(HomeKitAccessoryMapper.write(.climateFanSpeed, value: .float(100), to: ac) == .climateFanMode("High"))
+        #expect(HomeKitAccessoryMapper.write(.climateFanSpeed, value: .float(60), to: ac) == .climateFanMode("Medium"))
+        #expect(HomeKitAccessoryMapper.write(.climateFanSpeed, value: .float(0), to: ac) == .climateFanMode("Auto"))
+        #expect(HomeKitAccessoryMapper.write(.climateSwing, value: .uint8(1), to: ac) == .climateSwing("vertical"))
+        #expect(HomeKitAccessoryMapper.write(.climateSwing, value: .uint8(0), to: Self.climate(swing: "vertical")) == .climateSwing("off"))
+
+        #expect(HomeKitAccessoryMapper.write(.climateDrySwitch, value: .bool(true), to: ac) == .climateMode("dry"))
+        #expect(HomeKitAccessoryMapper.write(.climateDrySwitch, value: .bool(true), to: Self.climate(isOn: false)) == .climateMode("dry"))
+        // Turning off the mode it runs in turns the AC off; turning off another mode does nothing.
+        #expect(HomeKitAccessoryMapper.write(.climateDrySwitch, value: .bool(false), to: Self.climate(mode: "dry")) == .power(false))
+        #expect(HomeKitAccessoryMapper.write(.climateFanOnlySwitch, value: .bool(false), to: Self.climate(mode: "dry")) == nil)
     }
 
     @Test("Duplicate names across rooms get the room as a prefix")
@@ -247,6 +364,12 @@ struct HomeKitWriteRoutingTests {
         HomeKitBridgeController.apply(.targetTemperature(26.5), to: refreshedAC, in: store)
         commands = try await waitForCommands(mock, count: 3)
         #expect(commands.contains(.setClimateTemperature(entityId: "climate.living", temperature: 26.5)))
+
+        HomeKitBridgeController.apply(.climateFanMode("High"), to: refreshedAC, in: store)
+        HomeKitBridgeController.apply(.climateSwing("vertical"), to: refreshedAC, in: store)
+        commands = try await waitForCommands(mock, count: 5)
+        #expect(commands.contains(.setClimateFanMode(entityId: "climate.living", fanMode: "High")))
+        #expect(commands.contains(.setClimateSwingMode(entityId: "climate.living", swingMode: "vertical")))
     }
 
     @Test("Power writes that match the current state send nothing")
@@ -343,5 +466,54 @@ struct HomeKitBridgeControllerTests {
         }
         #expect(probe.saves == 0)
         #expect(controller.exposedDeviceCount == 0)
+    }
+}
+
+struct HAPFramingTests {
+    /// Right after pairing iOS subscribes to every characteristic in one request, which outgrows a 1024-byte HAP frame
+    /// on a bridge with a few accessories.
+    static func subscribeRequest(count: Int) -> Data {
+        let entries = (0..<count).map { #"{"aid":3,"iid":\#($0 + 9),"ev":true}"# }.joined(separator: ",")
+        let body = Data(#"{"characteristics":[\#(entries)]}"#.utf8)
+        var request = Data("PUT /characteristics HTTP/1.1\r\nContent-Type: application/hap+json\r\nContent-Length: \(body.count)\r\n\r\n".utf8)
+        request.append(body)
+        return request
+    }
+
+    @Test("A request larger than one frame is complete only once every piece has arrived")
+    func requestSpanningFrames() throws {
+        let put = Self.subscribeRequest(count: 40)
+        #expect(put.count > 1024)
+        #expect(HTTPProtocol.requestLength(in: put.prefix(1024)) == nil)
+        #expect(HTTPProtocol.requestLength(in: put) == put.count)
+
+        let get = Data("GET /accessories HTTP/1.1\r\n\r\n".utf8)
+        let both = put + get
+        #expect(HTTPProtocol.requestLength(in: both) == put.count)
+        #expect(HTTPProtocol.requestLength(in: both[put.count...]) == get.count)
+        let parsed = try #require(HTTPProtocol.parseRequest(from: Data(both.prefix(put.count))))
+        #expect(parsed.method == "PUT")
+        #expect(parsed.body.count == put.count - (put.range(of: Data("\r\n\r\n".utf8))?.upperBound ?? 0))
+    }
+
+    @Test("A response larger than one frame goes out as frames of at most 1024 plaintext bytes")
+    func responseSpanningFrames() async throws {
+        let key = SymmetricKey(size: .bits256)
+        let accessory = HAPSession()
+        await accessory.establishSession(readKey: SymmetricKey(size: .bits256), writeKey: key)
+        let controller = HAPSession()
+        await controller.establishSession(readKey: key, writeKey: SymmetricKey(size: .bits256))
+
+        let response = Data((0..<3300).map { UInt8($0 % 251) })
+        var wire = try await accessory.encrypt(response)
+        var lengths: [Int] = []
+        var received = Data()
+        while !wire.isEmpty {
+            lengths.append(Int(wire[wire.startIndex]) | Int(wire[wire.startIndex + 1]) << 8)
+            let piece = try await controller.decryptFrame(from: &wire)
+            received.append(try #require(piece))
+        }
+        #expect(lengths == [1024, 1024, 1024, 228])
+        #expect(received == response)
     }
 }

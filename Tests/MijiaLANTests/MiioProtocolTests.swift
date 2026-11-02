@@ -129,7 +129,7 @@ struct MiioClientTests {
         network.add(host: "192.168.1.54", token: token, deviceID: 81)
         let client = MiioClient(host: "192.168.1.54", token: MiioToken.parse(token)!, transport: network)
         await #expect(throws: MiioError.deviceError(code: -32601, message: "Method not found.")) { try await client.call("nope") }
-        await #expect(throws: MiioError.deviceError(code: -4004, message: "设备拒绝了这个指令")) {
+        await #expect(throws: MiioError.deviceError(code: -4004, message: "参数错误（-4004）")) {
             try await client.setProperties([MiotPropWrite(did: "81", siid: 9, piid: 9, value: .number(1))])
         }
     }
