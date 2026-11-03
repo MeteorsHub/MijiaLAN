@@ -269,6 +269,7 @@ struct SettingsDeviceManagement: View {
 struct SettingsImportFlow: View {
     let model: AppModel
     let navigate: (ControlCenterRoute) -> Void
+    @Environment(\.panelPresented) private var panelPresented
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -288,7 +289,7 @@ struct SettingsImportFlow: View {
                             Image(nsImage: image).interpolation(.none).resizable().frame(width: 168, height: 168)
                                 .padding(8).background(.white, in: .rect(cornerRadius: 8))
                         }
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                        TimelineView(PanelTimelineSchedule(interval: 1, isActive: panelPresented)) { context in
                             Text(L10n.tr("二维码剩余 \(max(0, Int(expiresAt.timeIntervalSince(context.date)))) 秒", "QR code expires in \(max(0, Int(expiresAt.timeIntervalSince(context.date)))) s"))
                                 .font(.caption).monospacedDigit().foregroundStyle(.secondary)
                         }
@@ -329,15 +330,11 @@ struct SettingsImportFlow: View {
 
 struct SettingsManualDevice: View {
     let model: AppModel
-    @State private var host = ""
-    @State private var token = ""
-    @State private var name = ""
-    @State private var submitted = false
-    @State private var confirmation: String?
+    @Bindable var draft: PanelManualDraft
 
     private var canAdd: Bool {
-        !model.isAddingManually && !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            MiioToken.isValid(token.trimmingCharacters(in: .whitespacesAndNewlines))
+        !model.isAddingManually && !draft.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            MiioToken.isValid(draft.token.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     var body: some View {
@@ -346,9 +343,9 @@ struct SettingsManualDevice: View {
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             SettingsGroup {
                 VStack(alignment: .leading, spacing: 12) {
-                    field(L10n.tr("局域网 IP", "Local IP Address")) { TextField(L10n.tr("例如 192.168.1.40", "e.g. 192.168.1.40"), text: $host) }
-                    field(L10n.tr("设备 token", "Device Token")) { SecureField(L10n.tr("32 位十六进制 token", "32-character hexadecimal token"), text: $token) }
-                    field(L10n.tr("设备名称（选填）", "Device Name (Optional)")) { TextField(L10n.tr("默认使用设备型号", "Defaults to the device model"), text: $name) }
+                    field(L10n.tr("局域网 IP", "Local IP Address")) { TextField(L10n.tr("例如 192.168.1.40", "e.g. 192.168.1.40"), text: $draft.host) }
+                    field(L10n.tr("设备 token", "Device Token")) { SecureField(L10n.tr("32 位十六进制 token", "32-character hexadecimal token"), text: $draft.token) }
+                    field(L10n.tr("设备名称（选填）", "Device Name (Optional)")) { TextField(L10n.tr("默认使用设备型号", "Defaults to the device model"), text: $draft.name) }
                     Button {
                         addDevice()
                     } label: {
@@ -359,11 +356,11 @@ struct SettingsManualDevice: View {
                 .textFieldStyle(.roundedBorder).controlSize(.regular).padding(14)
                 .onSubmit { if canAdd { addDevice() } }
             }
-            if submitted, let error = model.manualAddError {
+            if draft.submitted, let error = model.manualAddError {
                 Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let confirmation {
+            if let confirmation = draft.confirmation {
                 Label(confirmation, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.green)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -371,8 +368,11 @@ struct SettingsManualDevice: View {
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 16)
+        .onAppear {
+            if draft.submitted, !model.isAddingManually, model.manualAddError == nil { draft.confirmation = model.lastImportSummary }
+        }
         .onChange(of: model.isAddingManually) { _, working in
-            if submitted, !working, model.manualAddError == nil { confirmation = model.lastImportSummary }
+            if draft.submitted, !working, model.manualAddError == nil { draft.confirmation = model.lastImportSummary }
         }
     }
 
@@ -384,10 +384,10 @@ struct SettingsManualDevice: View {
     }
 
     private func addDevice() {
-        submitted = true
-        confirmation = nil
-        model.addManually(host: host.trimmingCharacters(in: .whitespacesAndNewlines),
-                          token: token.trimmingCharacters(in: .whitespacesAndNewlines), name: name)
+        draft.submitted = true
+        draft.confirmation = nil
+        model.addManually(host: draft.host.trimmingCharacters(in: .whitespacesAndNewlines),
+                          token: draft.token.trimmingCharacters(in: .whitespacesAndNewlines), name: draft.name)
     }
 }
 

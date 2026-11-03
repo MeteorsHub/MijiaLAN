@@ -70,11 +70,13 @@ public actor MiioClient {
         var helloAnswered = false
         let attempts = method == "action" ? 0 : max(0, retryCount ?? retries)
         for _ in 0...attempts {
+            try Task.checkCancellation()
             do {
                 if needsHandshake {
                     try await handshake(timeout: timeout)
                     helloAnswered = true
                 }
+                try Task.checkCancellation()
                 return try await send(method, params: params, timeout: timeout ?? self.timeout)
             } catch MiioError.timeout {
                 lastError = MiioError.timeout
@@ -175,6 +177,7 @@ extension MiioClient {
         var values: [MiotPropKey: DeviceReading] = [:]
         var start = 0
         while start < props.count {
+            try Task.checkCancellation()
             let chunk = props[start..<min(start + Self.propertiesPerRequest, props.count)]
             start += Self.propertiesPerRequest
             let params = JSONValue.array(chunk.map {

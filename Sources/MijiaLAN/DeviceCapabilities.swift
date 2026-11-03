@@ -180,8 +180,12 @@ public struct DeviceReading: Equatable, Sendable {
 
 public struct DeviceSnapshot: Equatable, Sendable, Identifiable {
     public var device: LocalDevice
-    public var schema: DeviceSchema
-    public var capabilities: [DeviceCapability]
+    public var schema: DeviceSchema { didSet { coreSpec = schema.coreSpec } }
+    public var capabilities: [DeviceCapability] {
+        didSet { capabilitiesByID = Dictionary(capabilities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) }
+    }
+    public private(set) var coreSpec: MiotDeviceSpec?
+    public private(set) var capabilitiesByID: [String: DeviceCapability]
     public var readings: [String: DeviceReading] = [:]
     public var prepared: [String: JSONValue] = [:]
     public var health = LANDeviceHealth()
@@ -190,6 +194,8 @@ public struct DeviceSnapshot: Equatable, Sendable, Identifiable {
     public init(device: LocalDevice, schema: DeviceSchema, capabilities: [DeviceCapability],
                 readings: [String: DeviceReading] = [:], prepared: [String: JSONValue] = [:], health: LANDeviceHealth = LANDeviceHealth()) {
         self.device = device; self.schema = schema; self.capabilities = capabilities
+        self.coreSpec = schema.coreSpec
+        self.capabilitiesByID = Dictionary(capabilities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         self.readings = readings; self.prepared = prepared; self.health = health
     }
     public var id: String { device.did }
@@ -209,6 +215,16 @@ public struct DeviceSnapshot: Equatable, Sendable, Identifiable {
         capability(service, name).flatMap { value($0.id) }
     }
     public func controlValue(_ c: DeviceCapability) -> JSONValue? { c.prepared ? prepared[c.id] : value(c.id) }
+
+    /// Contact/read timestamps remain accurate without making a no-change poll a semantic update.
+    func hasSameValues(as other: DeviceSnapshot?) -> Bool {
+        guard let other, health.state == other.health.state, health.lastError == other.health.lastError,
+              prepared == other.prepared, readings.count == other.readings.count else { return false }
+        return readings.allSatisfy { id, reading in
+            guard let previous = other.readings[id] else { return false }
+            return reading.value == previous.value && reading.code == previous.code && reading.error == previous.error
+        }
+    }
 }
 
 public struct DeviceCommandReceipt: Equatable, Sendable {

@@ -200,8 +200,8 @@ public struct CharacteristicProtocol: Sendable {
     private func handleGetAccessories() async throws -> HTTPResponse {
         let accessories = await bridge.accessoryDatabase()
         let json = await encodeAccessoryDatabase(accessories)
-        if let str = String(data: json, encoding: .utf8) {
-            logger.debug("GET /accessories (\(accessories.count) accessories)")
+        logger.debug("GET /accessories (\(accessories.count) accessories)")
+        if logger.logLevel <= .trace, let str = String(data: json, encoding: .utf8) {
             logger.trace("GET /accessories body:\n\(str)")
         }
         return HTTPProtocol.okResponse(body: json, contentType: HTTPProtocol.hapJSON)

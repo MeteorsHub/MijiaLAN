@@ -28,6 +28,8 @@ private struct CapabilityControlRow: View {
     @State private var error: String?
     @State private var working = false
 
+    @Environment(\.panelSession) private var session
+
     private var value: JSONValue? { snapshot.controlValue(capability) }
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -60,7 +62,8 @@ private struct CapabilityControlRow: View {
             }
             .labelsHidden().frame(maxWidth: 180)
         case .number:
-            CapabilityNumberInput(capability: capability, value: value, working: working) {
+            CapabilityNumberInput(capability: capability, value: value, working: working,
+                                  persistedDraft: session?.numberDraft(deviceID: snapshot.id, capabilityID: capability.id)) {
                 send(.set(capability.id, .number($0)))
             }
         case .button:
@@ -87,23 +90,27 @@ struct CapabilityNumberInput: View {
     let value: JSONValue?
     var working = false
     let apply: (Double) -> Void
-    @State private var draft = ""
-    @State private var isEditingDraft = false
-    @State private var validationError: String?
+    @State private var edit: PanelNumberDraft
     @FocusState private var isFocused: Bool
+
+    init(capability: DeviceCapability, value: JSONValue?, working: Bool = false,
+         persistedDraft: PanelNumberDraft? = nil, apply: @escaping (Double) -> Void) {
+        self.capability = capability; self.value = value; self.working = working; self.apply = apply
+        _edit = State(initialValue: persistedDraft ?? PanelNumberDraft())
+    }
 
     private var currentText: String { value?.doubleValue.map(numberText) ?? "" }
     private var text: Binding<String> {
-        Binding(get: { draft }, set: {
-            draft = $0
-            isEditingDraft = Double($0.trimmingCharacters(in: .whitespaces)) != value?.doubleValue
+        Binding(get: { edit.text }, set: {
+            edit.text = $0
+            edit.isEditing = Double($0.trimmingCharacters(in: .whitespaces)) != value?.doubleValue
                 || (!$0.isEmpty && Double($0.trimmingCharacters(in: .whitespaces)) == nil)
-            validationError = nil
+            edit.validationError = nil
         })
     }
     private var hasChanges: Bool {
-        guard !draft.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
-        guard let number = Double(draft.trimmingCharacters(in: .whitespaces)) else { return true }
+        guard !edit.text.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        guard let number = Double(edit.text.trimmingCharacters(in: .whitespaces)) else { return true }
         return number != value?.doubleValue
     }
     private var rangeHint: String {
@@ -129,32 +136,32 @@ struct CapabilityNumberInput: View {
                     .help(hasChanges ? L10n.tr("应用新的\(capability.displayTitle)", "Apply the new \(capability.displayTitle)") : L10n.tr("修改数值后可应用", "Change the value to apply it."))
             }
             .disabled(working)
-            if let validationError {
+            if let validationError = edit.validationError {
                 Text(validationError).foregroundStyle(.orange)
                     .frame(maxWidth: 180, alignment: .trailing).fixedSize(horizontal: false, vertical: true)
             }
         }
         .controlSize(.small)
         .onChange(of: value, initial: true) {
-            if !isEditingDraft || Double(draft) == value?.doubleValue {
-                draft = currentText
-                isEditingDraft = false
+            if !edit.isEditing || Double(edit.text) == value?.doubleValue {
+                edit.text = currentText
+                edit.isEditing = false
             }
         }
         .onChange(of: working) {
-            if !working { draft = currentText; isEditingDraft = false }
+            if !working { edit.text = currentText; edit.isEditing = false }
         }
     }
 
     private func submit() {
         guard !working, hasChanges else { return }
-        guard let number = Double(draft.trimmingCharacters(in: .whitespaces)), number.isFinite else {
-            validationError = L10n.tr("请输入有效数字", "Enter a valid number."); return
+        guard let number = Double(edit.text.trimmingCharacters(in: .whitespaces)), number.isFinite else {
+            edit.validationError = L10n.tr("请输入有效数字", "Enter a valid number."); return
         }
         do { _ = try capability.validated(.number(number)) }
-        catch { validationError = rangeHint; return }
-        validationError = nil
-        isEditingDraft = false
+        catch { edit.validationError = rangeHint; return }
+        edit.validationError = nil
+        edit.isEditing = false
         isFocused = false
         apply(number)
     }

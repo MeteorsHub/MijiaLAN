@@ -275,6 +275,7 @@ final class AppModel {
                 logger.info("Device IPs changed; saving")
                 apply(next)
             }
+            await api.retryDiscoveredDevices(Set(found.map(\.did)).intersection(known))
         } catch {
             lastRediscoveryNote = Self.describe(error)
         }
@@ -291,7 +292,7 @@ final class AppModel {
         vaultUnavailable = false
         config = next
         configBox.value = next
-        devices.reconcileConfiguration()
+        devices.reconcileConfiguration(force: true)
         store.refreshNow()
         attachBridgeIfNeeded()
     }

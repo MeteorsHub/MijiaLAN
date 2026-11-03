@@ -24,12 +24,33 @@ public enum CapabilityCommand: Equatable, Sendable {
 /// One owner for actual readings, pending cooking parameters and awaited commands from both interfaces.
 @Observable @MainActor
 public final class DeviceController {
-    public private(set) var snapshots: [String: DeviceSnapshot] = [:]
+    /// Storage always carries the freshest timestamps. Observation is committed once per batch below.
+    @ObservationIgnored private var snapshotStorage: [String: DeviceSnapshot] = [:]
+    public private(set) var snapshots: [String: DeviceSnapshot] {
+        get { access(keyPath: \.snapshots); return snapshotStorage }
+        set { snapshotStorage = newValue }
+    }
+    public private(set) var structureRevision: UInt64 = 0
+    public private(set) var valuesRevision: UInt64 = 0
+    public private(set) var retryStates: [String: ProbeRetryState] = [:]
     @ObservationIgnored private let api: LANMiotAPI
     @ObservationIgnored private let config: @Sendable () -> LocalHomeConfig
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var context = PollingContext()
-    @ObservationIgnored private var lastProbe = Date.distantPast
+    @ObservationIgnored private var healthTask: Task<Void, Never>?
+    @ObservationIgnored private var startedProbing = false
+    @ObservationIgnored private var lastConfiguration: LocalHomeConfig?
+    @ObservationIgnored private var configurationLanguage: AppLanguage?
+    @ObservationIgnored private var structureDirty = false
+    @ObservationIgnored private var publishedSnapshots: [String: DeviceSnapshot] = [:]
+    @ObservationIgnored private var cachedHome = SynthesizedHome()
+    @ObservationIgnored private var readTasks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
+    private struct SchemaKey: Hashable {
+        var model: String
+        var specification: String?
+        var language: AppLanguage
+    }
+    @ObservationIgnored private var schemaTemplates: [SchemaKey: DeviceSnapshot] = [:]
     @ObservationIgnored private var lastSlow: [String: Date] = [:]
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var queues: [String: Task<Void, Error>] = [:]
@@ -47,12 +68,43 @@ public final class DeviceController {
         reconcileConfiguration()
     }
 
-    public func reconcileConfiguration() {
-        let devices = config().devices
-        snapshots = snapshots.filter { key, _ in devices.contains { $0.did == key } }
+    deinit {
+        pollTask?.cancel()
+        healthTask?.cancel()
+        for read in readTasks.values { read.task.cancel() }
+    }
+
+    public func reconcileConfiguration(force: Bool = false) {
+        let next = config()
+        let language = L10n.currentLanguage
+        guard force || next != lastConfiguration || language != configurationLanguage else { return }
+        let languageChanged = language != configurationLanguage
+        lastConfiguration = next; configurationLanguage = language
+        let devices = next.devices
+        let known = Set(devices.map(\.did))
+        for (did, read) in readTasks where !devices.contains(where: { device in
+            snapshotStorage[did].map { ProbeScheduler.sameEndpoint($0.device, device) } == true
+        }) {
+            read.task.cancel(); readTasks[did] = nil
+        }
+        let schemaKeys = Set(devices.map { SchemaKey(model: $0.model, specification: $0.specType, language: language) })
+        schemaTemplates = force ? [:] : schemaTemplates.filter { schemaKeys.contains($0.key) }
+        snapshots = snapshots.filter { known.contains($0.key) }
+        lastSlow = lastSlow.filter { known.contains($0.key) }
         for device in devices {
-            if var existing = snapshots[device.did], existing.device.model == device.model {
+            if !force, !languageChanged, var existing = snapshots[device.did],
+               existing.device.model == device.model, existing.device.specType == device.specType {
+                if !ProbeScheduler.sameEndpoint(existing.device, device) {
+                    existing.health = LANDeviceHealth(); existing.readings = [:]; existing.prepared = [:]
+                }
                 existing.device = device; snapshots[device.did] = existing
+                continue
+            }
+            let key = SchemaKey(model: device.model, specification: device.specType, language: language)
+            if var template = schemaTemplates[key] {
+                template.device = device
+                preserveReadings(in: &template)
+                snapshots[device.did] = template
                 continue
             }
             // Bundled schemas pin the reviewed version; newly imported models can use the full raw cache.
@@ -61,15 +113,33 @@ public final class DeviceController {
                     .appendingPathComponent(type.replacingOccurrences(of: ":", with: "_") + ".json")
                 return (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(DeviceSchema.self, from: $0) }
             }
-            guard let schema = DeviceSchema.bundled(model: device.model) ?? cached else { continue }
-            snapshots[device.did] = DeviceSnapshot(device: device, schema: schema,
+            guard let schema = DeviceSchema.bundled(model: device.model) ?? cached else {
+                snapshots[device.did] = nil
+                continue
+            }
+            var template = DeviceSnapshot(device: device, schema: schema,
                 capabilities: DeviceCapabilityCatalog.capabilities(schema: schema, model: device.model))
+            template.device = LocalDevice(did: "", name: "", model: device.model, host: "", token: "", specType: device.specType)
+            schemaTemplates[key] = template
+            template.device = device
+            preserveReadings(in: &template)
+            snapshots[device.did] = template
         }
+        structureDirty = true
+        publish()
+    }
+
+    private func preserveReadings(in next: inout DeviceSnapshot) {
+        guard let old = snapshotStorage[next.id], ProbeScheduler.sameEndpoint(old.device, next.device),
+              old.schema.type == next.schema.type else { return }
+        next.readings = old.readings.filter { next.capabilitiesByID[$0.key] != nil }
+        next.prepared = old.prepared.filter { next.capabilitiesByID[$0.key] != nil }
+        next.health = old.health; next.lastCommand = old.lastCommand; next.commandReceipt = old.commandReceipt
     }
 
     public func events() -> AsyncStream<HomeProviderEvent> {
         let id = UUID()
-        return AsyncStream { continuation in
+        return AsyncStream(bufferingPolicy: .bufferingNewest(2)) { continuation in
             continuations[id] = continuation
             continuation.yield(.statusChanged(.connected))
             continuation.yield(.snapshotUpdated(synthesizedHome()))
@@ -78,23 +148,35 @@ public final class DeviceController {
                 pollTask = Task { [weak self] in
                     while !Task.isCancelled {
                         await self?.refreshNow()
-                        let seconds = self?.context.panelVisible == true ? 3 : 5
+                        guard let seconds = self.map({ $0.context.panelVisible ? 3 : 5 }) else { return }
                         try? await Task.sleep(for: .seconds(seconds))
                     }
                 }
             }
         }
     }
-    public func setPollingContext(_ context: PollingContext) { self.context = context }
-    public func shutdown() { pollTask?.cancel(); pollTask = nil }
+    public func setPollingContext(_ context: PollingContext) {
+        let becomingVisible = context.panelVisible && !self.context.panelVisible
+        self.context = context
+        if becomingVisible { withMutation(keyPath: \.snapshots) {} }
+    }
+    public func shutdown() {
+        pollTask?.cancel(); pollTask = nil
+        healthTask?.cancel(); healthTask = nil
+        for read in readTasks.values { read.task.cancel() }; readTasks = [:]
+        for c in continuations.values { c.finish() }; continuations = [:]
+        Task { await api.shutdown() }
+    }
 
     public func retry(did: String) async {
         guard snapshots[did] != nil else { return }
+        observeHealthIfNeeded()
         await api.retryDevice(did: did)
         let health = await api.currentHealth()
+        retryStates = await api.retryStates()
         snapshots[did]?.health = health[did] ?? LANDeviceHealth()
         if let snapshot = snapshots[did], snapshot.isOnline {
-            await refresh(did: did, capabilities: snapshot.capabilities.filter(\.readable))
+            await refresh(did: did, capabilities: snapshot.capabilities.filter(\.readable), joinExisting: true)
             lastSlow[did] = Date()
         }
         publish()
@@ -105,8 +187,11 @@ public final class DeviceController {
         refreshing = true
         defer { refreshing = false; publish() }
         reconcileConfiguration()
-        if Date().timeIntervalSince(lastProbe) >= 20 {
-            lastProbe = Date()
+        observeHealthIfNeeded()
+        await api.startProbing()
+        if !startedProbing {
+            startedProbing = true
+            // Online responses are consumed independently by observeHealthIfNeeded while startup finishes.
             _ = try? await api.deviceList()
         }
         let health = await api.currentHealth()
@@ -116,18 +201,58 @@ public final class DeviceController {
                 let slow = Date().timeIntervalSince(lastSlow[did] ?? .distantPast) >= 60
                 if slow { lastSlow[did] = Date() }
                 let caps = snapshot.capabilities.filter { $0.readable && (slow || !$0.lowFrequency) }
-                group.addTask { await self.refresh(did: did, capabilities: caps) }
+                group.addTask { await self.refresh(did: did, capabilities: caps, joinExisting: true) }
             }
         }
     }
 
-    private func refresh(did: String, capabilities: [DeviceCapability]) async {
+    private func observeHealthIfNeeded() {
+        guard healthTask == nil else { return }
+        let api = api
+        healthTask = Task { [weak self] in
+            for await update in await api.healthEvents() {
+                guard !Task.isCancelled, let self else { return }
+                var recovered: [String] = []
+                for did in self.snapshotStorage.keys {
+                    if update.health[did]?.state == .online && self.snapshotStorage[did]?.isOnline != true { recovered.append(did) }
+                    self.snapshotStorage[did]?.health = update.health[did] ?? LANDeviceHealth()
+                }
+                if self.retryStates != update.retries { self.retryStates = update.retries }
+                if !self.refreshing || !recovered.isEmpty { self.publish() }
+                // Never hold the health stream up behind a slow device's property request.
+                for did in recovered {
+                    Task { [weak self] in
+                        guard let self, let snapshot = self.snapshotStorage[did] else { return }
+                        await self.refresh(did: did, capabilities: snapshot.capabilities.filter(\.readable), joinExisting: true)
+                        self.lastSlow[did] = Date()
+                        self.publish()
+                    }
+                }
+            }
+        }
+    }
+
+    private func refresh(did: String, capabilities: [DeviceCapability], joinExisting: Bool = false) async {
+        if let prior = readTasks[did] {
+            await prior.task.value
+            if joinExisting { return }
+        }
+        guard !Task.isCancelled, let device = snapshotStorage[did]?.device else { return }
+        let id = UUID()
+        let task = Task { await self.readAndCommit(did: did, device: device, capabilities: capabilities) }
+        readTasks[did] = (id, task)
+        await task.value
+        if readTasks[did]?.id == id { readTasks[did] = nil }
+    }
+
+    private func readAndCommit(did: String, device: LocalDevice, capabilities: [DeviceCapability]) async {
+        guard !capabilities.isEmpty else { return }
         let readings = await api.readCapabilities(did: did, capabilities: capabilities)
         let health = await api.currentHealth()
-        guard var snapshot = snapshots[did] else { return }
+        guard !Task.isCancelled, var snapshot = snapshots[did], ProbeScheduler.sameEndpoint(snapshot.device, device) else { return }
         for (key, var reading) in readings {
             if let value = reading.value, reading.isAvailable,
-               let cap = capabilities.first(where: { $0.id == key }), cap.format != "string",
+               let cap = snapshot.capabilitiesByID[key], cap.format != "string",
                (try? cap.validated(value)) == nil {
                 reading.error = L10n.tr("设备返回的数据类型或取值不符合规格", "The returned value or data type does not match the device specification.")
                 reading.value = nil
@@ -211,7 +336,7 @@ public final class DeviceController {
         case .set(let key, _), .invoke(let key), .adjust(let key, _): id = key
         case .batch, .setLightBrightness: return
         }
-        guard let cap = snapshot.capabilities.first(where: { $0.id == id }),
+        guard let cap = snapshot.capabilitiesByID[id],
               ![.unsupported, .reading].contains(cap.control) else { throw DeviceControlError.unsupported(id) }
         switch command {
         case .batch, .setLightBrightness: return
@@ -341,13 +466,17 @@ public final class DeviceController {
     }
 
     public func synthesizedHome() -> SynthesizedHome {
+        cachedHome
+    }
+
+    private func buildHome() -> SynthesizedHome {
         let devices = config().devices
         let records = devices.map { MiDeviceRecord(did: $0.did, name: $0.name, model: $0.model, isOnline: snapshots[$0.did]?.isOnline == true, specType: $0.specType) }
         let rooms = Dictionary(grouping: devices, by: { $0.roomName ?? "" }).map { MiRoom(id: $0.key, name: $0.key, dids: $0.value.map(\.did)) }
         var specs: [String: MiotDeviceSpec] = [:]
         var values: [MiotPropKey: JSONValue] = [:]
         for s in snapshots.values {
-            specs[s.device.model] = s.schema.coreSpec
+            specs[s.device.model] = s.coreSpec
             for c in s.capabilities where c.kind == .property {
                 if let value = s.value(c.id) { values[MiotPropKey(did: s.id, siid: c.siid, piid: c.iid)] = value }
             }
@@ -363,8 +492,26 @@ public final class DeviceController {
         return home
     }
     private func publish() {
-        let home = synthesizedHome()
-        for c in continuations.values { c.yield(.snapshotUpdated(home)) }
+        let valuesChanged = snapshotStorage.count != publishedSnapshots.count || snapshotStorage.contains {
+            !$0.value.hasSameValues(as: publishedSnapshots[$0.key])
+        }
+        let uiChanged = snapshotStorage.contains {
+            $0.value.lastCommand != publishedSnapshots[$0.key]?.lastCommand ||
+            $0.value.commandReceipt != publishedSnapshots[$0.key]?.commandReceipt
+        }
+        let structureChanged = structureDirty
+        structureDirty = false
+        if structureChanged || valuesChanged {
+            // Build before publishing revisions, so HomeKit observes one coherent source of legacy and raw values.
+            cachedHome = buildHome()
+            for c in continuations.values { c.yield(.snapshotUpdated(cachedHome)) }
+            if structureChanged { structureRevision &+= 1 }
+            valuesRevision &+= 1
+        }
+        if structureChanged || valuesChanged || uiChanged || context.panelVisible {
+            withMutation(keyPath: \.snapshots) {}
+        }
+        publishedSnapshots = snapshotStorage
     }
 }
 
@@ -372,7 +519,7 @@ public struct CapabilityHomeProvider: HomeProvider {
     public let controller: DeviceController
     public init(controller: DeviceController) { self.controller = controller }
     public func events() -> AsyncStream<HomeProviderEvent> {
-        AsyncStream { continuation in
+        AsyncStream(bufferingPolicy: .bufferingNewest(2)) { continuation in
             let task = Task {
                 for await event in await controller.events() { continuation.yield(event) }
                 continuation.finish()

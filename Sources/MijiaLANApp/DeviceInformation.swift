@@ -6,7 +6,7 @@ struct DeviceInformation: View {
     let snapshot: DeviceSnapshot
 
     var body: some View {
-        DisclosureGroup(L10n.tr("设备信息", "Device Information")) {
+        PanelDisclosure(L10n.tr("设备信息", "Device Information"), deviceID: snapshot.id, section: "information") {
             VStack(alignment: .leading, spacing: 10) {
                 infoRow(L10n.tr("名称", "Name"), value: snapshot.device.name)
                 if let room = snapshot.device.roomName { infoRow(L10n.tr("房间", "Room"), value: room) }
@@ -21,7 +21,7 @@ struct DeviceInformation: View {
                 let limited = snapshot.capabilities.filter { $0.limitation != nil }
                 if !limited.isEmpty {
                     Divider()
-                    DisclosureGroup(L10n.tr("兼容性说明", "Compatibility")) {
+                    PanelDisclosure(L10n.tr("兼容性说明", "Compatibility"), deviceID: snapshot.id, section: "compatibility") {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(L10n.tr("以下为当前版本的功能支持情况，无需手动确认。", "Feature support in this version is listed below. No manual confirmation is needed."))
                                 .foregroundStyle(.secondary)

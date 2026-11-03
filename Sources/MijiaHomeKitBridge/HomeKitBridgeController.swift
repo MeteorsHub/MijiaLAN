@@ -80,6 +80,24 @@ public final class HomeKitBridgeController {
         var lastValues: [HomeKitRole: HAPCharacteristicValue]
     }
 
+    private struct CapabilityAccessory {
+        let aid: UInt64
+        let plan: CapabilityHomeKitPlan
+        let characteristics: [UInt64: HAPCharacteristic]
+    }
+    private struct PublishedValue: Equatable {
+        var value: HAPCharacteristicValue?
+        var status: Int
+    }
+    struct SyncStatistics {
+        var planBuilds = 0
+        var characteristicUpdates = 0
+        var readStatusUpdates = 0
+        var layoutWrites = 0
+        var identifierWrites = 0
+    }
+    @ObservationIgnored private(set) var syncStatistics = SyncStatistics()
+
     private let vault: HomeKitBridgeVault
     private let defaults: UserDefaults
     private let preferredPort: UInt16?
@@ -87,7 +105,14 @@ public final class HomeKitBridgeController {
 
     @ObservationIgnored private weak var store: HomeStore?
     @ObservationIgnored private var capabilities: DeviceController?
-    @ObservationIgnored private var capabilityPlans: [String: (aid: UInt64, plan: CapabilityHomeKitPlan)] = [:]
+    @ObservationIgnored private var capabilityPlans: [String: CapabilityAccessory] = [:]
+    @ObservationIgnored private var publishedCapabilityValues: [String: [UInt64: PublishedValue]] = [:]
+    @ObservationIgnored private var capabilityStructureRevision: UInt64?
+    @ObservationIgnored private var capabilityHiddenIDs: Set<String>?
+    @ObservationIgnored private var capabilityStructureDirty = true
+    @ObservationIgnored private var capabilityPushTask: Task<Void, Never>?
+    @ObservationIgnored private var savedLayout: Layout?
+    @ObservationIgnored private var savedCapabilityIIDs: [String: [String: UInt64]]?
     @ObservationIgnored private var capabilityIIDs: [String: [String: UInt64]] = [:]
     static let capabilityIIDsKey = "homekit_capability_iids_v1"
     @ObservationIgnored private var secrets: HomeKitBridgeSecrets?
@@ -115,6 +140,8 @@ public final class HomeKitBridgeController {
         self.capabilityIIDs = defaults.data(forKey: Self.capabilityIIDsKey)
             .flatMap { try? JSONDecoder().decode([String: [String: UInt64]].self, from: $0) } ?? [:]
         self.serviceNames = defaults.dictionary(forKey: Self.serviceNamesKey) as? [String: [String: String]] ?? [:]
+        self.savedLayout = defaults.data(forKey: Self.layoutKey) == nil ? nil : layout
+        self.savedCapabilityIIDs = defaults.data(forKey: Self.capabilityIIDsKey) == nil ? nil : capabilityIIDs
     }
 
     public func attach(to store: HomeStore, capabilities: DeviceController? = nil) {
@@ -206,6 +233,7 @@ public final class HomeKitBridgeController {
         await bridge.beginBatchUpdate()
         await reconcile(bridge: bridge, store: store)
         await bridge.endBatchUpdate()
+        await pushValues(bridge: bridge, store: store)
 
         // Apple Home re-reads the accessory list only when the configuration number moves.
         let signature = layoutSignature()
@@ -258,8 +286,14 @@ public final class HomeKitBridgeController {
         let running = service
         service = nil
         bridge = nil
+        await syncTask?.value
+        await capabilityPushTask?.value
         exposed = [:]
         capabilityPlans = [:]
+        publishedCapabilityValues = [:]
+        capabilityStructureRevision = nil
+        capabilityHiddenIDs = nil
+        capabilityStructureDirty = true
         forceRefresh = []
         exposedDeviceCount = 0
         await running?.stop()
@@ -314,8 +348,12 @@ public final class HomeKitBridgeController {
     private func observeStore() {
         guard let store else { return }
         withObservationTracking {
-            _ = store.devices
-            _ = capabilities?.snapshots
+            if let capabilities {
+                _ = capabilities.structureRevision
+                _ = capabilities.valuesRevision
+            } else {
+                _ = store.devices
+            }
             _ = store.hiddenDeviceIds
             _ = store.hasReceivedInitialSnapshot
             _ = store.connectionStatus
@@ -419,23 +457,36 @@ public final class HomeKitBridgeController {
     }
 
     private func reconcileCapabilities(bridge: HAPBridge, store: HomeStore, controller: DeviceController) async {
+        let revision = controller.structureRevision
+        let hiddenIDs = store.hiddenDeviceIds
+        guard capabilityStructureDirty || capabilityStructureRevision != revision || capabilityHiddenIDs != hiddenIDs else { return }
+        capabilityStructureDirty = false
+        capabilityStructureRevision = revision
+        capabilityHiddenIDs = hiddenIDs
+        let legacyDevices = Dictionary(controller.synthesizedHome().devices.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let visible = controller.snapshots.values.filter { !store.hiddenDeviceIds.contains($0.id) }.sorted { $0.id < $1.id }
         let ordered = visible.filter { layout.aids[$0.id] != nil } + visible.filter { layout.aids[$0.id] == nil }
         var retained: Set<String> = []
         for snapshot in ordered.prefix(HomeKitAccessoryMapper.maxBridgedAccessories) {
             let did = snapshot.id
             var ids = capabilityIIDs[did] ?? [:]
-            let plan = CapabilityHomeKitMapper.plan(snapshot: snapshot, legacyDevice: store.devices.first { $0.id == did },
+            let plan = CapabilityHomeKitMapper.plan(snapshot: snapshot, legacyDevice: legacyDevices[did],
                 names: serviceNames[did] ?? [:], identifiers: &ids)
+            syncStatistics.planBuilds += 1
             guard !plan.services.isEmpty else { continue }
             capabilityIIDs[did] = ids
             retained.insert(did)
-            if capabilityPlans[did]?.plan.signature == plan.signature { continue }
+            let characteristics = Dictionary(plan.services.flatMap(\.characteristics).map { ($0.iid, $0) }, uniquingKeysWith: { first, _ in first })
+            if let existing = capabilityPlans[did], existing.plan.signature == plan.signature {
+                capabilityPlans[did] = CapabilityAccessory(aid: existing.aid, plan: plan, characteristics: characteristics)
+                continue
+            }
             let aid = layout.aids[did] ?? nextAID()
             layout.aids[did] = aid
             if capabilityPlans[did] != nil { await bridge.removeAccessory(aid: aid) }
             await bridge.addAccessory(info: plan.info, services: plan.services, aid: aid, servicesHaveStableIIDs: true)
-            capabilityPlans[did] = (aid, plan)
+            capabilityPlans[did] = CapabilityAccessory(aid: aid, plan: plan, characteristics: characteristics)
+            publishedCapabilityValues[did] = nil
             for (iid, binding) in plan.bindings {
                 await bridge.registerWriteHandler(aid: aid, iid: iid, managesValue: true) { [weak self] value in
                     guard let self else { throw HAPError.unavailable }
@@ -445,27 +496,56 @@ public final class HomeKitBridgeController {
         }
         for (did, entry) in capabilityPlans where !retained.contains(did) {
             await bridge.removeAccessory(aid: entry.aid); capabilityPlans[did] = nil
+            publishedCapabilityValues[did] = nil
         }
         exposedDeviceCount = capabilityPlans.count
-        if let data = try? JSONEncoder().encode(capabilityIIDs) { defaults.set(data, forKey: Self.capabilityIIDsKey) }
+        if savedCapabilityIIDs != capabilityIIDs, let data = try? JSONEncoder().encode(capabilityIIDs) {
+            defaults.set(data, forKey: Self.capabilityIIDsKey)
+            savedCapabilityIIDs = capabilityIIDs
+            syncStatistics.identifierWrites += 1
+        }
         saveLayout()
-        await pushCapabilityValues(bridge: bridge)
     }
 
     private func pushCapabilityValues(bridge: HAPBridge) async {
+        let previous = capabilityPushTask
+        let task = Task { @MainActor in
+            await previous?.value
+            await self.commitCapabilityValues(bridge: bridge)
+        }
+        capabilityPushTask = task
+        await task.value
+        if capabilityPushTask == task { capabilityPushTask = nil }
+    }
+
+    private func commitCapabilityValues(bridge: HAPBridge) async {
         guard let capabilities else { return }
+        let legacyDevices = Dictionary(capabilities.synthesizedHome().devices.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for (did, entry) in capabilityPlans {
             guard let snapshot = capabilities.snapshots[did] else { continue }
-            let legacy = store?.devices.first { $0.id == did }.map {
+            let forced = forceRefresh.remove(did) != nil
+            let legacy = legacyDevices[did].map {
                 HomeKitAccessoryMapper.values(for: $0, configuredNames: configuredNames(for: did))
             } ?? [:]
             for (iid, binding) in entry.plan.bindings {
                 var value = CapabilityHomeKitMapper.value(binding, snapshot: snapshot, legacyValues: legacy, names: serviceNames[did] ?? [:])
                 if case .float(let number) = value,
-                   let c = entry.plan.services.flatMap(\.characteristics).first(where: { $0.iid == iid }),
+                   let c = entry.characteristics[iid],
                    number < (c.minValue ?? -.infinity) || number > (c.maxValue ?? .infinity) { value = nil }
-                await bridge.setReadStatus(aid: entry.aid, iid: iid, status: value == nil ? .communicationFailure : .success)
-                if let value { await bridge.updateCharacteristic(aid: entry.aid, iid: iid, value: value) }
+                let status: HAPStatus = value == nil ? .communicationFailure : .success
+                let previous = publishedCapabilityValues[did]?[iid]
+                let recovered = previous?.status == HAPStatus.communicationFailure.rawValue && status.rawValue == HAPStatus.success.rawValue
+                if previous?.status != status.rawValue {
+                    await bridge.setReadStatus(aid: entry.aid, iid: iid, status: status)
+                    syncStatistics.readStatusUpdates += 1
+                }
+                if let value, forced || previous?.value != value {
+                    // The bridge still caches the last valid value while offline. A same-value recovery must
+                    // notify subscribers as well as repairing GET status, or Home can retain its error state.
+                    await bridge.updateCharacteristic(aid: entry.aid, iid: iid, value: value, forceNotify: forced || recovered)
+                    syncStatistics.characteristicUpdates += 1
+                }
+                publishedCapabilityValues[did, default: [:]][iid] = PublishedValue(value: value, status: status.rawValue)
             }
         }
     }
@@ -480,6 +560,8 @@ public final class HomeKitBridgeController {
                 guard !name.isEmpty, name.utf8.count <= 64 else { throw HAPError.invalidValue }
                 serviceNames[did, default: [:]][key] = name
                 defaults.set(serviceNames, forKey: Self.serviceNamesKey)
+                capabilityStructureDirty = true
+                scheduleSync()
             case .legacy(let role) where role.isConfiguredName: try await handleWrite(deviceId: did, role: role, value: value)
             default:
                 let commands = try CapabilityHomeKitMapper.commands(binding, value: value, snapshot: snapshot)
@@ -563,8 +645,11 @@ public final class HomeKitBridgeController {
     }
 
     private func saveLayout() {
+        guard savedLayout != layout else { return }
         if let data = try? JSONEncoder().encode(layout) {
             defaults.set(data, forKey: Self.layoutKey)
+            savedLayout = layout
+            syncStatistics.layoutWrites += 1
         }
     }
 
@@ -589,6 +674,7 @@ public final class HomeKitBridgeController {
             guard !name.isEmpty, name.utf8.count <= 64 else { throw HAPError.invalidValue }
             serviceNames[deviceId, default: [:]][role.rawValue] = name
             defaults.set(serviceNames, forKey: Self.serviceNamesKey)
+            capabilityStructureDirty = true
             return
         }
         guard let store, let device = store.devices.first(where: { $0.id == deviceId }), device.isOnline else { throw HAPError.unavailable }

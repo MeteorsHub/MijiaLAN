@@ -4,9 +4,9 @@ import SwiftUI
 
 struct ControlCenterDevices: View {
     let model: AppModel
+    @Bindable var session: PanelSession
     let openDevice: (String) -> Void
     let openSettings: () -> Void
-    @State private var selectedOffline: String?
 
     var body: some View {
         let online = model.config.devices.filter { model.health[$0.did]?.state == .online }
@@ -51,12 +51,12 @@ struct ControlCenterDevices: View {
                 .font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 4).padding(.top, 2)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
                     ForEach(offline) { device in
-                        OfflineDeviceTile(model: model, device: device, selected: selectedOffline == device.did) {
-                            selectedOffline = selectedOffline == device.did ? nil : device.did
+                        OfflineDeviceTile(model: model, device: device, selected: session.selectedOffline == device.did) {
+                            session.selectedOffline = session.selectedOffline == device.did ? nil : device.did
                         }
                     }
                 }
-                if let device = offline.first(where: { $0.did == selectedOffline }) {
+                if let device = offline.first(where: { $0.did == session.selectedOffline }) {
                     OfflineDeviceCard(model: model, device: device) { openDevice(device.did) }
                 }
             }
@@ -180,9 +180,22 @@ struct OfflineDeviceCard: View {
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 5) {
                 GridRow { Text(L10n.tr("房间", "Room")); Text(device.roomName ?? L10n.tr("未分配", "Unassigned")) }
                 GridRow { Text("IP"); Text(device.host).monospaced().textSelection(.enabled) }
+                if let retry = model.devices.retryStates[device.did] {
+                    GridRow {
+                        Text(L10n.tr("下次自动重试", "Next Automatic Retry"))
+                        if retry.isProbing {
+                            Text(L10n.tr("正在连接…", "Connecting…"))
+                        } else if let deadline = retry.nextRetryAt {
+                            Text(deadline, format: .dateTime.month().day().hour().minute().second())
+                                .monospacedDigit()
+                        } else {
+                            Text(L10n.tr("即将重试", "Retrying Shortly"))
+                        }
+                    }
+                }
             }
             if let raw = health.lastError {
-                DisclosureGroup(L10n.tr("原始错误", "Original Error")) {
+                PanelDisclosure(L10n.tr("原始错误", "Original Error"), deviceID: device.did, section: "connectionError") {
                     Text(raw).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 }

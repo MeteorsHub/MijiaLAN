@@ -42,7 +42,7 @@ struct ControlCenterDeviceDetail: View {
                 Text(L10n.tr("尚未获取到设备接口。请重试或在设置中重新导入设备。", "Device controls are not available yet. Retry or re-import the device in Settings."))
                     .font(.callout).foregroundStyle(.secondary)
             }
-            DisclosureGroup(L10n.tr("设备管理", "Device Management")) {
+            PanelDisclosure(L10n.tr("设备管理", "Device Management"), deviceID: device.did, section: "management") {
                 VStack(alignment: .leading, spacing: 10) {
                     Toggle(L10n.tr("在「家庭」中显示", "Show in Home"), isOn: Binding(get: { model.isInHomeKit(device) }, set: { model.setInHomeKit(device, $0) }))
                         .toggleStyle(.switch).controlSize(.mini).disabled(!model.homeKitSupports(device))
@@ -62,7 +62,7 @@ struct ControlCenterDeviceDetail: View {
 
     @ViewBuilder private func additionalControls(_ snapshot: DeviceSnapshot, excluding: Set<String>) -> some View {
         if snapshot.controls.contains(where: { !excluding.contains($0.id) }) {
-            DisclosureGroup(L10n.tr("更多控制", "More Controls")) {
+            PanelDisclosure(L10n.tr("更多控制", "More Controls"), deviceID: device.did, section: "controls") {
                 CapabilityControls(controller: model.devices, snapshot: snapshot, excluding: excluding).padding(.top, 8)
             }
             .font(.system(size: 12))
@@ -215,6 +215,7 @@ private struct LampColorTemperatureControl: View {
     @State private var draft: Double?
     @State private var isEditing = false
     @Environment(\.panelPresented) private var panelPresented
+    @Environment(\.panelSession) private var session
 
     init(controller: DeviceController, snapshot: DeviceSnapshot, capability: DeviceCapability) {
         self.snapshot = snapshot; self.capability = capability
@@ -234,7 +235,8 @@ private struct LampColorTemperatureControl: View {
                 Text(L10n.tr("色温", "Color Temperature")).font(.system(size: 12, weight: .medium))
                 Spacer()
                 CapabilityNumberInput(capability: capability,
-                                      value: displayed.map(JSONValue.number), working: writer.isSending) {
+                                      value: displayed.map(JSONValue.number), working: writer.isSending,
+                                      persistedDraft: session?.numberDraft(deviceID: snapshot.id, capabilityID: capability.id)) {
                     writer.submit($0)
                     draft = nil
                 }

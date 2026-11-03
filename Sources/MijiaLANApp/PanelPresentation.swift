@@ -14,6 +14,7 @@ final class PanelPresentation {
     private(set) var usesReducedMotion = false
     @ObservationIgnored let window: NSWindow
     @ObservationIgnored var visibilityChanged: ((Bool) -> Void)?
+    @ObservationIgnored var didClose: (() -> Void)?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private let reduceMotion: () -> Bool
 
@@ -59,7 +60,17 @@ final class PanelPresentation {
             guard let self else { return }
             window.orderOut(nil)
             phase = .closed
+            didClose?()
         }
+    }
+
+    func hideForOutsideMouseDown(at point: NSPoint, statusItemFrame: NSRect?) {
+        // The status button acts on mouse-up. Hiding it on the preceding
+        // mouse-down would make that action see a closed panel and reopen it.
+        let overStatusItem = statusItemFrame?.contains(point) == true
+        PanelTransitionDiagnostics.record("pointerDismissal", ["overStatusItem": overStatusItem])
+        guard !overStatusItem else { return }
+        hide()
     }
 
     func stop() {

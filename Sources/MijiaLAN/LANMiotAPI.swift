@@ -30,7 +30,7 @@ public struct LANDeviceHealth: Equatable, Sendable {
 /// Pre-MIoT models go through their `LegacyMiioProfile` instead of `get_properties` / `set_properties`.
 ///
 /// A device that stops answering is reported offline instead of failing the whole poll, and is probed with
-/// `miIO.info` on every device-list refresh until it answers again.
+/// authenticated probes on an independent, bounded exponential-backoff scheduler until it answers again.
 public actor LANMiotAPI: MiCloudAPI {
     private let logger = Logger(subsystem: "com.mijialan.MijiaLAN", category: "LAN")
     let config: @Sendable () -> LocalHomeConfig
@@ -42,6 +42,18 @@ public actor LANMiotAPI: MiCloudAPI {
     private var health: [String: LANDeviceHealth] = [:]
     private var consecutiveFailures: [String: Int] = [:]
     private var healthObserver: (@Sendable ([String: LANDeviceHealth]) -> Void)?
+    private let clock: ProbeClock
+    private let jitter: @Sendable () -> Double
+    private var probes = ProbeScheduler()
+    private var probeTasks: [UUID: Task<Void, Never>] = [:]
+    private var probeTimer: Task<Void, Never>?
+    private var timerDeadline: Date?
+    private var timerGeneration = UUID()
+    private var probeWaiters: [String: [UUID: CheckedContinuation<Void, Never>]] = [:]
+    private var healthContinuations: [UUID: AsyncStream<LANHealthUpdate>.Continuation] = [:]
+    private var lastPublishedHealth: LANHealthUpdate?
+    private var configuredDevices: [LocalDevice]?
+    private var isShutdown = false
     /// Properties MijiaCore does not ask for but the app shows (a climate device's swing and power draw). They are
     /// read in the same request as the rest of their device, so they cost no extra round trip.
     private var companions: [String: [MiotPropKey]] = [:]
@@ -60,11 +72,20 @@ public actor LANMiotAPI: MiCloudAPI {
         probeTimeout: Duration = .milliseconds(2500),
         commandTimeout: Duration = .seconds(5)
     ) {
+        self.init(config: config, transport: transport, port: port, probeTimeout: probeTimeout,
+                  commandTimeout: commandTimeout, clock: ProbeClock(), jitter: { Double.random(in: 0.9...1.1) })
+    }
+
+    init(config: @escaping @Sendable () -> LocalHomeConfig, transport: any MiioTransport,
+         port: UInt16 = MiioPacket.port, probeTimeout: Duration = .milliseconds(2500),
+         commandTimeout: Duration = .seconds(5), clock: ProbeClock, jitter: @escaping @Sendable () -> Double) {
         self.config = config
         self.transport = transport
         self.port = port
         self.probeTimeout = probeTimeout
         self.commandTimeout = commandTimeout
+        self.clock = clock
+        self.jitter = jitter
     }
 
     public func observeHealth(_ observer: @escaping @Sendable ([String: LANDeviceHealth]) -> Void) {
@@ -73,15 +94,42 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     public func currentHealth() -> [String: LANDeviceHealth] { health }
+    public func retryStates() -> [String: ProbeRetryState] { probes.retryStates }
+
+    public func healthEvents() -> AsyncStream<LANHealthUpdate> {
+        let id = UUID()
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            healthContinuations[id] = continuation
+            continuation.yield(LANHealthUpdate(health: health, retries: probes.retryStates))
+            continuation.onTermination = { [weak self] _ in Task { await self?.removeHealthContinuation(id) } }
+        }
+    }
+
+    private func removeHealthContinuation(_ id: UUID) { healthContinuations[id] = nil }
+
+    /// Starts/reschedules probes without making online property reads wait for offline timeouts.
+    public func startProbing() {
+        guard !isShutdown else { return }
+        synchronizeConfiguration()
+        publishHealth()
+    }
 
     /// An explicit UI retry probes this device immediately, independently of the background retry interval.
     public func retryDevice(did: String) async {
-        guard let device = config().devices.first(where: { $0.did == did }) else { return }
-        do {
-            _ = try await client(for: device).info(timeout: probeTimeout)
-            record(did, .online, error: nil)
-        } catch {
-            record(did, Self.isTokenProblem(error) ? .tokenRejected : .offline, error: error)
+        guard !isShutdown else { return }
+        synchronizeConfiguration()
+        guard config().devices.contains(where: { $0.did == did }) else { return }
+        probes.enqueue(did, priority: .manual)
+        publishHealth()
+        await waitForProbe(did)
+    }
+
+    /// One opportunistic authenticated verification per known offline responder in this discovery round.
+    public func retryDiscoveredDevices(_ dids: Set<String>) {
+        guard !isShutdown else { return }
+        synchronizeConfiguration()
+        for did in dids where health[did]?.state != .online && health[did]?.state != .unsupported {
+            probes.enqueue(did, priority: .discovery)
         }
         publishHealth()
     }
@@ -96,36 +144,15 @@ public actor LANMiotAPI: MiCloudAPI {
     // MARK: MiCloudAPI
 
     public func deviceList() async throws -> [MiDeviceRecord] {
-        let devices = config().devices
-        let known = Set(devices.map(\.did))
-        health = health.filter { known.contains($0.key) }
-        clients = clients.filter { known.contains($0.key) }
-
-        // `miIO.info` rather than a bare hello: it also proves the token, so a device whose token was rejected
-        // comes back by itself once it answers again. An unsupported device stays put until its config changes.
-        let toProbe = devices.filter { ![.online, .unsupported].contains(health[$0.did]?.state) }
-        let probeTimeout = probeTimeout
-        await withTaskGroup(of: (String, Result<Void, any Error>).self) { group in
-            for device in toProbe {
-                let client = client(for: device)
-                group.addTask {
-                    do {
-                        _ = try await client.info(timeout: probeTimeout)
-                        return (device.did, .success(()))
-                    } catch {
-                        return (device.did, .failure(error))
-                    }
-                }
-            }
-            for await (did, outcome) in group {
-                switch outcome {
-                case .success: record(did, .online, error: nil)
-                case .failure(let error): record(did, Self.isTokenProblem(error) ? .tokenRejected : .offline, error: error)
-                }
-            }
-        }
+        guard !isShutdown else { throw CancellationError() }
+        synchronizeConfiguration()
         publishHealth()
-        return devices.map {
+        // Compatibility for MiCloudAPI callers. The capability controller uses startProbing instead.
+        let pending = config().devices.map(\.did).filter { probes.hasPendingProbe($0) }
+        await withTaskGroup(of: Void.self) { group in
+            for did in pending { group.addTask { await self.waitForProbe(did) } }
+        }
+        return config().devices.map {
             MiDeviceRecord(did: $0.did, name: $0.name, model: $0.model,
                            isOnline: health[$0.did]?.state == .online, specType: $0.specType)
         }
@@ -149,7 +176,7 @@ public actor LANMiotAPI: MiCloudAPI {
         let requested = Set(keys)
         let byDid = Dictionary(grouping: keys, by: \.did)
         var values: [MiotPropKey: JSONValue] = [:]
-        await withTaskGroup(of: (String, Result<[MiotPropKey: JSONValue], any Error>).self) { group in
+        await withTaskGroup(of: (LocalDevice, MiioClient, Result<[MiotPropKey: JSONValue], any Error>).self) { group in
             for (did, keys) in byDid {
                 guard let device = devices[did] else { continue }
                 let client = client(for: device)
@@ -163,13 +190,15 @@ public actor LANMiotAPI: MiCloudAPI {
                         } else {
                             try await client.getProperties(did: did, props)
                         }
-                        return (did, .success(fresh))
+                        return (device, client, .success(fresh))
                     } catch {
-                        return (did, .failure(error))
+                        return (device, client, .failure(error))
                     }
                 }
             }
-            for await (did, outcome) in group {
+            for await (device, client, outcome) in group {
+                guard isCurrent(device, client: client) else { continue }
+                let did = device.did
                 switch outcome {
                 case .success(let fresh):
                     latest.merge(fresh) { _, new in new }
@@ -193,8 +222,10 @@ public actor LANMiotAPI: MiCloudAPI {
                 } else {
                     try await client.setProperties(group)
                 }
+                guard isCurrent(device, client: client) else { throw CancellationError() }
                 record(did, .online, error: nil)
             } catch {
+                guard isCurrent(device, client: client) else { throw CancellationError() }
                 if error as? MiioError != .unsupportedByLegacyDevice { recordFailure(did, error, model: device.model) }
                 publishHealth()
                 throw error
@@ -208,8 +239,10 @@ public actor LANMiotAPI: MiCloudAPI {
         guard LegacyMiioProfile.forModel(device.model) == nil else { throw MiioError.unsupportedByLegacyDevice }
         do {
             try await client.action(call)
+            guard isCurrent(device, client: client) else { throw CancellationError() }
             record(call.did, .online, error: nil)
         } catch {
+            guard isCurrent(device, client: client) else { throw CancellationError() }
             recordFailure(call.did, error, model: device.model)
             publishHealth()
             throw error
@@ -220,8 +253,10 @@ public actor LANMiotAPI: MiCloudAPI {
     // MARK: Clients & Health
 
     public func readCapabilities(did: String, capabilities: [DeviceCapability]) async -> [String: DeviceReading] {
+        var endpoint: (LocalDevice, MiioClient)?
         do {
             let (device, client) = try client(forDid: did)
+            endpoint = (device, client)
             let props = capabilities.filter { $0.readable }.map { (siid: $0.siid, piid: $0.iid) }
             let readings: [MiotPropKey: DeviceReading]
             if let legacy = LegacyMiioProfile.forModel(device.model) {
@@ -234,11 +269,13 @@ public actor LANMiotAPI: MiCloudAPI {
             } else {
                 readings = try await client.readProperties(did: did, props)
             }
+            guard isCurrent(device, client: client) else { return [:] }
             for (key, reading) in readings where reading.isAvailable { latest[key] = reading.value }
             record(did, .online, error: nil)
             publishHealth()
             return Dictionary(uniqueKeysWithValues: readings.map { (DeviceCapability.propertyID($0.key.siid, $0.key.piid), $0.value) })
         } catch {
+            if let (device, client) = endpoint, !isCurrent(device, client: client) { return [:] }
             recordFailure(did, error, model: nil)
             publishHealth()
             return Dictionary(uniqueKeysWithValues: capabilities.filter(\.readable).map { ($0.id, DeviceReading(error: Self.describe(error))) })
@@ -246,7 +283,7 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     private func client(for device: LocalDevice) -> MiioClient {
-        if let existing = clients[device.did], existing.device.host == device.host, existing.device.token == device.token {
+        if let existing = clients[device.did], ProbeScheduler.sameEndpoint(existing.device, device) {
             return existing.client
         }
         if clients[device.did] != nil {
@@ -279,8 +316,11 @@ public actor LANMiotAPI: MiCloudAPI {
         entry.state = state
         entry.lastError = message
         if state == .online {
-            entry.lastSeen = Date()
+            entry.lastSeen = clock.now()
             consecutiveFailures[did] = 0
+            if let cancelled = probes.markOnline(did) { cancelProbe(cancelled, did: did) }
+        } else if state == .offline || state == .tokenRejected {
+            probes.markOffline(did, now: clock.now())
         }
         health[did] = entry
     }
@@ -288,6 +328,7 @@ public actor LANMiotAPI: MiCloudAPI {
     /// A failed read or write. `miIO.info` has already proved the token by now, so silence here is not a token
     /// problem: a pre-MIoT device without a table answers `get_properties` with `-9999` (or not in time).
     private func recordFailure(_ did: String, _ error: any Error, model: String?) {
+        guard !(error is CancellationError) else { return }
         let miio = error as? MiioError
         if case .deviceError(let code, _) = miio, code != MiioClient.userAckTimeoutCode {
             // A rejected property proves the transport works; it does not mean the entire device is offline.
@@ -313,7 +354,120 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     private func publishHealth() {
+        guard !isShutdown else { return }
+        runReadyProbes()
+        let update = LANHealthUpdate(health: health, retries: probes.retryStates)
+        guard !update.hasSameState(as: lastPublishedHealth) else { return }
+        lastPublishedHealth = update
         healthObserver?(health)
+        for continuation in healthContinuations.values { continuation.yield(update) }
+    }
+
+    private func synchronizeConfiguration() {
+        let devices = config().devices
+        guard devices != configuredDevices else { return }
+        for old in configuredDevices ?? [] where !devices.contains(where: { ProbeScheduler.sameEndpoint($0, old) }) {
+            resumeProbeWaiters(old.did)
+        }
+        configuredDevices = devices
+        let known = Set(devices.map(\.did))
+        for (did, existing) in clients where !devices.contains(where: { ProbeScheduler.sameEndpoint($0, existing.device) }) {
+            clients[did] = nil; health[did] = nil; consecutiveFailures[did] = nil
+            companions[did] = nil
+        }
+        health = health.filter { known.contains($0.key) }
+        latest = latest.filter { known.contains($0.key.did) && clients[$0.key.did] != nil }
+        for id in probes.configure(devices) { cancelProbe(id) }
+    }
+
+    private func isCurrent(_ device: LocalDevice, client: MiioClient) -> Bool {
+        !isShutdown && clients[device.did]?.client === client && config().devices.contains { ProbeScheduler.sameEndpoint($0, device) }
+    }
+
+    private func runReadyProbes() {
+        for job in probes.startReady(now: clock.now()) {
+            let client = client(for: job.device)
+            let timeout = probeTimeout
+            probeTasks[job.id] = Task { [weak self] in
+                let result: Result<Void, any Error>
+                do { _ = try await client.info(timeout: timeout); result = .success(()) }
+                catch { result = .failure(error) }
+                guard !Task.isCancelled else { return }
+                await self?.finishProbe(job, client: client, result: result)
+            }
+        }
+        let deadline = probes.nextDeadline
+        guard deadline != timerDeadline else { return }
+        probeTimer?.cancel(); probeTimer = nil; timerDeadline = deadline
+        timerGeneration = UUID()
+        guard let deadline else { return }
+        let generation = timerGeneration
+        let clock = clock
+        probeTimer = Task { [weak self] in
+            do { try await clock.sleep(deadline) } catch { return }
+            guard !Task.isCancelled else { return }
+            await self?.probeTimerFired(generation)
+        }
+    }
+
+    private func probeTimerFired(_ generation: UUID) {
+        guard generation == timerGeneration else { return }
+        timerDeadline = nil; probeTimer = nil
+        synchronizeConfiguration()
+        publishHealth()
+    }
+
+    private func finishProbe(_ job: ProbeScheduler.Job, client: MiioClient, result: Result<Void, any Error>) {
+        probeTasks[job.id] = nil
+        guard !isShutdown else { return }
+        guard isCurrent(job.device, client: client) else {
+            synchronizeConfiguration(); publishHealth(); return
+        }
+        let succeeded: Bool
+        switch result { case .success: succeeded = true; case .failure: succeeded = false }
+        guard probes.complete(job, succeeded: succeeded, now: clock.now(), jitter: jitter()) else { return }
+        switch result {
+        case .success: record(job.device.did, .online, error: nil)
+        case .failure(let error): record(job.device.did, Self.isTokenProblem(error) ? .tokenRejected : .offline, error: error)
+        }
+        resumeProbeWaiters(job.device.did)
+        publishHealth()
+    }
+
+    private func waitForProbe(_ did: String) async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled, probes.hasPendingProbe(did) else { continuation.resume(); return }
+                probeWaiters[did, default: [:]][id] = continuation
+            }
+        } onCancel: { Task { await self.cancelProbeWaiter(did, id: id) } }
+    }
+
+    private func cancelProbeWaiter(_ did: String, id: UUID) {
+        probeWaiters[did]?.removeValue(forKey: id)?.resume()
+        if probeWaiters[did]?.isEmpty == true { probeWaiters[did] = nil }
+    }
+
+    private func resumeProbeWaiters(_ did: String) {
+        for waiter in probeWaiters.removeValue(forKey: did)?.values ?? [:].values { waiter.resume() }
+    }
+
+    private func cancelProbe(_ id: UUID, did: String? = nil) {
+        probeTasks.removeValue(forKey: id)?.cancel()
+        if let did { resumeProbeWaiters(did) }
+        // Endpoint replacement/removal resolves old callers as well as discarding the late result.
+        for key in Array(probeWaiters.keys) where !probes.hasPendingProbe(key) { resumeProbeWaiters(key) }
+    }
+
+    public func shutdown() {
+        isShutdown = true
+        probeTimer?.cancel(); probeTimer = nil; timerDeadline = nil
+        for task in probeTasks.values { task.cancel() }; probeTasks = [:]
+        for did in Array(probeWaiters.keys) { resumeProbeWaiters(did) }
+        for continuation in healthContinuations.values { continuation.finish() }; healthContinuations = [:]
+        probes = ProbeScheduler()
+        clients = [:]; latest = [:]; companions = [:]
     }
 
     /// Only for the `miIO.info` probe, which every miIO device answers.
@@ -324,5 +478,17 @@ public actor LANMiotAPI: MiCloudAPI {
 
     static func describe(_ error: any Error) -> String {
         (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+    }
+}
+
+public struct LANHealthUpdate: Sendable {
+    public var health: [String: LANDeviceHealth]
+    public var retries: [String: ProbeRetryState]
+
+    func hasSameState(as previous: LANHealthUpdate?) -> Bool {
+        guard let previous, retries == previous.retries, health.count == previous.health.count else { return false }
+        return health.allSatisfy { did, value in
+            value.state == previous.health[did]?.state && value.lastError == previous.health[did]?.lastError
+        }
     }
 }

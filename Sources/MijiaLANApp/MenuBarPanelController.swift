@@ -9,6 +9,8 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
     private let statusItem: NSStatusItem
     private let panel: ControlCenterPanel
     private let presentation: PanelPresentation
+    private let session = PanelSession()
+    private let contentLifetime = PanelContentLifetime()
     private var localMonitor: Any?
     private var globalMonitor: Any?
     private var pendingShow: Task<Void, Never>?
@@ -41,20 +43,11 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
         panel.isRestorable = false
         panel.isExcludedFromWindowsMenu = true
         panel.tabbingMode = .disallowed
-        let host = NSHostingView(rootView: PresentedPanel(presentation: presentation) {
-            #if DEBUG
-            PanelView(model: model, reduceMotionOverride: reduceOverride)
-                .background(PanelWindowSizing(anchorsToMenuBarIcon: true, anchorsTopToMenuBarIcon: true))
-            #else
-            PanelView(model: model).background(PanelWindowSizing(anchorsToMenuBarIcon: true, anchorsTopToMenuBarIcon: true))
-            #endif
-        })
-        // The sizing bridge is the only owner of the frame, including animated
-        // height changes. Intrinsic-size window updates would compete with it.
-        host.sizingOptions = []
-        panel.contentView = host
+        contentLifetime.load = { [weak self] in self?.loadContent() }
+        contentLifetime.unload = { [weak self] in self?.unloadContent() }
+        presentation.didClose = { [weak self] in self?.contentLifetime.didHide() }
         statusItem.button?.target = self
-        statusItem.button?.action = #selector(togglePanel)
+        statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem.button?.setAccessibilityLabel(L10n.tr("米家局域网桥", "MijiaLAN"))
         statusItem.button?.toolTip = "MijiaLAN"
@@ -74,9 +67,35 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
         }
     }
 
-    @objc private func togglePanel() {
+    @objc private func statusItemClicked() {
+        let event = NSApp.currentEvent
+        let secondaryClick = event?.type == .rightMouseUp || event?.type == .rightMouseDown ||
+            (event?.modifierFlags.contains(.control) == true &&
+             (event?.type == .leftMouseUp || event?.type == .leftMouseDown))
+        PanelTransitionDiagnostics.record("statusItemAction", ["presentedBefore": presentation.isPresented,
+            "pendingShow": pendingShow != nil, "secondaryClick": secondaryClick])
+        if secondaryClick { showContextMenu(); return }
         if let pendingShow { pendingShow.cancel(); self.pendingShow = nil; return }
         if presentation.isPresented { presentation.hide() } else { show() }
+    }
+
+    private func showContextMenu() {
+        guard let button = statusItem.button else { return }
+        pendingShow?.cancel()
+        pendingShow = nil
+        presentation.hide()
+        let menu = NSMenu()
+        let quit = NSMenuItem(title: L10n.tr("退出 MijiaLAN", "Quit MijiaLAN"),
+                              action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.keyEquivalentModifierMask = .command
+        quit.target = NSApp
+        menu.addItem(quit)
+        button.highlight(true)
+        defer { button.highlight(presentation.isPresented) }
+        PanelTransitionDiagnostics.record("statusMenuOpened", ["items": menu.items.count])
+        PanelTransitionDiagnostics.flushSoon()
+        let y = button.isFlipped ? button.bounds.maxY : button.bounds.minY
+        menu.popUp(positioning: nil, at: NSPoint(x: button.bounds.minX, y: y), in: button)
     }
 
     func show() {
@@ -104,6 +123,8 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
             }
             return
         }
+        let started = ProcessInfo.processInfo.systemUptime
+        let wasUnloaded = contentLifetime.prepare()
         // Lay out at alpha zero before ordering onscreen. Initial discovery or
         // an appearance change must not expose an oversized first frame.
         panel.contentView?.layoutSubtreeIfNeeded()
@@ -115,7 +136,38 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
             frame.origin.y = icon.minY - 8 - frame.height
             panel.setFrame(frame, display: false)
         }
+        PanelTransitionDiagnostics.record("contentPrepared", ["cold": wasUnloaded,
+            "durationMS": (ProcessInfo.processInfo.systemUptime - started) * 1000])
         presentation.show()
+    }
+
+    private func loadContent() {
+        session.prune(deviceIDs: Set(model.config.devices.map(\.did)))
+        let model = model, session = session, presentation = presentation
+        let host = NSHostingView(rootView: PresentedPanel(presentation: presentation) {
+            #if DEBUG
+            PanelView(model: model, reduceMotionOverride: ProcessInfo.processInfo.environment["MIJIALAN_UI_REDUCE_MOTION"].map { $0 == "1" }, session: session)
+                .background(PanelWindowSizing(anchorsToMenuBarIcon: true, anchorsTopToMenuBarIcon: true))
+            #else
+            PanelView(model: model, session: session)
+                .background(PanelWindowSizing(anchorsToMenuBarIcon: true, anchorsTopToMenuBarIcon: true))
+            #endif
+        })
+        // Only the sizing bridge owns the frame, including page animations.
+        host.sizingOptions = []
+        panel.contentView = host
+        PanelTransitionDiagnostics.record("contentLoaded", ["route": session.route.diagnosticName,
+            "scrollOffset": session.scrollOffsets[session.route] ?? 0])
+    }
+
+    private func unloadContent() {
+        // Resign the native field editor as well as detaching the SwiftUI tree.
+        // The session holds values only; device polling and HAP live in AppModel.
+        panel.makeFirstResponder(nil)
+        panel.contentView = nil
+        PanelTransitionDiagnostics.record("contentUnloaded", ["route": session.route.diagnosticName,
+            "scrollOffset": session.scrollOffsets[session.route] ?? 0])
+        PanelTransitionDiagnostics.flushSoon()
     }
 
     private var positionedIconFrame: NSRect? {
@@ -128,7 +180,7 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) {
         // A click on our icon is handled by its mouse-up action. Dismissing on
         // mouse-down would turn that same click into an unintended reopen.
-        let clickedStatusItem = positionedIconFrame?.contains(NSEvent.mouseLocation) == true
+        let clickedStatusItem = (positionedIconFrame ?? settledIconFrame)?.contains(NSEvent.mouseLocation) == true
         // A sheet/pop-up can temporarily take key status. Check after AppKit
         // has established its relationship instead of dismissing its parent.
         DispatchQueue.main.async { [weak self] in
@@ -150,6 +202,7 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
     @objc private func applicationWillTerminate() {
         pendingShow?.cancel()
         presentation.stop()
+        contentLifetime.stop()
         removeEventMonitors()
         NSStatusBar.system.removeStatusItem(statusItem)
         NotificationCenter.default.removeObserver(self)
@@ -157,6 +210,7 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
     }
 
     private func updateIcon() {
+        session.prune(deviceIDs: Set(model.config.devices.map(\.did)))
         withObservationTracking {
             let image = NSImage(systemSymbolName: model.config.devices.isEmpty ? "house" : "homekit", accessibilityDescription: nil)
             image?.isTemplate = true
@@ -177,7 +231,11 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
         // Mouse clicks only; no keyboard/accessibility permission or event data
         // collection is needed to dismiss when the user clicks another app.
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            MainActor.assumeIsolated { self?.presentation.hide() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.presentation.hideForOutsideMouseDown(at: NSEvent.mouseLocation,
+                    statusItemFrame: self.positionedIconFrame ?? self.settledIconFrame)
+            }
         }
     }
 
@@ -191,7 +249,8 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
         } else if event.window != panel, event.window?.parent != panel,
                   event.window != statusItem.button?.window,
                   (event.window?.level.rawValue ?? 0) < NSWindow.Level.popUpMenu.rawValue {
-            presentation.hide()
+            presentation.hideForOutsideMouseDown(at: NSEvent.mouseLocation,
+                statusItemFrame: positionedIconFrame ?? settledIconFrame)
         }
         return false
     }

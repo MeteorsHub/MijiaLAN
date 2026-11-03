@@ -8,12 +8,13 @@ MijiaLAN talks directly to devices over your local network using miIO / MIoT. Ad
 
 ## Features
 
-- **Control Center style panel** with device tiles, power controls, detail pages and offline explanations.
+- **Control Center style panel** with device tiles, power controls, detail pages and offline explanations. Left-click to show or hide the panel; right-click for the Quit menu.
 - **Apple Home bridge** with lights, outlets, fans, air purifiers, air conditioners and sensors. Choose which devices to expose.
 - **Detailed controls and shared state**: the Mac and HomeKit share capabilities, polling and command execution for supported modes, brightness, color temperature, temperature, fan speed, swing, readings and cooking presets.
 - **Local credentials**: device tokens, the registry and HomeKit pairing material live in macOS Keychain. Xiaomi cloud login sessions are not persisted.
 - **Chinese and English UI**, with system, light and dark appearances.
 - **IP rediscovery** to recover from DHCP address changes using device IDs.
+- **Background performance**: offline retries back off to a maximum interval of 24 hours. The panel releases its views after 30 seconds hidden while retaining the page, scroll position and input drafts. See [performance and background operation](docs/performance.md).
 
 ## Requirements
 

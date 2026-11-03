@@ -24,5 +24,8 @@ passes it to characteristic handling so pairing administration can enforce contr
 despite the upstream log text calling them a hash. MijiaLAN's app log handler also disables debug/trace dumps
 by default and marks dynamic HAP log content private.
 
+`CharacteristicProtocol.handleGetAccessories` checks the trace log level before converting its JSON response
+body to a string, avoiding that extra allocation when body tracing is disabled.
+
 Modified Swift files carry an explicit modification notice. `Package.swift` omits upstream test targets because
 only sources are vendored; MijiaLAN maintains its own bridge and protocol regression tests.

@@ -1,3 +1,4 @@
+import Foundation
 import Logging
 import os
 
@@ -15,7 +16,7 @@ struct UnifiedLogHandler: LogHandler {
 
     init(label: String) {
         logger = os.Logger(subsystem: "com.mijialan.MijiaLAN", category: label)
-        logLevel = .info
+        logLevel = ProcessInfo.processInfo.environment["MIJIALAN_HAP_TRACE"] == "1" ? .trace : .info
     }
 
     subscript(metadataKey key: String) -> Logging.Logger.Metadata.Value? {
@@ -24,6 +25,7 @@ struct UnifiedLogHandler: LogHandler {
     }
 
     func log(event: LogEvent) {
+        guard event.level >= logLevel else { return }
         for text in Self.pieces(of: event.message.description) {
             switch event.level {
             case .trace, .debug:

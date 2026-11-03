@@ -10,6 +10,7 @@ import MijiaCore
 /// `ImageRenderer` draws no AppKit controls.
 @MainActor
 enum DevSnapshot {
+    private static let diagnosticWriter = DiagnosticFileWriter()
     static func scheduleIfRequested(model: AppModel, environment: [String: String] = ProcessInfo.processInfo.environment) {
         if let path = environment["MIJIALAN_DIAGNOSTICS_OUTPUT"] {
             Task { @MainActor in
@@ -17,7 +18,7 @@ enum DevSnapshot {
                 await model.devices.refreshNow()
                 // Explicit allow-list: never serialize LocalDevice, tokens, pairing keys or setup codes.
                 let rows: [[String: Any]] = model.devices.snapshots.values.sorted { $0.id < $1.id }.map { s in
-                    ["did": s.id, "model": s.device.model, "name": s.device.name, "health": String(describing: s.health.state),
+                    var row: [String: Any] = ["did": s.id, "model": s.device.model, "name": s.device.name, "health": String(describing: s.health.state),
                      "homeIncluded": model.isInHomeKit(s.device),
                      "readings": s.capabilities.filter(\.readable).map { c -> [String: Any] in
                          var entry: [String: Any] = ["id": c.id, "name": c.title]
@@ -29,11 +30,20 @@ enum DevSnapshot {
                          }
                          return entry
                      }]
+                    if let retry = model.devices.retryStates[s.id] {
+                        row["retryFailures"] = retry.consecutiveFailures
+                        row["nextRetryAt"] = retry.nextRetryAt?.ISO8601Format()
+                        row["isProbing"] = retry.isProbing
+                    }
+                    return row
                 }
                 let output: [String: Any] = ["recordedAt": Date().ISO8601Format(), "bridge": String(describing: model.bridge.status),
-                    "accessories": model.bridge.exposedDeviceCount, "devices": rows]
+                    "accessories": model.bridge.exposedDeviceCount, "paired": model.bridge.isPaired,
+                    "keepsMacAwake": model.bridge.keepsMacAwake,
+                    "structureRevision": model.devices.structureRevision, "valuesRevision": model.devices.valuesRevision,
+                    "devices": rows]
                 if let data = try? JSONSerialization.data(withJSONObject: output, options: [.prettyPrinted, .sortedKeys]) {
-                    try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+                    diagnosticWriter.submit(data, to: URL(fileURLWithPath: path))
                 }
             }
         }
