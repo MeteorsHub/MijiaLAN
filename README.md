@@ -19,11 +19,19 @@ MijiaLAN 使用 miIO / MIoT 协议直接与局域网设备通信。已有设备 
 ## 环境要求
 
 - macOS 15 或更高版本。
-- 提供 **Swift 6.4 或更高版本**的 Xcode / 命令行工具，当前锁定的依赖需要该工具链。
+- Apple Silicon 或 Intel Mac，发行包同时包含两种架构。
 - Mac 与设备网络互通，并允许 App 访问「本地网络」；HomeKit 发现还需要 Bonjour / mDNS 可达。
-- 首次下载 SwiftPM 依赖、扫码导入及获取尚未缓存的设备规格需要联网。
+- 扫码导入及获取尚未缓存的设备规格需要联网。
+
+## 下载与安装
+
+在 [GitHub Releases](https://github.com/iPocket-APP/MijiaLAN/releases/latest) 下载 `MijiaLAN-<版本号>-universal.dmg`，打开后将 `MijiaLAN.app` 拖入「应用程序」并启动。也提供 ZIP 包和 `SHA256SUMS.txt` 校验值。
+
+正式发行包使用 Developer ID 签名、启用 Hardened Runtime，并经过 Apple 公证，App 与 DMG 均附有公证票据。macOS 询问「本地网络」权限时请选择允许。
 
 ## 构建与启动
+
+源码构建需要提供 **Swift 6.4 或更高版本**的 Xcode / 命令行工具，首次下载 SwiftPM 依赖需要联网。
 
 ```bash
 git clone https://github.com/iPocket-APP/MijiaLAN.git
@@ -32,7 +40,7 @@ cd MijiaLAN
 open build/MijiaLAN.app
 ```
 
-脚本会生成并临时签名 `build/MijiaLAN.app`，用于本机运行。当前提供源码构建方式；该构建不是经过 Apple 公证的发行安装包。macOS 询问「本地网络」权限时请选择允许。
+默认脚本会生成并临时签名 `build/MijiaLAN.app`，用于本机运行；自行构建不会自动进行 Apple 公证。正式发行打包流程见[发行说明](docs/releasing.md)。
 
 ## 使用
 

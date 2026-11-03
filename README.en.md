@@ -19,11 +19,19 @@ MijiaLAN talks directly to devices over your local network using miIO / MIoT. Ad
 ## Requirements
 
 - macOS 15 or later.
-- Xcode / command line tools providing **Swift 6.4 or later**, as required by the currently pinned dependencies.
+- An Apple Silicon or Intel Mac. Release packages include both architectures.
 - Connectivity between your Mac and devices, with Local Network permission enabled. HomeKit discovery also needs reachable Bonjour / mDNS.
-- Internet access for the initial SwiftPM dependency download, QR import and uncached device specifications.
+- Internet access for QR import and uncached device specifications.
+
+## Download and install
+
+Download `MijiaLAN-<version>-universal.dmg` from [GitHub Releases](https://github.com/iPocket-APP/MijiaLAN/releases/latest), open it and drag `MijiaLAN.app` into Applications, then launch it. A ZIP package and `SHA256SUMS.txt` checksums are also available.
+
+Release packages are Developer ID signed with Hardened Runtime enabled and notarized by Apple. Both the app and disk image have stapled notarization tickets. Allow Local Network access when prompted.
 
 ## Build and launch
+
+Source builds require Xcode / command line tools providing **Swift 6.4 or later** and internet access for the initial SwiftPM dependency download.
 
 ```bash
 git clone https://github.com/iPocket-APP/MijiaLAN.git
@@ -32,7 +40,7 @@ cd MijiaLAN
 open build/MijiaLAN.app
 ```
 
-The script produces an ad hoc signed `build/MijiaLAN.app` for local use. Distribution currently uses source builds; this is not an Apple notarized installer. Allow Local Network access when prompted.
+By default, the script produces an ad hoc signed `build/MijiaLAN.app` for local use. Source builds are not automatically notarized. See the [release workflow](docs/releasing.md) for distribution packaging.
 
 ## Setup
 

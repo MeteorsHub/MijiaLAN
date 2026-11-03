@@ -21,8 +21,8 @@ Original project code is MIT licensed. Dependencies retain their original copyri
 内置 HAP 的修改见 [Vendor/hap-swift/README.md](Vendor/hap-swift/README.md)，被修改的源文件保留原版权并标记了修改。
 Local HAP changes are documented in [Vendor/hap-swift/README.md](Vendor/hap-swift/README.md); modified sources retain upstream notices and carry modification notices.
 
-构建后二进制的再分发还应附上各依赖的 LICENSE / NOTICE 与其内置第三方组件所要求的声明。
-When redistributing built binaries, include each dependency's LICENSE / NOTICE and notices required by its bundled third party components.
+App 构建脚本会将项目及依赖的 LICENSE / NOTICE 等原文复制到 `MijiaLAN.app/Contents/Resources/Licenses`，随二进制一起分发。
+The app build script includes original project and dependency LICENSE / NOTICE files in `MijiaLAN.app/Contents/Resources/Licenses` for binary redistribution.
 
 ## MijiaCore / MenuBarMijia MIT notice
 
