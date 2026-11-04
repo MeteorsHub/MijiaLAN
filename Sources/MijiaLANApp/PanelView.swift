@@ -246,7 +246,7 @@ private struct PanelPage: View {
         case .settings:
             ControlCenterSettings(model: model, bridge: model.bridge, appearance: $appearance, navigate: navigate)
         case .settingsMatter:
-            SettingsMatterManagement(model: model, bridge: model.matter)
+            SettingsMatterManagement(model: model, bridge: model.matter, openSettings: { navigate(.settings) })
         case .settingsHomeKit:
             SettingsHomeKitManagement(model: model, bridge: model.bridge)
         case .settingsDevices:

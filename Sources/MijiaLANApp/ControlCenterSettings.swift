@@ -112,7 +112,10 @@ struct ControlCenterSettings: View {
 struct SettingsMatterManagement: View {
     let model: AppModel
     @Bindable var bridge: MatterBridgeController
+    let openSettings: () -> Void
+
     var body: some View {
+        let plansByDevice = Dictionary(grouping: bridge.supported, by: \.sourceID)
         VStack(alignment: .leading, spacing: 16) {
             SettingsSection(L10n.tr("Matter 桥接", "Matter Bridge")) {
                 SettingsGroup {
@@ -139,23 +142,86 @@ struct SettingsMatterManagement: View {
                 }
             }
             SettingsSection(L10n.tr("选择 Matter 设备", "Choose Matter Devices")) {
-                SettingsGroup {
-                    ForEach(model.config.devices) { device in
-                        let plans = bridge.supported.filter { $0.sourceID == device.did }
+                if model.config.devices.isEmpty {
+                    SettingsGroup {
                         VStack(alignment: .leading, spacing: 4) {
-                            Toggle(DevicePresentation.name(device), isOn: Binding(
-                                get: { !plans.isEmpty && bridge.includes(device.did) },
-                                set: { bridge.include(device.did, $0) }))
-                                .toggleStyle(.switch).disabled(plans.isEmpty)
-                            Text(plans.isEmpty ? L10n.tr("尚无可映射能力或规格未加载", "No mapped capabilities or specification unavailable") : plans.map { MatterDevicePlan.title($0.device.kind) }.joined(separator: " · "))
+                            Text(L10n.tr("暂无设备", "No Devices Yet")).font(.callout.weight(.medium))
+                            Text(L10n.tr("请先返回设置导入米家设备，再选择要通过 Matter 桥接的设备。", "Return to Settings to import Mijia devices, then choose which devices to bridge through Matter."))
                                 .font(.caption).foregroundStyle(.secondary)
-                        }.padding(12)
+                            Button(L10n.tr("返回设置", "Back to Settings"), action: openSettings)
+                                .padding(.top, 6)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    }
+                } else {
+                    if plansByDevice.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.tr("暂未发现可桥接的 Matter 设备", "No Matter Devices Available Yet"))
+                                .font(.callout.weight(.medium))
+                            Text(L10n.tr("设备清单中已有设备，请查看下方的支持情况。规格未加载时可到设备页面检查连接；未适配的能力需等待后续支持。", "Your device list is populated. Check each device below: if its specification is unavailable, check its connection on the device page; unmapped capabilities need a future update."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    SettingsGroup {
+                        ForEach(Array(model.config.devices.enumerated()), id: \.element.did) { index, device in
+                            if index > 0 { SettingsDivider() }
+                            SettingsMatterDeviceRow(model: model, bridge: bridge, device: device,
+                                plans: plansByDevice[device.did] ?? [])
+                        }
                     }
                 }
                 Text(L10n.tr("设备选择独立于 HomeKit。移除设备会影响目标平台中的场景和自动化。当前支持开关、调光、色温、风扇、空气净化器、温湿度、光照、人体及接触传感器；以设备实际提供的能力为准。M200 兼容性尚待实测。", "Device selection is independent of HomeKit. Removing a device affects scenes and automations. Supported mappings include power, brightness, color temperature, fans, air purifiers, temperature, humidity, light, occupancy and contact sensors, subject to device capabilities. M200 compatibility awaits hardware testing."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }.padding(.horizontal, 16).padding(.vertical, 8)
+    }
+}
+
+private struct SettingsMatterDeviceRow: View {
+    let model: AppModel
+    let bridge: MatterBridgeController
+    let device: LocalDevice
+    let plans: [MatterDevicePlan.Entry]
+
+    private var room: String { device.roomName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
+    private var needsIdentifier: Bool {
+        model.config.devices.contains {
+            $0.did != device.did && DevicePresentation.name($0) == DevicePresentation.name(device) &&
+                ($0.roomName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") == room
+        }
+    }
+    private var context: String {
+        [room, needsIdentifier ? L10n.tr("设备 ID：\(device.did)", "Device ID: \(device.did)") : ""]
+            .filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(DevicePresentation.name(device)).font(.system(size: 13))
+                if !context.isEmpty {
+                    Text(context).font(.caption).foregroundStyle(.secondary)
+                }
+                Text(plans.isEmpty
+                     ? (model.devices.snapshots[device.did] == nil
+                        ? L10n.tr("设备规格尚未加载", "Device specification not loaded yet")
+                        : L10n.tr("当前设备能力暂未适配 Matter", "This device's capabilities are not mapped to Matter yet"))
+                     : plans.map { MatterDevicePlan.title($0.device.kind) }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle(L10n.tr("通过 Matter 桥接\(DevicePresentation.name(device))", "Bridge \(DevicePresentation.name(device)) through Matter"), isOn: Binding(
+                get: { !plans.isEmpty && bridge.includes(device.did) },
+                set: { bridge.include(device.did, $0) }))
+                .labelsHidden().toggleStyle(.switch).controlSize(.small).fixedSize()
+                .disabled(plans.isEmpty)
+                .accessibilityLabel([DevicePresentation.name(device), context].filter { !$0.isEmpty }.joined(separator: " · "))
+        }
+        .padding(12)
     }
 }
 
