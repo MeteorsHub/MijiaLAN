@@ -116,7 +116,8 @@ struct HomeKitSecurityHardeningTests {
         let keys = ["owner": HAPIdentity().publicKeyData, "user": HAPIdentity().publicKeyData]
         var secrets = HomeKitBridgeSecrets.generate()
         secrets.pairings = keys; secrets.pairingPermissions = ["owner": 1, "user": 0]
-        let decoded = try #require(HomeKitBridgeSecrets.decode(try #require(secrets.encoded())))
+        let encodedData = try #require(secrets.encoded())
+        let decoded = try #require(HomeKitBridgeSecrets.decode(encodedData))
         let store = HomeKitBridgePairingStore(pairings: decoded.pairings, permissions: decoded.pairingPermissions, persist: { _, _ in false })
         #expect(await store.permissions(for: "user") == 0)
         await #expect(throws: (any Error).self) { try await store.store(controllerIdentifier: "user", publicKey: keys["user"]!, permissions: 1) }
