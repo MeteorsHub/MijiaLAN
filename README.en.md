@@ -135,4 +135,4 @@ This is a community project with no affiliation with Xiaomi, Mijia or Apple, and
 Settings offers independent HomeKit and Matter bridges, each with its own device selection. Both use the App's shared controller.
 Matter mappings include lights with brightness and color temperature, outlets, fans, selected purifiers and sensors.
 Pairing and runtime controls are integrated in the App. Apple Home also accepts Matter devices.
-See [MatterBridge/README.md](MatterBridge/README.md) for builds and limits (Chinese). macOS compilation, native UI and M200 pairing remain unverified in the Linux development environment.
+See [MatterBridge/README.md](MatterBridge/README.md) for builds and limits (Chinese). Commit `9060d6d` passed CLI/App compilation and all Swift tests on a local Mac. Native UI behavior, full App packaging/signing and M200 pairing remain unverified.

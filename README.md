@@ -135,4 +135,4 @@ MIJIALAN_UI_PREVIEW=1 "$(swift build --show-bin-path)/MijiaLANApp"
 设置中新增与 HomeKit 并列的 Matter 桥接，可独立或同时启用，分别选择设备。
 Matter 支持兼容灯的调光与色温、插座、风扇、部分净化器和传感器，提供配对二维码和运行状态。
 两种桥接共用 App 的设备控制层。Apple「家庭」也支持 Matter。
-构建与支持范围见 [MatterBridge/README.md](MatterBridge/README.md)。当前尚未完成 macOS 编译、原生界面和 M200 实机验收。
+构建与支持范围见 [MatterBridge/README.md](MatterBridge/README.md)。提交 `9060d6d` 已在本地 Mac 通过 CLI、App 编译和全部 Swift 测试；原生界面、完整打包签名和 M200 实机验收仍待完成。
