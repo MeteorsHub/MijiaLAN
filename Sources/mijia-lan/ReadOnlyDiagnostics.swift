@@ -23,9 +23,10 @@ enum ReadOnlyDiagnostics {
         "xiaomi.feeder.pi2001": [(2, 1), (2, 6), (2, 10), (2, 11), (2, 13), (2, 15), (2, 26), (2, 28), (2, 29), (2, 31), (2, 32)],
     ]
     static func firmware(_ result: JSONValue) -> [String: JSONValue] {
+        guard case .object(let info) = result else { return [:] }
         var fields: [String: JSONValue] = [:]
         for key in ["model", "fw_ver", "mcu_fw_ver", "miio_ver", "hw_ver"] {
-            guard let value = result[key] else { continue }
+            guard let value = info[key] else { continue }
             switch value {
             case .string(let text) where text.count <= 96: fields[key] = value
             case .number(let number) where number.isFinite: fields[key] = value
@@ -36,7 +37,17 @@ enum ReadOnlyDiagnostics {
     }
     static func reading(_ result: JSONValue, siid: Int, piid: Int) -> [String: JSONValue] {
         var output: [String: JSONValue] = ["method": .string("get_properties"), "siid": .number(Double(siid)), "piid": .number(Double(piid))]
-        guard let item = result.arrayValue?.first(where: { $0["siid"] == .number(Double(siid)) && $0["piid"] == .number(Double(piid)) }) else {
+        // Match public enum cases instead of MijiaCore's internal subscript/arrayValue conveniences.
+        var matched: [String: JSONValue]?
+        if case .array(let items) = result {
+            for case .object(let candidate) in items {
+                guard candidate["siid"] == .number(Double(siid)),
+                      candidate["piid"] == .number(Double(piid)) else { continue }
+                matched = candidate
+                break
+            }
+        }
+        guard let item = matched else {
             output["error"] = .string("requested_property_missing"); return output
         }
         // Avoid JSONValue.intValue: it rounds strings/fractions and can trap on enormous doubles.
@@ -95,7 +106,8 @@ enum ReadOnlyDiagnostics {
         do {
             let info = try await call("miIO.info", .array([]))
             report["firmware"] = .object(firmware(info))
-            guard info["model"]?.stringValue == device.model else {
+            guard case .object(let infoFields) = info,
+                  infoFields["model"] == .string(device.model) else {
                 report["error"] = .string("model_mismatch_no_properties_queried")
                 return .object(report)
             }

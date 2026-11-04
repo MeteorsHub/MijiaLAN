@@ -4,6 +4,16 @@ import MijiaLAN
 import Testing
 @testable import mijia_lan
 
+private func diagnosticObject(_ value: JSONValue?) -> [String: JSONValue] {
+    guard let value, case .object(let fields) = value else { return [:] }
+    return fields
+}
+
+private func diagnosticArray(_ value: JSONValue?) -> [JSONValue] {
+    guard let value, case .array(let items) = value else { return [] }
+    return items
+}
+
 struct ReadOnlyDiagnosticsTests {
     @Test("Diagnostics keep raw scalar types and codes without serializing device credentials")
     func projection() throws {
@@ -36,7 +46,7 @@ struct ReadOnlyDiagnosticsTests {
             if method == "miIO.info" {
                 return .object(["model": .string(model), "fw_ver": .string("1.2.3"), "token": .string("private-token")])
             }
-            let row = params.arrayValue?.first ?? .null
+            let row = diagnosticObject(diagnosticArray(params).first)
             if row["piid"] == .number(2) { throw MiioError.deviceError(code: -4004, message: "private-error-payload") }
             return .array([.object(["siid": row["siid"] ?? .null, "piid": row["piid"] ?? .null,
                                    "code": .number(0), "value": .number(27.5)])])
@@ -51,14 +61,15 @@ struct ReadOnlyDiagnosticsTests {
     @Test("Actual diagnostic collection is one property per read, preserves errors and performs no writes")
     func collection() async throws {
         let script = Script(model: curtain.model)
-        let report = await ReadOnlyDiagnostics.collect(device: curtain, slot: 0) { try await script.call($0, $1) }
+        let collected = await ReadOnlyDiagnostics.collect(device: curtain, slot: 0) { try await script.call($0, $1) }
+        let report = diagnosticObject(collected)
         let requests = await script.requests
         #expect(requests.map(\.0) == ["miIO.info"] + Array(repeating: "get_properties", count: 6))
-        #expect(requests.dropFirst().allSatisfy { $0.1.arrayValue?.count == 1 })
-        let readings = try #require(report["readings"]?.arrayValue)
-        #expect(readings.count == 6)
-        #expect(readings[0]["code"] == .number(-4004))
-        #expect(readings[1]["rawValue"] == .number(27.5))
+        #expect(requests.dropFirst().allSatisfy { diagnosticArray($0.1).count == 1 })
+        let readings = diagnosticArray(report["readings"])
+        try #require(readings.count == 6)
+        #expect(diagnosticObject(readings[0])["code"] == .number(-4004))
+        #expect(diagnosticObject(readings[1])["rawValue"] == .number(27.5))
         #expect(report["specificationSource"] == .string("imported_config"))
         let text = String(decoding: try JSONEncoder().encode(report), as: UTF8.self)
         #expect(!text.contains("private-"))
@@ -68,7 +79,8 @@ struct ReadOnlyDiagnosticsTests {
     @Test("A mismatched device stops after info without querying properties")
     func mismatch() async {
         let script = Script(model: "other.model")
-        let report = await ReadOnlyDiagnostics.collect(device: curtain, slot: 0) { try await script.call($0, $1) }
+        let collected = await ReadOnlyDiagnostics.collect(device: curtain, slot: 0) { try await script.call($0, $1) }
+        let report = diagnosticObject(collected)
         #expect(report["error"] == .string("model_mismatch_no_properties_queried"))
         #expect(await script.requests.count == 1)
     }
@@ -97,10 +109,13 @@ struct ReadOnlyDiagnosticsTests {
         try Data(json.utf8).write(to: file)
         try Data("private-config".utf8).write(to: directory.appendingPathComponent("home_config_v1"))
         let cached = ReadOnlyDiagnostics.cachedSpecifications(model: curtain.model, directory: directory)
-        #expect(cached.count == 1)
-        #expect(cached[0]["type"] == .string(type))
-        let props = try #require(cached[0]["services"]?.arrayValue?.first?["properties"]?.arrayValue)
-        #expect(props[0]["access"] == .array([.string("write")]))
+        try #require(cached.count == 1)
+        let schema = diagnosticObject(cached[0])
+        #expect(schema["type"] == .string(type))
+        let service = diagnosticObject(diagnosticArray(schema["services"]).first)
+        let props = diagnosticArray(service["properties"])
+        let firstProp = try #require(props.first)
+        #expect(diagnosticObject(firstProp)["access"] == .array([.string("write")]))
         #expect(ReadOnlyDiagnostics.cachedSpecifications(model: "unknown.model", directory: directory).isEmpty)
         #expect(ReadOnlyDiagnostics.cachedSpecifications(model: "xiaomi.feeder.pi2001", directory: directory).isEmpty)
     }
