@@ -1,0 +1,111 @@
+{
+  "model": "xiaomi.pet_waterer.70m2",
+  "type": "urn:miot-spec-v2:device:pet-drinking-fountain:0000A067:xiaomi-70m2:2",
+  "services": [
+    {
+      "iid": 2,
+      "type": "pet-drinking-fountain",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "fault",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "No Faults"
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 1,
+              "description": "Not Dispensing"
+            },
+            {
+              "value": 2,
+              "description": "Dispensing"
+            }
+          ]
+        },
+        {
+          "iid": 4,
+          "type": "mode",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Sensor"
+            },
+            {
+              "value": 1,
+              "description": "Intermittent"
+            },
+            {
+              "value": 2,
+              "description": "Constant"
+            }
+          ]
+        },
+        {
+          "iid": 7,
+          "type": "out-water-interval",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-range": [
+            15,
+            120,
+            15
+          ],
+          "comment": "出水间隔"
+        },
+        {
+          "iid": 10,
+          "type": "water-shortage-status",
+          "format": "bool",
+          "access": [
+            "read",
+            "notify"
+          ]
+        },
+        {
+          "iid": 11,
+          "type": "out-water-interval",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-range": [
+            10,
+            120,
+            5
+          ],
+          "comment": "出水间隔"
+        }
+      ]
+    }
+  ]
+}

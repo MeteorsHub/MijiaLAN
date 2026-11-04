@@ -75,6 +75,7 @@ let package = Package(
                 "MijiaLAN",
                 .product(name: "MijiaCore", package: "MenuBarMijia")
             ],
+            resources: [.process("Fixtures")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(

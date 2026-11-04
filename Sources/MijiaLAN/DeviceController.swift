@@ -253,7 +253,7 @@ public final class DeviceController {
         for (key, var reading) in readings {
             if let value = reading.value, reading.isAvailable,
                let cap = snapshot.capabilitiesByID[key], cap.format != "string",
-               (try? cap.validated(value)) == nil {
+               (try? cap.validatedReading(value)) == nil {
                 reading.error = L10n.tr("设备返回的数据类型或取值不符合规格", "The returned value or data type does not match the device specification.")
                 reading.value = nil
             }

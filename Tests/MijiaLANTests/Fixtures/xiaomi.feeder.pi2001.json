@@ -1,0 +1,265 @@
+{
+  "model": "xiaomi.feeder.pi2001",
+  "type": "urn:miot-spec-v2:device:pet-feeder:0000A06C:xiaomi-pi2001:3",
+  "services": [
+    {
+      "iid": 2,
+      "type": "pet-feeder",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "fault",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "null"
+            },
+            {
+              "value": 1,
+              "description": "Faults"
+            }
+          ]
+        },
+        {
+          "iid": 6,
+          "type": "pet-food-left-level",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Normal"
+            },
+            {
+              "value": 1,
+              "description": "Low"
+            }
+          ]
+        },
+        {
+          "iid": 7,
+          "type": "target-feeding-measure",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-range": [
+            0,
+            150,
+            1
+          ]
+        },
+        {
+          "iid": 8,
+          "type": "feeding-measure",
+          "format": "uint16",
+          "access": [],
+          "value-range": [
+            0,
+            150,
+            1
+          ]
+        },
+        {
+          "iid": 10,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Normal"
+            },
+            {
+              "value": 1,
+              "description": "Abnormal"
+            }
+          ],
+          "comment": "卡粮状态"
+        },
+        {
+          "iid": 11,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Normal"
+            },
+            {
+              "value": 1,
+              "description": "Abnormal"
+            }
+          ],
+          "comment": "食盆异常状态"
+        },
+        {
+          "iid": 13,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Normal"
+            },
+            {
+              "value": 1,
+              "description": "Abnormal"
+            }
+          ],
+          "comment": "加餐提醒状态"
+        },
+        {
+          "iid": 15,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "No"
+            },
+            {
+              "value": 1,
+              "description": "Yes"
+            }
+          ],
+          "comment": "食盆粮食堆积状态"
+        },
+        {
+          "iid": 26,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Idle"
+            },
+            {
+              "value": 1,
+              "description": "Dispensing"
+            }
+          ],
+          "comment": "出粮状态"
+        },
+        {
+          "iid": 28,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Single"
+            },
+            {
+              "value": 1,
+              "description": "Total"
+            }
+          ],
+          "comment": "进食上报类型"
+        },
+        {
+          "iid": 31,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Empty"
+            },
+            {
+              "value": 1,
+              "description": "Low"
+            },
+            {
+              "value": 2,
+              "description": "Norma"
+            }
+          ],
+          "comment": "耗材状态"
+        },
+        {
+          "iid": 32,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Idle"
+            },
+            {
+              "value": 1,
+              "description": "Busy"
+            }
+          ],
+          "comment": "进食量低"
+        },
+        {
+          "iid": 29,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-range": [
+            0,
+            100,
+            1
+          ],
+          "comment": "喂食计划进度"
+        }
+      ],
+      "actions": [
+        {
+          "iid": 1,
+          "type": "pet-food-out",
+          "in": [
+            7
+          ],
+          "out": []
+        }
+      ]
+    }
+  ]
+}

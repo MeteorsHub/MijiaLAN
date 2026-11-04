@@ -1,0 +1,117 @@
+{
+  "model": "iot.tow_w.jd015",
+  "type": "urn:miot-spec-v2:device:towel-rack:0000A09A:iot-jd015:1",
+  "services": [
+    {
+      "iid": 2,
+      "type": "towel-rack",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "on",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ]
+        },
+        {
+          "iid": 2,
+          "type": "mode",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Auto"
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 2,
+              "description": "Heating"
+            },
+            {
+              "value": 3,
+              "description": "Stopped"
+            }
+          ]
+        },
+        {
+          "iid": 4,
+          "type": "fault",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "No Faults"
+            },
+            {
+              "value": 1,
+              "description": "NTC Open"
+            },
+            {
+              "value": 2,
+              "description": "NTC Short"
+            },
+            {
+              "value": 3,
+              "description": "Leakage"
+            },
+            {
+              "value": 4,
+              "description": "Temperature Protection"
+            }
+          ]
+        },
+        {
+          "iid": 5,
+          "type": "target-temperature",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-range": [
+            40,
+            65,
+            5
+          ]
+        },
+        {
+          "iid": 6,
+          "type": "temperature",
+          "format": "int8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-range": [
+            -10,
+            70,
+            1
+          ]
+        }
+      ]
+    }
+  ]
+}

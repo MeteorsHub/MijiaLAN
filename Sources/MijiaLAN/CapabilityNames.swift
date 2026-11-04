@@ -49,6 +49,8 @@ public enum CapabilityNames {
         ]
         if let english = vendorLabels[text] { return L10n.tr(text, english) }
         let names = ["auto": L10n.tr("自动", "Auto"), "sleep": L10n.tr("睡眠", "Sleep"), "favorite": L10n.tr("最爱", "Favorite"), "manual": L10n.tr("手动", "Manual"), "straightwind": L10n.tr("直吹风", "Direct Airflow"),
+            "normal": L10n.tr("正常", "Normal"), "abnormal": L10n.tr("异常", "Abnormal"), "yes": L10n.tr("是", "Yes"), "no": L10n.tr("否", "No"),
+            "empty": L10n.tr("空", "Empty"), "maxschedule": L10n.tr("计划数量上限", "Maximum Schedule Count"), "leftgramdisplay": L10n.tr("余粮克数显示", "Remaining Food Weight Display"),
             "naturalwind": L10n.tr("自然风", "Natural Breeze"), "smart": L10n.tr("智能风", "Smart Airflow"), "off": L10n.tr("关闭", "Off"), "on": L10n.tr("开启", "On"), "idle": L10n.tr("待机", "Standby"),
             "busy": L10n.tr("运行中", "Running"), "running": L10n.tr("运行中", "Running"), "paused": L10n.tr("已暂停", "Paused"), "delay": L10n.tr("预约中", "Scheduled"), "aptrunning": L10n.tr("预约中", "Scheduled"),
             "keepwarm": L10n.tr("保温中", "Keeping Warm"), "cooking": L10n.tr("烹饪中", "Cooking"), "completed": L10n.tr("已完成", "Completed"), "cookfinish": L10n.tr("烹饪完成", "Cooking Complete"),

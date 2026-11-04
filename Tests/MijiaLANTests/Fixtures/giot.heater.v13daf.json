@@ -1,0 +1,164 @@
+{
+  "model": "giot.heater.v13daf",
+  "type": "urn:miot-spec-v2:device:heater:0000A01A:giot-v13daf:1",
+  "services": [
+    {
+      "iid": 2,
+      "type": "heater",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "on",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ]
+        },
+        {
+          "iid": 2,
+          "type": "fault",
+          "format": "int32",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "null"
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "heat-level",
+          "format": "int32",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Off"
+            },
+            {
+              "value": 1,
+              "description": "1"
+            },
+            {
+              "value": 2,
+              "description": "2"
+            },
+            {
+              "value": 3,
+              "description": "3"
+            },
+            {
+              "value": 4,
+              "description": "4"
+            },
+            {
+              "value": 5,
+              "description": "5"
+            },
+            {
+              "value": 6,
+              "description": "6"
+            },
+            {
+              "value": 7,
+              "description": "7"
+            },
+            {
+              "value": 8,
+              "description": "8"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "iid": 3,
+      "type": "light",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "on",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ]
+        },
+        {
+          "iid": 2,
+          "type": "mode",
+          "format": "int32",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Empty"
+            },
+            {
+              "value": 1,
+              "description": "Red"
+            },
+            {
+              "value": 2,
+              "description": "Green"
+            },
+            {
+              "value": 3,
+              "description": "Blue"
+            },
+            {
+              "value": 4,
+              "description": "Flame"
+            },
+            {
+              "value": 5,
+              "description": "Ice Blue"
+            },
+            {
+              "value": 6,
+              "description": "Purple"
+            },
+            {
+              "value": 7,
+              "description": "White"
+            },
+            {
+              "value": 8,
+              "description": "Auto"
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "color",
+          "format": "int32",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-range": [
+            0,
+            16777215,
+            1
+          ]
+        }
+      ]
+    }
+  ]
+}

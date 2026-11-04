@@ -120,6 +120,21 @@ public struct DeviceCapability: Equatable, Sendable, Identifiable {
     public static func actionID(_ siid: Int, _ aiid: Int) -> String { "a:\(siid):\(aiid)" }
 
     public func validated(_ value: JSONValue) throws -> JSONValue {
+        try validate(value, enforceStep: true)
+    }
+
+    /// Sensor samples may be finer than the writable step. Types, bounds and enums still apply.
+    /// Never coerce numeric strings or 0/1 into booleans when accepting device telemetry.
+    public func validatedReading(_ value: JSONValue) throws -> JSONValue {
+        if isNumeric, case .number = value {
+            return try validate(value, enforceStep: format != "float")
+        }
+        if format == "bool", case .bool = value { return value }
+        if format == "string", case .string = value { return value }
+        throw DeviceControlError.invalidValue(title)
+    }
+
+    private func validate(_ value: JSONValue, enforceStep: Bool) throws -> JSONValue {
         if format == "bool" {
             guard case .bool = value else { throw DeviceControlError.invalidValue(title) }
             return value
@@ -130,7 +145,7 @@ public struct DeviceCapability: Equatable, Sendable, Identifiable {
             if let min, n < min { throw DeviceControlError.invalidValue(title) }
             if let max, n > max { throw DeviceControlError.invalidValue(title) }
             if !options.isEmpty, !options.contains(where: { Double($0.value) == n }) { throw DeviceControlError.invalidValue(title) }
-            if let min, step > 0, abs((n - min) / step - ((n - min) / step).rounded()) > 0.00001 {
+            if enforceStep, let min, step > 0, abs((n - min) / step - ((n - min) / step).rounded()) > 0.00001 {
                 throw DeviceControlError.invalidValue(title)
             }
             return .number(n)
@@ -141,7 +156,13 @@ public struct DeviceCapability: Equatable, Sendable, Identifiable {
     public func formatted(_ value: JSONValue?) -> String {
         guard let value else { return L10n.tr("尚无读数", "No Reading") }
         if let n = value.doubleValue {
-            if let option = options.first(where: { Double($0.value) == n }) { return option.title }
+            if let option = options.first(where: { Double($0.value) == n }) {
+                if name == "fault", n == 0, option.description.lowercased() == "null",
+                   ["giot.heater.v13daf", "xiaomi.feeder.pi2001"].contains(model) {
+                    return L10n.tr("状态码 0（规格未提供说明）", "Status code 0 (no specification label)")
+                }
+                return option.title
+            }
             let text = n.rounded() == n ? String(format: "%.0f", n) : String(format: "%.1f", n)
             return text + displayUnit
         }
@@ -285,6 +306,17 @@ public enum DeviceCapabilityCatalog {
                 var unit = p.unit
                 let fallback = L10n.isEnglish ? (p.description ?? p.name) : (p.comment ?? p.description ?? p.name)
                 var title = CapabilityNames.property(service: service.name, name: p.name, fallback: fallback)
+                if service.properties.filter({ $0.name == p.name }).count > 1 {
+                    // Vendor specs reuse standard property names for distinct meanings. Retain the
+                    // available description/comment, and always expose a stable, non-secret address.
+                    let specific = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !specific.isEmpty, specific.lowercased() != p.name.lowercased() { title = specific }
+                    title += " (S\(service.iid)/P\(p.iid))"
+                }
+                if model == "giot.heater.v13daf", p.name == "on" {
+                    if service.name == "heater" { title = L10n.tr("壁炉主电源", "Fireplace Main Power") }
+                    if service.name == "light" { title = L10n.tr("壁炉灯光电源", "Fireplace Light Power") }
+                }
                 if model == "dmaker.fan.p28", service.iid == 3, p.iid == 1 { unit = "minutes" }
                 if p.name.contains("swing-included-angle") { unit = "arcdegrees" }
                 if model == "cuco.plug.v3" {

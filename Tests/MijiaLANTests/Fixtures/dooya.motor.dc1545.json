@@ -1,0 +1,137 @@
+{
+  "model": "dooya.motor.dc1545",
+  "type": "urn:miot-spec-v2:device:motor-controller:0000A01D:dooya-dc1545:1",
+  "services": [
+    {
+      "iid": 2,
+      "type": "motor-controller",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "motor-control",
+          "format": "uint8",
+          "access": [
+            "write"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Close"
+            },
+            {
+              "value": 1,
+              "description": "Stop"
+            },
+            {
+              "value": 2,
+              "description": "Open"
+            },
+            {
+              "value": 3,
+              "description": "Up"
+            },
+            {
+              "value": 4,
+              "description": "Down"
+            }
+          ]
+        },
+        {
+          "iid": 2,
+          "type": "status",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Closing"
+            },
+            {
+              "value": 1,
+              "description": "Stopped"
+            },
+            {
+              "value": 2,
+              "description": "Opening"
+            },
+            {
+              "value": 3,
+              "description": "Up"
+            },
+            {
+              "value": 4,
+              "description": "Down"
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "current-position",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-range": [
+            0,
+            100,
+            1
+          ]
+        },
+        {
+          "iid": 4,
+          "type": "target-position",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-range": [
+            0,
+            100,
+            1
+          ]
+        },
+        {
+          "iid": 5,
+          "type": "motor-reverse",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ]
+        },
+        {
+          "iid": 9,
+          "type": "fault",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "No Faults"
+            }
+          ]
+        },
+        {
+          "iid": 10,
+          "type": "mode",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ]
+        }
+      ]
+    }
+  ]
+}

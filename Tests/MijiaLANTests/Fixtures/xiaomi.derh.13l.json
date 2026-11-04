@@ -1,0 +1,114 @@
+{
+  "model": "xiaomi.derh.13l",
+  "type": "urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:2",
+  "services": [
+    {
+      "iid": 2,
+      "type": "dehumidifier",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "on",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ]
+        },
+        {
+          "iid": 2,
+          "type": "fault",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "No Faults"
+            },
+            {
+              "value": 1,
+              "description": "Tank Full"
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "mode",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-list": [
+            {
+              "value": 0,
+              "description": "Smart"
+            },
+            {
+              "value": 1,
+              "description": "Sleep"
+            },
+            {
+              "value": 2,
+              "description": "Clothes Dry"
+            }
+          ]
+        },
+        {
+          "iid": 5,
+          "type": "target-humidity",
+          "format": "uint8",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ],
+          "value-range": [
+            30,
+            70,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "iid": 3,
+      "type": "environment",
+      "properties": [
+        {
+          "iid": 1,
+          "type": "relative-humidity",
+          "format": "uint8",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-range": [
+            0,
+            100,
+            1
+          ]
+        },
+        {
+          "iid": 2,
+          "type": "temperature",
+          "format": "float",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-range": [
+            -30,
+            100,
+            1
+          ]
+        }
+      ]
+    }
+  ]
+}
