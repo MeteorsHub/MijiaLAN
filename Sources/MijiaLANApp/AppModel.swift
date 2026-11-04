@@ -105,7 +105,7 @@ final class AppModel {
             save: { vault.set($0, for: AppModel.bridgeAccount) }
         ), defaults: bridgeDefaults)
 
-        matter = MatterBridgeController(defaults: bridgeDefaults)
+        matter = MatterBridgeController(defaults: bridgeDefaults, ephemeral: ephemeral)
         if ephemeral { matter.isEnabled = false }
         matter.attach(controller)
 
@@ -166,8 +166,11 @@ final class AppModel {
         let region = importRegion
         importTask = Task { [weak self] in
             do {
-                let login = MiAccountLogin(region: region)
+                let login = MiAccountLogin(transport: XiaomiHTTPTransport(),
+                    redirectlessTransport: XiaomiHTTPTransport(followRedirects: false), region: region)
                 let ticket = try await login.start()
+                try XiaomiEndpointPolicy.validate(ticket.loginURL)
+                try XiaomiEndpointPolicy.validate(ticket.longPollURL)
                 guard !Task.isCancelled else { return }
                 self?.importState = .waitingForScan(ticket, expiresAt: Date().addingTimeInterval(ticket.timeout))
                 let session = try await login.waitForScan(ticket)

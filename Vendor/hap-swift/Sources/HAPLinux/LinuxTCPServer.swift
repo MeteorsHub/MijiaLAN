@@ -1,4 +1,5 @@
 // LinuxTCPServer.swift
+// Modified for MijiaLAN; see Vendor/hap-swift/README.md for the changes.
 // Copyright 2026 Monagle Pty Ltd
 
 import Foundation
@@ -107,8 +108,12 @@ private final class HAPChannelHandler: ChannelInboundHandler, @unchecked Sendabl
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         var buf = unwrapInboundIn(data)
         if let bytes = buf.readBytes(length: buf.readableBytes) {
+            guard bytes.count <= HTTPProtocol.maxRequestBytes - buffer.count else {
+                context.close(promise: nil); return
+            }
             buffer.append(contentsOf: bytes)
         }
+        if HTTPProtocol.requestBoundary(in: buffer) == .invalid { context.close(promise: nil); return }
 
         // Try to parse a complete HTTP request
         guard let request = HTTPProtocol.parseRequest(from: buffer) else {

@@ -89,6 +89,7 @@ public actor HAPSession {
 
         // Header encodes PLAINTEXT length N; ciphertext occupies N bytes, auth tag 16 bytes.
         let plaintextLength = Int(buffer[buffer.startIndex]) | (Int(buffer[buffer.startIndex + 1]) << 8)
+        guard plaintextLength <= 1024 else { throw HAPCryptoError.decryptionFailed }
         let totalFrameSize = 2 + plaintextLength + 16
 
         guard buffer.count >= totalFrameSize else { return nil }  // incomplete frame — wait

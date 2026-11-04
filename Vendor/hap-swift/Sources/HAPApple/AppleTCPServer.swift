@@ -18,6 +18,16 @@ import HAPTransport
 /// transition happens atomically with respect to incoming data.
 private actor HAPConnectionContext {
     var buffer = Data()
+    private var closed = false
+    private let created = ContinuousClock.now
+    private var partialStarted: ContinuousClock.Instant?
+
+    func mustClose() async -> Bool {
+        if closed { return true }
+        if !(await session.isEncrypted), ContinuousClock.now - created > .seconds(30) { return true }
+        if let partialStarted, ContinuousClock.now - partialStarted > .seconds(15) { return true }
+        return false
+    }
     /// Decrypted bytes of a request that spans several frames; each frame carries at most 1024 plaintext bytes.
     var pendingPlaintext = Data()
     /// A peer that never completes a request cannot grow `pendingPlaintext` past this.
@@ -73,6 +83,8 @@ private actor HAPConnectionContext {
     /// Append newly-received bytes to the buffer and process as many complete
     /// frames as possible.  Returns a list of raw byte blobs to send back.
     func process(incoming data: Data, logger: Logger, connectionID: Int) async -> [Data] {
+        guard !closed, data.count <= 128 * 1024 - buffer.count else { closed = true; return [] }
+        if partialStarted == nil { partialStarted = .now }
         buffer.append(data)
         var outgoing: [Data] = []
 
@@ -95,6 +107,7 @@ private actor HAPConnectionContext {
                     plaintext = decrypted
                 } catch {
                     logger.error("Connection \(connectionID): session decrypt failed (frame format or key mismatch): \(error)")
+                    closed = true
                     break
                 }
                 let consumed = bytesAvailable - localBuffer.count
@@ -107,8 +120,10 @@ private actor HAPConnectionContext {
                 guard pendingPlaintext.count <= Self.maxPendingPlaintext else {
                     logger.error("Connection \(connectionID): no complete request in \(pendingPlaintext.count) decrypted bytes, dropping them")
                     pendingPlaintext.removeAll()
+                    closed = true
                     break
                 }
+                if HTTPProtocol.requestBoundary(in: pendingPlaintext) == .invalid { closed = true; break }
                 while let length = HTTPProtocol.requestLength(in: pendingPlaintext) {
                     let requestData = Data(pendingPlaintext.prefix(length))
                     pendingPlaintext.removeFirst(length)
@@ -133,12 +148,14 @@ private actor HAPConnectionContext {
                         logger.error("Connection \(connectionID): response encryption failed: \(error)")
                     }
                 }
+                if HTTPProtocol.requestBoundary(in: pendingPlaintext) == .invalid { closed = true; break }
                 if !pendingPlaintext.isEmpty {
                     logger.debug("Connection \(connectionID): request incomplete (\(pendingPlaintext.count) bytes so far), waiting for the next frame")
                 }
 
             } else {
                 // --- Plaintext phase (pair-setup / pair-verify) ---
+                if HTTPProtocol.requestBoundary(in: buffer) == .invalid { closed = true; break }
                 guard let request = HTTPProtocol.parseRequest(from: buffer) else {
                     break // incomplete or unparseable — wait for more data
                 }
@@ -169,6 +186,7 @@ private actor HAPConnectionContext {
             }
         }
 
+        if buffer.isEmpty && pendingPlaintext.isEmpty { partialStarted = nil }
         return outgoing
     }
 }
@@ -180,6 +198,7 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     private var listener: NWListener?
     private var connections: [Int: NWConnection] = [:]
     private var contexts: [Int: HAPConnectionContext] = [:]
+    private var deadlines: [Int: Task<Void, Never>] = [:]
     private var nextConnectionID = 0
     private let logger: Logger
 
@@ -287,6 +306,8 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
             self.listener = nil
             self.connections.removeAll()
             self.contexts.removeAll()
+            self.deadlines.values.forEach { $0.cancel() }
+            self.deadlines.removeAll()
             return (l, c)
         }
 
@@ -300,7 +321,8 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     // MARK: - Connection Handling
 
     private func handleNewConnection(_ connection: NWConnection) {
-        let connectionID = lock.withLock {
+        let admitted: Int? = lock.withLock {
+            guard connections.count < 32 else { return nil }
             let id = nextConnectionID
             nextConnectionID += 1
             connections[id] = connection
@@ -315,6 +337,16 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
             )
             return id
         }
+
+        guard let connectionID = admitted else { connection.cancel(); return }
+        let deadline = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                guard let self, let context = self.lock.withLock({ self.contexts[connectionID] }) else { return }
+                if await context.mustClose() { self.removeConnection(connectionID); return }
+            }
+        }
+        lock.withLock { deadlines[connectionID] = deadline }
 
         logger.debug("New HAP connection \(connectionID)")
 
@@ -341,20 +373,16 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     private func receiveData(connection: NWConnection, connectionID: Int) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
             guard let self else { return }
-
-            if let data = content, !data.isEmpty {
-                Task {
+            // Apply backpressure: one processing task per connection, rather than queueing unbounded tasks.
+            Task {
+                if let data = content, !data.isEmpty {
                     await self.processData(data: data, connection: connection, connectionID: connectionID)
                 }
-            }
-
-            if isComplete {
-                self.removeConnection(connectionID)
-            } else if let error {
-                self.logger.debug("Connection \(connectionID) receive error: \(error)")
-                self.removeConnection(connectionID)
-            } else {
-                self.receiveData(connection: connection, connectionID: connectionID)
+                if isComplete || error != nil {
+                    self.removeConnection(connectionID)
+                } else if self.lock.withLock({ self.contexts[connectionID] != nil }) {
+                    self.receiveData(connection: connection, connectionID: connectionID)
+                }
             }
         }
     }
@@ -363,6 +391,7 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
         guard let context = lock.withLock({ contexts[connectionID] }) else { return }
 
         let responses = await context.process(incoming: data, logger: logger, connectionID: connectionID)
+        if await context.mustClose() { removeConnection(connectionID); return }
         for responseData in responses {
             connection.send(content: responseData, completion: .contentProcessed { [weak self] error in
                 if let error {
@@ -375,6 +404,7 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     private func removeConnection(_ connectionID: Int) {
         let connection = lock.withLock {
             contexts.removeValue(forKey: connectionID)
+            deadlines.removeValue(forKey: connectionID)?.cancel()
             return connections.removeValue(forKey: connectionID)
         }
         connection?.cancel()

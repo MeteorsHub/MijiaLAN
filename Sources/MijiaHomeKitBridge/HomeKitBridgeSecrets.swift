@@ -16,6 +16,8 @@ struct HomeKitBridgeSecrets: Codable, Equatable, Sendable {
     var signingKey: Data
     /// Controller pairing ID → its Ed25519 public key.
     var pairings: [String: Data]
+    /// Nil denotes a legacy store, whose controllers were all administrators.
+    var pairingPermissions: [String: UInt8]? = nil
 
     static func generate() -> HomeKitBridgeSecrets {
         var generator = SystemRandomNumberGenerator()
@@ -107,47 +109,83 @@ actor HomeKitBridgePairingStore: PairingStore {
     }
 
     private var pairings: [String: Data]
-    private let persist: @Sendable ([String: Data]) async -> Bool
+    private var roles: [String: UInt8]
+    private var writing = false
+    private var writers: [CheckedContinuation<Void, Never>] = []
+    private let persist: @Sendable ([String: Data], [String: UInt8]) async -> Bool
     private let onChange: @Sendable (Bool) async -> Void
 
     init(
         pairings: [String: Data],
-        persist: @escaping @Sendable ([String: Data]) async -> Bool,
+        permissions: [String: UInt8]? = nil,
+        persist: @escaping @Sendable ([String: Data], [String: UInt8]) async -> Bool,
         onChange: @escaping @Sendable (_ isPaired: Bool) async -> Void = { _ in }
     ) {
         self.pairings = pairings
+        self.roles = pairings.mapValues { _ in UInt8(1) }
+        if let permissions {
+            self.roles = pairings.mapValues { _ in UInt8(0) }
+                .merging(permissions.filter { pairings[$0.key] != nil }) { _, role in role == 1 ? 1 : 0 }
+        }
         self.persist = persist
         self.onChange = onChange
     }
 
-    func store(controllerIdentifier: String, publicKey: Data) async throws {
+    func store(controllerIdentifier: String, publicKey: Data, permissions: UInt8) async throws {
+        await acquireWrite()
+        defer { releaseWrite() }
         var next = pairings
+        var nextRoles = roles
         next[controllerIdentifier] = publicKey
-        try await commit(next)
+        nextRoles[controllerIdentifier] = permissions == 1 ? 1 : 0
+        try await commit(next, roles: nextRoles)
     }
+
+    func store(controllerIdentifier: String, publicKey: Data) async throws {
+        try await store(controllerIdentifier: controllerIdentifier, publicKey: publicKey, permissions: 1)
+    }
+
+    func permissions(for controllerIdentifier: String) -> UInt8? { roles[controllerIdentifier] }
 
     func publicKey(for controllerIdentifier: String) -> Data? {
         pairings[controllerIdentifier]
     }
 
     func remove(controllerIdentifier: String) async throws {
+        await acquireWrite()
+        defer { releaseWrite() }
         guard pairings[controllerIdentifier] != nil else { return }
         var next = pairings
         next.removeValue(forKey: controllerIdentifier)
-        try await commit(next)
+        var nextRoles = roles
+        nextRoles.removeValue(forKey: controllerIdentifier)
+        try await commit(next, roles: nextRoles)
     }
 
-    func listPairings() -> [(identifier: String, publicKey: Data)] {
-        pairings.map { (identifier: $0.key, publicKey: $0.value) }
+    func listPairings() -> [(identifier: String, publicKey: Data, permissions: UInt8)] {
+        pairings.map { (identifier: $0.key, publicKey: $0.value, permissions: roles[$0.key] ?? 0) }
     }
 
     var isPaired: Bool {
         !pairings.isEmpty
     }
 
-    private func commit(_ next: [String: Data]) async throws {
-        guard await persist(next) else { throw PersistError.vaultUnavailable }
+    private func acquireWrite() async {
+        if !writing { writing = true; return }
+        await withCheckedContinuation { writers.append($0) }
+    }
+
+    private func releaseWrite() {
+        if writers.isEmpty { writing = false } else { writers.removeFirst().resume() }
+    }
+
+    private func commit(_ proposed: [String: Data], roles proposedRoles: [String: UInt8]) async throws {
+        let hasAdmin = proposedRoles.values.contains(1)
+        let next = hasAdmin ? proposed : [:]
+        let nextRoles = hasAdmin ? proposedRoles : [:]
+        guard await persist(next, nextRoles) else { throw PersistError.vaultUnavailable }
         pairings = next
+        roles = nextRoles
         await onChange(!next.isEmpty)
     }
 }

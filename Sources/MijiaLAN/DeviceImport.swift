@@ -22,7 +22,7 @@ public enum CloudTokenImport {
 
     public static func fetch(
         session: MiSession,
-        transport: any MiHTTPTransport = URLSessionMiTransport(),
+        transport: any MiHTTPTransport = XiaomiHTTPTransport(),
         tryOtherRegions: Bool = true
     ) async throws -> CloudImportResult {
         let order = [session.region] + (tryOtherRegions ? regions.filter { $0 != session.region } : [])

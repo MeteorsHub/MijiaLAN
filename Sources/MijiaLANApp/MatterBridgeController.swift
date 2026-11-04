@@ -15,6 +15,9 @@ final class MatterBridgeController {
     private(set) var isRunning = false
     private(set) var excluded: Set<String>
     @ObservationIgnored private let defaults: UserDefaults
+    let storageDirectory: URL
+    @ObservationIgnored private let ephemeral: Bool
+    @ObservationIgnored private var isShuttingDown = false
     @ObservationIgnored private var controller: DeviceController?
     @ObservationIgnored private var process: Process?
     @ObservationIgnored private var input: FileHandle?
@@ -26,8 +29,17 @@ final class MatterBridgeController {
     @ObservationIgnored private var activity: NSObjectProtocol?
     @ObservationIgnored private var generation = UUID()
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, ephemeral: Bool = false) {
         self.defaults = defaults
+        self.ephemeral = ephemeral
+        if ephemeral {
+            storageDirectory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("MijiaLAN-Matter-\(UUID().uuidString)", isDirectory: true)
+        } else {
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+            storageDirectory = support.appendingPathComponent("MijiaLAN/Matter", isDirectory: true)
+        }
         isEnabled = defaults.bool(forKey: "matter.enabled")
         keepsMacAwake = defaults.object(forKey: "matter.awake") as? Bool ?? true
         excluded = Set(defaults.stringArray(forKey: "matter.excluded") ?? [])
@@ -71,8 +83,7 @@ final class MatterBridgeController {
             failed = true; status = L10n.tr("安装包缺少 Matter 组件，请重新安装完整版本", "Matter components missing. Reinstall the full app."); return
         }
         do {
-            let storage = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                appropriateFor: nil, create: true).appendingPathComponent("MijiaLAN/Matter", isDirectory: true)
+            let storage = storageDirectory
             let child = Process(), toChild = Pipe(), fromChild = Pipe()
             let token = UUID(); generation = token
             child.executableURL = node
@@ -88,8 +99,12 @@ final class MatterBridgeController {
                     self.receive(data)
                 }
             }
+            let temporary = ephemeral
             child.terminationHandler = { [weak self] _ in
                 Task { @MainActor in
+                    if temporary, self == nil || self?.isShuttingDown == true {
+                        try? FileManager.default.removeItem(at: storage)
+                    }
                     guard let self, self.generation == token else { return }
                     self.stop(); self.failed = true
                     self.status = L10n.tr("Matter 已停止，请重试", "Matter stopped. Please retry.")
@@ -153,5 +168,11 @@ final class MatterBridgeController {
         process = nil; isRunning = false; isPaired = false; setupCode = nil; setupURI = nil
         status = L10n.tr("已关闭", "Off"); updateAwake()
     }
-    func shutdown() { monitor?.cancel(); monitor = nil; stop() }
+    func shutdown() {
+        monitor?.cancel(); monitor = nil
+        isShuttingDown = true
+        let hasChild = process?.isRunning == true
+        stop()
+        if ephemeral && !hasChild { try? FileManager.default.removeItem(at: storageDirectory) }
+    }
 }

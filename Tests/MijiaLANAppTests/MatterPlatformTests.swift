@@ -23,3 +23,18 @@ struct MatterPlatformTests {
         matter.shutdown(); restored.shutdown()
     }
 }
+
+@MainActor
+struct MatterStorageSecurityTests {
+    @Test("Ephemeral Matter storage is unique and never reuses the production pairing directory")
+    func isolation() {
+        let first = MatterBridgeController(ephemeral: true)
+        let second = MatterBridgeController(ephemeral: true)
+        let production = MatterBridgeController()
+        #expect(first.storageDirectory != second.storageDirectory)
+        #expect(first.storageDirectory != production.storageDirectory)
+        #expect(first.storageDirectory.path.hasPrefix(FileManager.default.temporaryDirectory.path))
+        #expect(!FileManager.default.fileExists(atPath: first.storageDirectory.path))
+        first.shutdown(); second.shutdown(); production.shutdown()
+    }
+}

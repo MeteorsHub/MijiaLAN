@@ -95,6 +95,10 @@ public struct CharacteristicProtocol: Sendable {
     // MARK: - POST /pairings (Add / Remove / List)
 
     private func handlePairings(_ request: HTTPRequest) async throws -> HTTPResponse {
+        guard let caller = await pairVerifyStateMachine.verifiedControllerIdentifier,
+              try await pairingStore.permissions(for: caller) == 1 else {
+            return pairingsErrorResponse(error: .authentication)
+        }
         let items = try TLV8.decode(request.body)
         guard let methodData = items.first(where: { $0.type == TLV8Type.method.rawValue })?.value,
               let method = methodData.first else {
@@ -120,10 +124,17 @@ public struct CharacteristicProtocol: Sendable {
             return pairingsErrorResponse(error: .unknown)
         }
 
-        let permissions = items.first(where: { $0.type == TLV8Type.permissions.rawValue })?.value.first ?? 0
+        guard publicKey.count == 32, !identifier.isEmpty, identifier.utf8.count <= 64,
+              let permissionData = items.first(where: { $0.type == TLV8Type.permissions.rawValue })?.value,
+              permissionData.count == 1, let permissions = permissionData.first, permissions <= 1 else {
+            return pairingsErrorResponse(error: .unknown)
+        }
+        if let existing = try await pairingStore.publicKey(for: identifier), existing != publicKey {
+            return pairingsErrorResponse(error: .unknown)
+        }
         logger.info("POST /pairings: Add pairing for '\(identifier)' (permissions: \(permissions))")
 
-        try await pairingStore.store(controllerIdentifier: identifier, publicKey: publicKey)
+        try await pairingStore.store(controllerIdentifier: identifier, publicKey: publicKey, permissions: permissions)
         await onPairingChange?()
 
         return HTTPProtocol.okResponse(
@@ -165,8 +176,7 @@ public struct CharacteristicProtocol: Sendable {
             }
             tlvItems.append((type: TLV8Type.identifier.rawValue, value: Data(pairing.identifier.utf8)))
             tlvItems.append((type: TLV8Type.publicKey.rawValue, value: pairing.publicKey))
-            // Admin permission (0x01) — we don't track permission levels, so report all as admin
-            tlvItems.append((type: TLV8Type.permissions.rawValue, value: Data([0x01])))
+            tlvItems.append((type: TLV8Type.permissions.rawValue, value: Data([pairing.permissions])))
         }
 
         return HTTPProtocol.okResponse(

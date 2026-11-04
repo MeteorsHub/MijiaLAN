@@ -7,10 +7,10 @@ import Testing
 
 enum VerifiedTestController {
     /// Exercise real Pair Verify cryptography; no authentication bypass is compiled into the server.
-    static func authenticate(_ verify: PairVerifyStateMachine, store: InMemoryPairingStore) async throws {
+    static func authenticate(_ verify: PairVerifyStateMachine, store: InMemoryPairingStore, identifier: String = "test-controller", permissions: UInt8 = 1) async throws {
         let signing = HAPIdentity()
-        let id = "test-controller"
-        await store.store(controllerIdentifier: id, publicKey: signing.publicKeyData)
+        let id = identifier
+        await store.store(controllerIdentifier: id, publicKey: signing.publicKeyData, permissions: permissions)
         let ephemeral = Curve25519.KeyAgreement.PrivateKey()
         let pub = ephemeral.publicKey.rawRepresentation
         let m2 = try await verify.handleRequest(TLV8.encode([

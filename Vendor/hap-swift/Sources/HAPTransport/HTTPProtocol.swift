@@ -54,75 +54,64 @@ public enum HTTPProtocol {
     /// this is essential for HAP pairing requests whose bodies are binary TLV8
     /// payloads that are NOT valid UTF-8. Converting them through a String would
     /// corrupt or silently drop bytes and cause iOS to time out waiting for M4/M6.
-    public static func parseRequest(from data: Data) -> HTTPRequest? {
-        // Locate the header/body boundary.
-        let crlfcrlf = Data([0x0D, 0x0A, 0x0D, 0x0A])
-        guard let separatorRange = data.range(of: crlfcrlf) else { return nil }
+    public static let maxHeaderBytes = 8 * 1024
+    public static let maxBodyBytes = 56 * 1024
+    public static let maxRequestBytes = maxHeaderBytes + maxBodyBytes
 
-        // Parse ONLY the header section as UTF-8 (body stays as raw Data).
-        let headerSection = data[data.startIndex ..< separatorRange.lowerBound]
-        guard let headerString = String(data: headerSection, encoding: .utf8) else { return nil }
-
-        let lines = headerString.components(separatedBy: "\r\n")
-        guard !lines.isEmpty else { return nil }
-
-        // Request line: METHOD PATH HTTP/1.1
-        let requestLine = lines[0].split(separator: " ", maxSplits: 2)
-        guard requestLine.count >= 2 else { return nil }
-
-        let method = String(requestLine[0])
-        let path = String(requestLine[1])
-
-        // Headers — collect and find Content-Length.
-        var headers: [(name: String, value: String)] = []
-        var contentLength: Int? = nil
-        for i in 1 ..< lines.count {
-            guard !lines[i].isEmpty else { break }
-            if let colonIndex = lines[i].firstIndex(of: ":") {
-                let name = String(lines[i][..<colonIndex]).trimmingCharacters(in: .whitespaces)
-                let value = String(lines[i][lines[i].index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
-                headers.append((name: name, value: value))
-                if name.lowercased() == "content-length", let length = Int(value) {
-                    contentLength = length
-                }
-            }
-        }
-
-        // Body: raw bytes immediately after the \r\n\r\n separator.
-        let bodyStart = separatorRange.upperBound
-        let availableBody = data[bodyStart...]
-
-        let body: Data
-        if let expectedLength = contentLength {
-            // Require exactly Content-Length bytes — return nil if incomplete.
-            guard availableBody.count >= expectedLength else { return nil }
-            body = Data(availableBody.prefix(expectedLength))
-        } else {
-            body = Data(availableBody)
-        }
-
-        return HTTPRequest(method: method, path: path, headers: headers, body: body)
+    public enum RequestBoundary: Equatable, Sendable {
+        case incomplete, invalid
+        case complete(Int)
     }
 
-    /// Byte length of the first complete request in `data` (headers plus `Content-Length` body bytes), or nil
-    /// while more bytes are needed. Over an encrypted session a request larger than one HAP frame (1024 plaintext
-    /// bytes) arrives in pieces; the caller keeps the decrypted bytes until this returns a length.
-    public static func requestLength(in data: Data) -> Int? {
-        let crlfcrlf = Data([0x0D, 0x0A, 0x0D, 0x0A])
-        guard let separatorRange = data.range(of: crlfcrlf) else { return nil }
-        let headerLength = separatorRange.upperBound - data.startIndex
-        var bodyLength = 0
-        if let headerString = String(data: data[data.startIndex ..< separatorRange.lowerBound], encoding: .utf8) {
-            for line in headerString.components(separatedBy: "\r\n").dropFirst() {
-                guard let colonIndex = line.firstIndex(of: ":"),
-                      line[..<colonIndex].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" else {
-                    continue
-                }
-                bodyLength = max(0, Int(line[line.index(after: colonIndex)...].trimmingCharacters(in: .whitespaces)) ?? 0)
+    /// Validate framing before allocating or slicing. HAP does not use chunked requests.
+    public static func requestBoundary(in data: Data) -> RequestBoundary {
+        let separator = Data([13, 10, 13, 10])
+        guard let range = data.range(of: separator) else {
+            return data.count > maxHeaderBytes ? .invalid : .incomplete
+        }
+        let headerLength = data.distance(from: data.startIndex, to: range.upperBound)
+        guard headerLength <= maxHeaderBytes,
+              let header = String(data: data[..<range.lowerBound], encoding: .utf8) else { return .invalid }
+        let lines = header.components(separatedBy: "\r\n")
+        let requestLine = lines[0].split(separator: " ")
+        guard requestLine.count == 3, requestLine[2] == "HTTP/1.1" else { return .invalid }
+        var bodyLength: Int?
+        for line in lines.dropFirst() {
+            guard let colon = line.firstIndex(of: ":") else { return .invalid }
+            let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            if name == "transfer-encoding" { return .invalid }
+            if name == "content-length" {
+                guard bodyLength == nil, !value.isEmpty,
+                      value.utf8.allSatisfy({ (48...57).contains($0) }),
+                      let length = Int(value), length <= maxBodyBytes else { return .invalid }
+                bodyLength = length
             }
         }
-        let total = headerLength + bodyLength
-        return data.count >= total ? total : nil
+        // Both operands are bounded, so hostile lengths cannot overflow this addition.
+        let total = headerLength + (bodyLength ?? 0)
+        return data.count >= total ? .complete(total) : .incomplete
+    }
+
+    public static func parseRequest(from data: Data) -> HTTPRequest? {
+        guard case .complete(let length) = requestBoundary(in: data),
+              let separator = data.range(of: Data([13, 10, 13, 10])),
+              let header = String(data: data[..<separator.lowerBound], encoding: .utf8) else { return nil }
+        let lines = header.components(separatedBy: "\r\n")
+        let parts = lines[0].split(separator: " ")
+        let headers = lines.dropFirst().compactMap { line -> (name: String, value: String)? in
+            guard let colon = line.firstIndex(of: ":") else { return nil }
+            return (String(line[..<colon]).trimmingCharacters(in: .whitespaces),
+                    String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces))
+        }
+        let end = data.index(data.startIndex, offsetBy: length)
+        return HTTPRequest(method: String(parts[0]), path: String(parts[1]), headers: headers,
+                           body: Data(data[separator.upperBound..<end]))
+    }
+
+    public static func requestLength(in data: Data) -> Int? {
+        guard case .complete(let length) = requestBoundary(in: data) else { return nil }
+        return length
     }
 
     // MARK: - Serialize Response

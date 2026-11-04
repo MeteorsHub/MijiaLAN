@@ -217,8 +217,8 @@ public final class HomeKitBridgeController {
         isPaired = !secrets.pairings.isEmpty
 
         let pairingStore = HomeKitBridgePairingStore(
-            pairings: secrets.pairings,
-            persist: { [weak self] pairings in await self?.persistPairings(pairings) ?? false },
+            pairings: secrets.pairings, permissions: secrets.pairingPermissions,
+            persist: { [weak self] pairings, roles in await self?.persistPairings(pairings, permissions: roles) ?? false },
             onChange: { [weak self] paired in await self?.pairingChanged(paired) }
         )
         let bridge = HAPBridge(info: AccessoryInfo(
@@ -331,9 +331,10 @@ public final class HomeKitBridgeController {
         return fresh
     }
 
-    private func persistPairings(_ pairings: [String: Data]) -> Bool {
+    private func persistPairings(_ pairings: [String: Data], permissions: [String: UInt8]) -> Bool {
         guard var next = secrets else { return false }
         next.pairings = pairings
+        next.pairingPermissions = permissions
         guard let data = next.encoded(), vault.save(data) else { return false }
         secrets = next
         return true

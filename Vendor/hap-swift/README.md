@@ -11,7 +11,8 @@ An encrypted HAP frame carries at most 1024 plaintext bytes (HAP spec §6.5.2). 
 
 A third change is about Bonjour: upstream refreshed the TXT record after `POST /pairings` but not after pair-setup, so a freshly paired bridge kept advertising `sf=1` (unpaired). iOS looks the accessory up again to finish adding it and takes `sf=1` for a reset accessory. `CharacteristicProtocol.handlePairSetup` now re-advertises once pair-setup has stored the first controller.
 
-`HAPLinux` keeps the upstream receive path; MijiaLAN only builds for macOS.
+`HAPLinux` keeps the upstream receive model with bounded HTTP input and invalid-framing rejection;
+MijiaLAN only builds for macOS. It is not validated as a production Linux HAP server.
 
 `HAPBridge.addAccessory` also accepts `appendingCharacteristicTypes`: these characteristics receive IIDs after
 all existing services and characteristics. MijiaLAN uses this when adding Configured Name (`E3`) to an already
@@ -29,3 +30,17 @@ body to a string, avoiding that extra allocation when body tracing is disabled.
 
 Modified Swift files carry an explicit modification notice. `Package.swift` omits upstream test targets because
 only sources are vendored; MijiaLAN maintains its own bridge and protocol regression tests.
+
+## Security hardening
+
+HTTP framing now rejects negative, overflowing, duplicate or excessive Content-Length values and Transfer-Encoding.
+Headers are limited to 8 KiB and bodies to 56 KiB. The Apple transport limits connection buffers and connections,
+expires unauthenticated and incomplete requests, closes invalid encrypted frames, and applies receive backpressure.
+Incoming encrypted frames are limited to 1024 plaintext bytes.
+
+Pairing stores persist administrator/user permission bytes. `/pairings` requires an authenticated administrator,
+reports actual permissions, validates keys and rejects key replacement under an existing identifier.
+Removing/demoting the last administrator revokes remaining users. Persistent updates are serialized and failed
+vault saves leave live state unchanged. Legacy MijiaLAN blobs did not record roles and treated every controller
+as an administrator; migration preserves that effective trust rather than inventing roles or resetting pairings.
+New pairings always retain their declared roles. See `docs/security-hardening.md` in the MijiaLAN repository.
