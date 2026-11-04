@@ -20,6 +20,7 @@ APP="${MIJIALAN_APP_OUTPUT:-$ROOT/build/MijiaLAN.app}"
 [[ "$APP" == /*.app ]] || { echo "App output must be an absolute .app path" >&2; exit 1; }
 
 cd "$ROOT"
+python3 "$ROOT/scripts/app_icon.py" --check
 BUILD_ARGS=(-c "$CONFIG" --force-resolved-versions --product MijiaLANApp)
 if [[ "${MIJIALAN_UNIVERSAL:-0}" == 1 ]]; then
     BUILD_ARGS+=(--arch arm64 --arch x86_64)
@@ -34,6 +35,7 @@ cp "$BIN_DIR/MijiaLANApp" "$APP/Contents/MacOS/MijiaLAN"
 cp -R "$BIN_DIR/MenuBarMijia_MijiaCore.bundle" "$APP/Contents/Resources/"
 cp -R "$BIN_DIR/MijiaLAN_MijiaLAN.bundle" "$APP/Contents/Resources/"
 cp -R "$ROOT/Resources/en.lproj" "$ROOT/Resources/zh-Hans.lproj" "$APP/Contents/Resources/"
+cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 # Ship the original notices, including notices for bundled third party C code.
 mkdir -p "$APP/Contents/Resources/Licenses/MijiaLAN"
 cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/Licenses/MijiaLAN/"
@@ -68,6 +70,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>6.0</string>
     <key>CFBundleName</key>
     <string>MijiaLAN</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -94,6 +98,7 @@ PLIST
 
 bash "$ROOT/scripts/package_matter.sh" "$APP"
 plutil -lint "$APP/Contents/Info.plist"
+python3 "$ROOT/scripts/app_icon.py" --check --app "$APP"
 if [[ "${MIJIALAN_UNIVERSAL:-0}" == 1 ]]; then
     for ARCH in arm64 x86_64; do
         lipo "$APP/Contents/MacOS/MijiaLAN" -verify_arch "$ARCH"

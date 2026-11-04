@@ -18,6 +18,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: MatterBridge/package-lock.json
+      - run: python3 ../scripts/app_icon.py --check
       - run: npm ci
       - run: npm test
   swift:

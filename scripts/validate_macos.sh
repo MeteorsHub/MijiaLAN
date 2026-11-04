@@ -21,7 +21,8 @@ swift test --force-resolved-versions
 npm ci --prefix MatterBridge
 npm test --prefix MatterBridge
 bash scripts/build_app.sh debug
+python3 scripts/app_icon.py --check --app build/MijiaLAN.app
 codesign --verify --deep --strict build/MijiaLAN.app
-printf '\nPASS: build, Swift tests, Matter tests, full App packaging and signature verification.\n'
+printf '\nPASS: build, Swift tests, Matter tests, full App packaging, application icon and signature verification.\n'
 printf 'App: %s/build/MijiaLAN.app\n' "$ROOT"
 printf 'UI interaction and hardware pairing still require a separate validation.\n'

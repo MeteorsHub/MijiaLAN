@@ -30,6 +30,7 @@ case "${1:-}" in
     --package-existing) echo "Packaging the existing staging app: $APP" ;;
     *) echo "Usage: $0 [--package-existing]" >&2; exit 1 ;;
 esac
+python3 "$ROOT/scripts/app_icon.py" --check --app "$APP"
 codesign --verify --deep --strict "$APP"
 for ARCH in arm64 x86_64; do
     lipo "$APP/Contents/MacOS/MijiaLAN" -verify_arch "$ARCH"
