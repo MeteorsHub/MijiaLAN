@@ -69,6 +69,8 @@ struct CapabilitySecurityTests {
         #expect(try await handler.handleRequest(HTTPRequest(method: "GET", path: "/accessories")).statusCode == 200)
         await store.remove(controllerIdentifier: "test-controller")
         #expect(try await handler.handleRequest(HTTPRequest(method: "GET", path: "/accessories")).statusCode == 470)
+        await store.store(controllerIdentifier: "test-controller", publicKey: HAPIdentity().publicKeyData)
+        #expect(try await handler.handleRequest(HTTPRequest(method: "GET", path: "/accessories")).statusCode == 470)
     }
 
     @Test("Failed writes preserve confirmed values and return per-characteristic HAP errors")

@@ -42,8 +42,9 @@ public struct CharacteristicProtocol: Sendable {
         let isPairingHandshake = request.method == "POST" && ["/pair-setup", "/pair-verify"].contains(request.path)
         if !isPairingHandshake {
             guard let identifier = await pairVerifyStateMachine.verifiedControllerIdentifier,
+                  let verifiedKey = await pairVerifyStateMachine.verifiedControllerPublicKey,
                   await pairVerifyStateMachine.sessionKeys() != nil,
-                  try await pairingStore.publicKey(for: identifier) != nil else {
+                  try await pairingStore.publicKey(for: identifier) == verifiedKey else {
                 let body = try JSONSerialization.data(withJSONObject: ["status": HAPStatus.insufficientAuthorization.rawValue])
                 return HTTPResponse(statusCode: 470, statusMessage: "Connection Authorization Required",
                     headers: [("Content-Type", HTTPProtocol.hapJSON)], body: body)

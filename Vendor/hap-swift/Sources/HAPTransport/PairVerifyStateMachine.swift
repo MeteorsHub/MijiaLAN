@@ -11,6 +11,7 @@ import HAPCrypto
 
 public actor PairVerifyStateMachine {
     public private(set) var verifiedControllerIdentifier: String?
+    public private(set) var verifiedControllerPublicKey: Data?
     private let identity: HAPIdentity
     private let pairingStore: any PairingStore
     private let deviceID: String
@@ -53,6 +54,9 @@ public actor PairVerifyStateMachine {
     // MARK: - Verify M1 → M2
 
     private func handleVerifyM1(_ items: [TLV8.Item]) throws -> Data {
+        state = .idle
+        verifiedControllerIdentifier = nil
+        verifiedControllerPublicKey = nil
         guard let controllerEphemeralPublicKey = items.first(where: { $0.type == TLV8Type.publicKey.rawValue })?.value else {
             throw HAPPairingError.invalidState
         }
@@ -171,6 +175,7 @@ public actor PairVerifyStateMachine {
 
         self.state = .verified(readKey: derived.writeKey, writeKey: derived.readKey)
         self.verifiedControllerIdentifier = identifierString
+        self.verifiedControllerPublicKey = controllerPublicKey
 
         return TLV8.encode([
             (type: TLV8Type.state.rawValue, value: Data([0x04])),
