@@ -36,6 +36,9 @@ struct MijiaLANCommand {
     static func run(_ args: [String], port: UInt16) async throws {
         guard let command = args.first else { return usage() }
         switch command {
+        case "matter-rpc":
+            guard args.count == 2 else { throw MiioError.badResponse("Usage: mijia-lan matter-rpc <local-home.json>") }
+            try await MatterRPC.run(configURL: URL(fileURLWithPath: args[1]))
         case "matrix":
             // The checked-in developer matrix is intentionally a Chinese document.
             print(await L10n.$overrideLanguage.withValue(.zhHans) { await DeviceInterfaceReport.markdown() })
@@ -153,6 +156,7 @@ struct MijiaLANCommand {
           mijia-lan set  <ip> <token> <siid>.<piid>=<值> …
           mijia-lan call <ip> <token> <method> [json 参数]
           mijia-lan spec <型号>
+          mijia-lan matter-rpc <local-home.json>
           mijia-lan status < 设备清单.json
           可加 --port N
         """, """
@@ -163,6 +167,7 @@ struct MijiaLANCommand {
           mijia-lan set  <ip> <token> <siid>.<piid>=<value> …
           mijia-lan call <ip> <token> <method> [json-params]
           mijia-lan spec <model>
+          mijia-lan matter-rpc <local-home.json>
           mijia-lan status < devices.json
           Optional: --port N
         """))

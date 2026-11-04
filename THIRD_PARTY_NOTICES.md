@@ -51,3 +51,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Optional Matter sidecar
+
+`MatterBridge` uses matter.js (`@matter/main` and its Matter packages), Copyright 2022–2026 Matter.js Authors, under Apache-2.0. The macOS build installs and bundles it with the App, alongside Node.js 22.22.0 for Apple Silicon and Intel. Node.js license notices are bundled under each MatterRuntime architecture directory. The npm lockfile records its transitive dependencies; their individual license files are included in installed packages.

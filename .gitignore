@@ -33,3 +33,7 @@ credentials*.json
 /design-qa.md
 /docs/*-2026-*.md
 !/docs/device-interface-matrix-2026-10-31.md
+
+# Matter sidecar dependencies and persistent pairing keys.
+/MatterBridge/node_modules/
+/MatterBridge/.matter/

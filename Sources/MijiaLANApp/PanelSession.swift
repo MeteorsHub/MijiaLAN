@@ -5,6 +5,7 @@ enum ControlCenterRoute: Hashable {
     case home
     case device(String)
     case settings
+    case settingsMatter
     case settingsHomeKit
     case settingsDevices
     case settingsImport
@@ -23,6 +24,7 @@ enum ControlCenterRoute: Hashable {
         case .home: "home"
         case .device: "device"
         case .settings: "settings"
+        case .settingsMatter: "matter"
         case .settingsHomeKit: "homekit"
         case .settingsDevices: "devices"
         case .settingsImport: "import"

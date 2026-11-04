@@ -79,9 +79,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key>
     <true/>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>MijiaLAN controls Mijia Wi-Fi devices directly over your local network and provides a HomeKit bridge for the Home app on your iPhone.</string>
+    <string>MijiaLAN controls Mijia Wi-Fi devices directly over your local network and provides HomeKit and Matter bridges for compatible home platforms.</string>
     <key>NSBonjourServices</key>
     <array>
+        <string>_matter._tcp</string>
+        <string>_matterc._udp</string>
+        <string>_matterd._udp</string>
         <string>_hap._tcp</string>
         <string>_miio._udp</string>
     </array>
@@ -89,6 +92,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+bash "$ROOT/scripts/package_matter.sh" "$APP"
 plutil -lint "$APP/Contents/Info.plist"
 if [[ "${MIJIALAN_UNIVERSAL:-0}" == 1 ]]; then
     for ARCH in arm64 x86_64; do
@@ -98,6 +102,13 @@ fi
 if [[ "$CONFIG" == release ]]; then
     strip -S "$APP/Contents/MacOS/MijiaLAN"
 fi
+for NODE_BIN in "$APP"/Contents/Resources/MatterRuntime/*/bin/node; do
+    if [[ "$SIGN_IDENTITY" == - ]]; then
+        codesign --force --sign - --timestamp=none "$NODE_BIN"
+    else
+        codesign --force --sign "$SIGN_IDENTITY" --options runtime --entitlements "$ROOT/Resources/Node.entitlements" --timestamp "$NODE_BIN"
+    fi
+done
 if [[ "$SIGN_IDENTITY" == - ]]; then
     codesign --force --sign - --timestamp=none "$APP"
 else

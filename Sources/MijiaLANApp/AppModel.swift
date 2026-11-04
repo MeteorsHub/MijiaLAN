@@ -46,6 +46,7 @@ final class AppModel {
     private(set) var retryingDeviceIDs: Set<String> = []
 
     let store: HomeStore
+    let matter: MatterBridgeController
     let bridge: HomeKitBridgeController
     @ObservationIgnored private let vault: SecretVault
     @ObservationIgnored private let configBox: ConfigBox
@@ -103,6 +104,10 @@ final class AppModel {
             load: { vault.lookup(AppModel.bridgeAccount) },
             save: { vault.set($0, for: AppModel.bridgeAccount) }
         ), defaults: bridgeDefaults)
+
+        matter = MatterBridgeController(defaults: bridgeDefaults)
+        if ephemeral { matter.isEnabled = false }
+        matter.attach(controller)
 
         if preview || (ephemeral && environment["MIJIALAN_SNAPSHOT"] != nil) { bridge.isEnabled = false }
         attachBridgeIfNeeded()

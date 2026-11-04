@@ -201,6 +201,8 @@ private struct PanelPage: View {
             }
         case .settings:
             detailHeader(title: L10n.tr("设置", "Settings")) { EmptyView() }
+        case .settingsMatter:
+            detailHeader(title: L10n.tr("Matter 桥接", "Matter Bridge"), backTitle: L10n.tr("设置", "Settings"), backRoute: .settings) { EmptyView() }
         case .settingsHomeKit:
             detailHeader(title: L10n.tr("管理家庭设备", "Manage Home Devices"), backTitle: L10n.tr("设置", "Settings"), backRoute: .settings) { EmptyView() }
         case .settingsDevices:
@@ -243,6 +245,8 @@ private struct PanelPage: View {
             }
         case .settings:
             ControlCenterSettings(model: model, bridge: model.bridge, appearance: $appearance, navigate: navigate)
+        case .settingsMatter:
+            SettingsMatterManagement(model: model, bridge: model.matter)
         case .settingsHomeKit:
             SettingsHomeKitManagement(model: model, bridge: model.bridge)
         case .settingsDevices:

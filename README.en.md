@@ -129,3 +129,10 @@ Original project code is licensed under the [MIT License](LICENSE), copyright iP
 - Apple Swift libraries and other transitive dependencies are listed in [third party notices](THIRD_PARTY_NOTICES.md).
 
 This is a community project with no affiliation with Xiaomi, Mijia or Apple, and no HomeKit / MFi certification. The MIT license does not grant rights to third party protocols, services or trademarks.
+
+## Matter / Aqara bridge
+
+Settings offers independent HomeKit and Matter bridges, each with its own device selection. Both use the App's shared controller.
+Matter mappings include lights with brightness and color temperature, outlets, fans, selected purifiers and sensors.
+Pairing and runtime controls are integrated in the App. Apple Home also accepts Matter devices.
+See [MatterBridge/README.md](MatterBridge/README.md) for builds and limits (Chinese). macOS compilation, native UI and M200 pairing remain unverified in the Linux development environment.

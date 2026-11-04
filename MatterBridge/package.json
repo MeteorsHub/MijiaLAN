@@ -1,0 +1,10 @@
+{
+  "name": "mijialan-matter-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Experimental local Matter bridge for MijiaLAN lights and outlets",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node src/main.js", "test": "node --test" },
+  "dependencies": { "@matter/main": "0.18.0" }
+}

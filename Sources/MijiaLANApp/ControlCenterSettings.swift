@@ -12,7 +12,7 @@ struct ControlCenterSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SettingsSection(L10n.tr("Apple「家庭」", "Apple Home")) {
+            SettingsSection(L10n.tr("HomeKit · Apple「家庭」", "HomeKit · Apple Home")) {
                 SettingsGroup {
                     SettingsToggleRow(L10n.tr("启用家庭桥接", "Enable Home Bridge"), symbol: "house", isOn: $bridge.isEnabled,
                                       subtitle: HomeKitSettingsStatus(bridge: bridge).text,
@@ -26,6 +26,19 @@ struct ControlCenterSettings: View {
                     SettingsToggleRow(L10n.tr("保持 Mac 唤醒", "Keep Mac Awake"), symbol: "moon", isOn: $bridge.keepsMacAwake,
                                       subtitle: L10n.tr("家庭桥接运行时生效", "While the Home bridge is running"))
                 }
+            }
+
+            SettingsSection(L10n.tr("Matter · Aqara / Apple「家庭」", "Matter · Aqara / Apple Home")) {
+                SettingsGroup {
+                    SettingsToggleRow(L10n.tr("启用 Matter 桥接", "Enable Matter Bridge"), symbol: "point.3.connected.trianglepath.dotted",
+                        isOn: Binding(get: { model.matter.isEnabled }, set: { model.matter.isEnabled = $0 }), subtitle: model.matter.status)
+                    SettingsDivider()
+                    SettingsNavigationRow(L10n.tr("管理 Matter 设备与配对", "Manage Matter Devices & Pairing"), symbol: "gearshape") {
+                        navigate(.settingsMatter)
+                    }
+                }
+                Text(L10n.tr("两种桥接可独立或同时启用。Apple「家庭」也支持 Matter；同一设备重复接入会显示两个配件。", "Enable either or both bridges. Apple Home also supports Matter; adding both paths creates duplicate accessories."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
 
             Divider()
@@ -93,6 +106,56 @@ struct ControlCenterSettings: View {
         }
         .font(.system(size: 13))
         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 14)
+    }
+}
+
+struct SettingsMatterManagement: View {
+    let model: AppModel
+    @Bindable var bridge: MatterBridgeController
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            SettingsSection(L10n.tr("Matter 桥接", "Matter Bridge")) {
+                SettingsGroup {
+                    SettingsToggleRow(L10n.tr("启用 Matter 桥接", "Enable Matter Bridge"), symbol: "point.3.connected.trianglepath.dotted", isOn: $bridge.isEnabled, subtitle: bridge.status)
+                    SettingsToggleRow(L10n.tr("保持 Mac 唤醒", "Keep Mac Awake"), symbol: "moon", isOn: $bridge.keepsMacAwake)
+                    if bridge.isEnabled { Button(L10n.tr("重新连接", "Reconnect")) { bridge.restart() }.padding(10) }
+                }
+            }
+            if bridge.isRunning {
+                SettingsSection(L10n.tr("添加到 Aqara 或其他 Matter 平台", "Add to Aqara or Another Matter Platform")) {
+                    SettingsGroup {
+                        VStack(spacing: 10) {
+                            if !bridge.isPaired, let uri = bridge.setupURI, let image = QRCode.image(for: uri) {
+                                Image(nsImage: image).interpolation(.none).resizable().frame(width: 132, height: 132)
+                                    .padding(6).background(.white, in: .rect(cornerRadius: 8))
+                            }
+                            if !bridge.isPaired, let code = bridge.setupCode {
+                                Text(code).font(.system(.title3, design: .monospaced)).textSelection(.enabled)
+                            }
+                            Text(bridge.isPaired ? L10n.tr("已配对。添加到另一个平台时，请在已配对平台中开启 Matter 共享并获取新的配对码。", "Paired. To add another platform, use Matter sharing in the paired platform to obtain a new code.") : L10n.tr("在 Aqara Home 中添加 Matter 设备，选择 M200 并扫描二维码。也可以使用 Apple「家庭」等 Matter 控制器。", "Add a Matter device in Aqara Home, select M200 and scan this code. Other Matter controllers such as Apple Home are also supported."))
+                                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        }.frame(maxWidth: .infinity).padding(14)
+                    }
+                }
+            }
+            SettingsSection(L10n.tr("选择 Matter 设备", "Choose Matter Devices")) {
+                SettingsGroup {
+                    ForEach(model.config.devices) { device in
+                        let plans = bridge.supported.filter { $0.sourceID == device.did }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Toggle(DevicePresentation.name(device), isOn: Binding(
+                                get: { !plans.isEmpty && bridge.includes(device.did) },
+                                set: { bridge.include(device.did, $0) }))
+                                .toggleStyle(.switch).disabled(plans.isEmpty)
+                            Text(plans.isEmpty ? L10n.tr("尚无可映射能力或规格未加载", "No mapped capabilities or specification unavailable") : plans.map { MatterDevicePlan.title($0.device.kind) }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }.padding(12)
+                    }
+                }
+                Text(L10n.tr("设备选择独立于 HomeKit。移除设备会影响目标平台中的场景和自动化。当前支持开关、调光、色温、风扇、空气净化器、温湿度、光照、人体及接触传感器；以设备实际提供的能力为准。M200 兼容性尚待实测。", "Device selection is independent of HomeKit. Removing a device affects scenes and automations. Supported mappings include power, brightness, color temperature, fans, air purifiers, temperature, humidity, light, occupancy and contact sensors, subject to device capabilities. M200 compatibility awaits hardware testing."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }.padding(.horizontal, 16).padding(.vertical, 8)
     }
 }
 

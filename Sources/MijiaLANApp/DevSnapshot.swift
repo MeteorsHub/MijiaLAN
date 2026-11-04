@@ -53,6 +53,7 @@ enum DevSnapshot {
         let route: ControlCenterRoute = environment["MIJIALAN_UI_PAGE"].map {
             switch $0 {
             case "settings": .settings
+            case "settings-matter": .settingsMatter
             case "settings-homekit": .settingsHomeKit
             case "settings-devices": .settingsDevices
             case "settings-import": .settingsImport
