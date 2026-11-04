@@ -6,7 +6,10 @@
 新增 `mijia-lan diagnose` 仅从 stdin 接收现有 `LocalHomeConfig`，不接收 token 参数。
 只对六个已报告型号执行 `miIO.info` 和逐项 `get_properties`，不发送 `set_properties`、`action`、
 喂食、电机、工厂模式、重置或其他写指令。每个属性只读一次、不重试。
-输出只保留型号、记录中的规格 URN、可用固件版本和所请求属性的 SIID/PIID、返回码及原始 JSON 值。
+输出保留型号、导入配置中记录的规格 URN、可用固件版本和所请求属性的 SIID/PIID、返回码及原始 JSON 标量值。
+字符串最多 96 字符；数组/对象仅报告类型并省略内容。逐属性错误后继续其他读取；型号不匹配或 info 失败则停止查询该设备。
+另附本机匹配型号的缓存规格候选（URN、SIID/PIID、format、access、description/comment、range、options），只读文件、不联网获取。
+`specificationSource: imported_config` 不证明当前 App 正在使用该版本；缓存也可能同时有多个版本，需与当前设备信息页核对。
 不输出 IP、MAC、设备 ID、名称、房间、账号、token 或配对密钥。
 
 在 Mac checkout 中先编译 CLI（不要修改源码）：
@@ -19,7 +22,8 @@ env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build --produ
 
 ```sh
 umask 077
-.build/debug/mijia-lan diagnose < /absolute/path/devices.local.json > /tmp/mijialan-readonly.json
+diagnostic_dir=$(mktemp -d "${TMPDIR:-/tmp}/mijialan-diagnose.XXXXXX")
+.build/debug/mijia-lan diagnose < /absolute/path/devices.local.json > "$diagnostic_dir/report.json"
 ```
 
 没有清单时，可在用户同意访问该 App 钥匙串项后，通过管道传递，不在终端显示或落盘凭据：
@@ -27,9 +31,10 @@ umask 077
 ```sh
 set -o pipefail
 umask 077
+diagnostic_dir=$(mktemp -d "${TMPDIR:-/tmp}/mijialan-diagnose.XXXXXX")
 security find-generic-password -s com.mijialan.MijiaLAN -a secrets -w |
-  python3 -c 'import sys,json,base64; data=json.load(sys.stdin); sys.stdout.buffer.write(base64.b64decode(data["home_config_v1"]))' |
-  .build/debug/mijia-lan diagnose > /tmp/mijialan-readonly.json
+  python3 -c 'import sys,json,base64; data=json.load(sys.stdin); sys.stdout.buffer.write(base64.b64decode(data["home_config_v1"], validate=True))' |
+  .build/debug/mijia-lan diagnose > "$diagnostic_dir/report.json"
 ```
 
 不要在上述管道中插入 `tee`、调试打印或 `set -x`。若钥匙串访问被拒绝或没有该项，停止并报告，不导出其他凭据。
@@ -47,6 +52,9 @@ security find-generic-password -s com.mijialan.MijiaLAN -a secrets -w |
 喂食器三个报错厂商开关先从设备信息或缓存规格记录确切 SIID/PIID、format、access、description，
 再由云端审核后补入白名单；当前不臆测它们的地址。
 
-规格可从本机缓存读取：`~/Library/Caches/MijiaLAN` 下的实际位置以 `LocalHomeProvider.specCacheDirectory` 为准。
-只反馈这些型号的规格文件，不发送配置目录；缓存位置可能随宿主 App/环境变化。
+默认自动读取 `~/Library/Caches/MijiaLAN/instances` 中这六个型号的缓存规格候选。
+若输出 `cachedSpecifications: []`，只报告缓存缺失，切勿运行 `spec` 联网刷新、删除缓存或重置配置来获取诊断。
+不需要另行发送缓存目录或配置目录。
 `-4004`、`-4001` 只能作为返回码保留，不据此断定不支持 MIoT。
+
+先核对 `git rev-parse HEAD`，构建并执行 `swift test --filter ReadOnlyDiagnosticsTests`。云端的可移植测试不替代 macOS CLI 编译和真实只读查询。
