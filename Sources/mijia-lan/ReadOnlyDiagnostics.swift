@@ -80,6 +80,7 @@ enum ReadOnlyDiagnostics {
 
     /// Fixed, explicit follow-up only. It does not change production addressing or try arbitrary methods.
     static func followupProbes(device: LocalDevice, protocolDID: String?) -> [Probe] {
+        guard DeviceLANPolicy.allowsPropertyRequests(for: device.model) else { return [] }
         switch device.model {
         case "dooya.motor.dc1545":
             return [2, 3, 4].flatMap { piid -> [Probe] in
@@ -99,6 +100,7 @@ enum ReadOnlyDiagnostics {
     }
 
     static func collectFollowup(device: LocalDevice, slot: Int, protocolDID: String?, call: Call) async -> JSONValue {
+        if !DeviceLANPolicy.allowsPropertyRequests(for: device.model) { return pausedReport(device: device, slot: slot) }
         let probes = followupProbes(device: device, protocolDID: protocolDID)
         guard !probes.isEmpty else { return .object(["error": .string("model_not_allowlisted")]) }
         var report: [String: JSONValue] = ["slot": .number(Double(slot)), "configuredModel": .string(device.model)]
@@ -133,6 +135,12 @@ enum ReadOnlyDiagnostics {
         return .object(report)
     }
 
+    static func pausedReport(device: LocalDevice, slot: Int) -> JSONValue {
+        .object(["slot": .number(Double(slot)), "configuredModel": .string(device.model),
+                 "error": .string("property_requests_paused"), "propertyRequestsSent": .number(0),
+                 "message": .string(DeviceLANPolicy.restriction(for: device.model) ?? "")])
+    }
+
     /// Reads only model-matched specification cache files, never an account/config/pairing directory.
     /// These are cached candidates, not proof of the running App's currently loaded schema version.
     static func cachedSpecifications(model: String, directory: URL) -> [JSONValue] {
@@ -164,6 +172,7 @@ enum ReadOnlyDiagnostics {
 
     /// Shared by the actual RPC path and scripted tests. The caller never receives a write method.
     static func collect(device: LocalDevice, slot: Int, call: Call) async -> JSONValue {
+        if !DeviceLANPolicy.allowsPropertyRequests(for: device.model) { return pausedReport(device: device, slot: slot) }
         guard let props = properties[device.model] else { return .object(["error": .string("model_not_allowlisted")]) }
         var report: [String: JSONValue] = ["slot": .number(Double(slot)), "configuredModel": .string(device.model),
             "specificationSource": .string("imported_config"),
@@ -207,11 +216,15 @@ enum ReadOnlyDiagnostics {
             return seenModels.insert(device.model).inserted
         }
         for (index, device) in devices.prefix(12).enumerated() {
+            guard DeviceLANPolicy.allowsPropertyRequests(for: device.model) else {
+                reports.append(pausedReport(device: device, slot: index))
+                continue
+            }
             guard let token = MiioToken.parse(device.token) else {
                 reports.append(.object(["slot": .number(Double(index)), "configuredModel": .string(device.model), "error": .string("invalid_token")]))
                 continue
             }
-            let client = MiioClient(host: device.host, token: token, port: port, timeout: .seconds(2), retries: 0)
+            let client = MiioClient(host: device.host, token: token, port: port, timeout: .seconds(2), retries: 0, knownModel: device.model)
             var report: JSONValue
             if followup {
                 var protocolDID: String?

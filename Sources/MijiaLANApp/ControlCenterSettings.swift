@@ -205,11 +205,11 @@ private struct SettingsMatterDeviceRow: View {
                 if !context.isEmpty {
                     Text(context).font(.caption).foregroundStyle(.secondary)
                 }
-                Text(plans.isEmpty
+                Text(DeviceLANPolicy.restriction(for: device.model) ?? (plans.isEmpty
                      ? (model.devices.snapshots[device.did] == nil
                         ? L10n.tr("设备规格尚未加载", "Device specification not loaded yet")
                         : L10n.tr("当前设备能力暂未适配 Matter", "This device's capabilities are not mapped to Matter yet"))
-                     : plans.map { MatterDevicePlan.title($0.device.kind) }.joined(separator: " · "))
+                     : plans.map { MatterDevicePlan.title($0.device.kind) }.joined(separator: " · ")))
                     .font(.caption).foregroundStyle(.secondary)
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -311,7 +311,7 @@ private struct SettingsHomeKitDeviceRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(DevicePresentation.name(device)).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
                 if !supported {
-                    Text(model.smartDevice(for: device) == nil ? L10n.tr("还没读到设备规格", "Device specifications are not available yet.") : L10n.tr("「家庭」没有对应的配件类型", "No matching accessory type in Home."))
+                    Text(DeviceLANPolicy.restriction(for: device.model) ?? (model.smartDevice(for: device) == nil ? L10n.tr("还没读到设备规格", "Device specifications are not available yet.") : L10n.tr("「家庭」没有对应的配件类型", "No matching accessory type in Home.")))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let room = device.roomName, !room.isEmpty {

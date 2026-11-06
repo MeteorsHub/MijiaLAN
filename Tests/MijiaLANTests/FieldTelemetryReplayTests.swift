@@ -166,35 +166,3 @@ struct FieldTelemetryReplayTests {
         }
     }
 }
-
-#if os(macOS)
-struct FieldTelemetryLANTests {
-    @Test("Structured -4004 errors keep the actual LAN API online and do not retry or write")
-    func curtainErrorsStayLocal() async throws {
-        let model = "dooya.motor.dc1545"
-        let url = try #require(Bundle.module.url(forResource: model, withExtension: "json"))
-        let schema = try JSONDecoder().decode(DeviceSchema.self, from: Data(contentsOf: url))
-        let caps = DeviceCapabilityCatalog.capabilities(schema: schema, model: model)
-        let token = "00112233445566778899aabbccddeeff"
-        let network = FakeMiioNetwork()
-        let fake = network.add(host: "test", token: token, deviceID: 123)
-        fake.model = model
-        fake.propertyErrors = Dictionary(uniqueKeysWithValues: caps.filter(\.readable).map { ("\($0.siid).\($0.iid)", -4004) })
-        let device = LocalDevice(did: "123", name: "Test", model: model, host: "test", token: token)
-        let config = LocalHomeConfig(devices: [device])
-        let api = LANMiotAPI(config: { config }, transport: network)
-        let readings = await api.readCapabilities(did: device.did, capabilities: caps)
-        let health = await api.currentHealth()
-        #expect(health[device.did]?.state == .online)
-        #expect(readings.count == 6)
-        #expect(readings.values.allSatisfy { $0.code == -4004 && !$0.isAvailable })
-        #expect(fake.receivedMethods == ["get_properties"])
-        #expect(fake.receivedWrites.isEmpty)
-        for data in fake.receivedPayloads {
-            let json = try JSONDecoder().decode(JSONValue.self, from: data.prefix { $0 != 0 })
-            guard case .object(let object) = json, case .array(let params) = object["params"] else { continue }
-            for case .object(let prop) in params { #expect(prop["piid"] != .number(1)) }
-        }
-    }
-}
-#endif

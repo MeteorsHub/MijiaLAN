@@ -1,5 +1,32 @@
 # 家庭只读诊断第二轮结果与后续边界
 
+## 最新现场风险：请求次序敏感，暂停该型号属性协议
+
+本地线程随后报告使用 b610a64 的 `MiioClient` 再次取证，现装 App 当时仍在运行；采集代码版本与现装 App 运行版本分开记录，后者未在该轮重新用 hash 核验。6 台 `dooya.motor.dc1545`（固件 1.1.3）均通过 info，配置 DID 与握手 DID 一致，回包校验和以及响应请求 ID/设备头匹配检查通过。
+
+| 请求顺序或单项 | 报告的回包 |
+| --- | --- |
+| 2.2 放首位（6 台各一次） | 2.2 code=0/value=2；2.3/2.4/2.5/2.9/2.10 均 -4004、无值 |
+| 缓存顺序 2.9,2.2,2.4,2.3,2.5,2.10（一台） | 首项 2.9 code=0/value=2；其余均 -4004。2.9 的声明枚举只有 0 |
+| 只交换前两项（一台） | 首项 2.2 code=0/value=2；其余均 -4004 |
+| 单独 2.2 / 单独 2.9（一台各一次） | 两者均 code=0/value=2 |
+| 单独当前位置 2.3（一台一次） | -4004、无值 |
+
+本轮共报告 11 次卷帘 `get_properties` 和 1 次喂食器对照，另有 hello/info；没有 `set_properties` 或 `action`。用户之后再次报告 App 无法控制卷帘。此时序作为现场风险记录，不足以确定哪个请求触发、是否存在因果关系或具体故障机制。不要根据校验通过、code=0 或“2”落在状态枚举范围内，就把它当作可信电机状态。没有任何位置读数得到验证。
+
+离线回归样本 `dooya-order-dependent-readings-2026-11-06.json` 按上述 6 个描述场景和报告次数转录，共覆盖 11 次请求。它不是原始抓包，不补造设备 ID、时间戳、未提供的值或位置。
+
+新版本对**精确型号** `dooya.motor.dc1545` 采用统一限制：
+
+- 暂停后台属性轮询、启动/恢复连通性后的属性刷新，以及手动重连后跟随的属性读取。诊断和 follow-up 命令也返回暂停说明，对该型号不发属性探针。
+- `LANMiotAPI` 属性入口返回未验证状态，写入/动作入口拒绝执行；混合设备写入批次先整体检查，避免先写其他设备再发现受限型号。已知型号或通过 info 识别出该型号的 `MiioClient` 仅允许 info 请求，不发属性或控制指令。CLI get/set/raw call 先检查 info；不增加排序、单属性重试或旧 miIO 回退。
+- 保留 hello/info 的连通性判断，在线不等于读数可信。界面明确显示“局域网读数未验证”，详情分列连通性、读数状态和最近信息响应时间；连通性表示最近的信息响应，不是持续属性轮询。
+- 即便收到 code=0/value=2，或存在旧缓存/错误分类 schema，也只保留原始诊断证据，不提供可信状态、位置或控制值。HomeKit/Matter 不映射该型号，不提供桥接写入。保留设备清单、隐藏/选择偏好、配对密钥和已有标识，不重置配对。
+
+旧版现装 App 不会因云端推送自动获得该限制；仍在运行时应正常退出，防止继续轮询。当前只安排本地编译、离线回归与模拟 UI 检查，不启动真实设备配置，不追加实机查询、控制、重置、重新配网或固件升级。
+
+以下是此前各阶段的历史记录；“退出”“恢复”均仅对应当时的观察，不代表新一轮 App 已经退出或故障再次自行恢复。
+
 第一轮由本地线程使用 397736b CLI 完成，11 台、6 型号均通过 `miIO.info` 型号校验。以下是该线程提供的脱敏报告，不是云端直接连接设备取得的原始报文。仅确认读取，不代表任何写入、Matter 配对或控制已通过。
 
 | 型号 | 固件 / 规格版本 | 已确认读取事实 |
@@ -106,6 +133,26 @@ security find-generic-password -s com.mijialan.MijiaLAN -a secrets -w |
 - 已观察到读取错误的属性仅禁用其对应控制，成功属性继续提供；卷帘只写电机控制在状态/位置未确认时也不接受盲写。控制层和 UI 使用同一判定，健康状态仍独立反映在线连通性。
 - 加热、照明、毛巾架温度各自保留原始语义。尚未新增 Matter 卷帘或加热控制，也未声称设备写入或 M200 配对成功。
 
-本轮云端隔离构建执行了 20 项 Swift 逻辑测试（包含原有诊断、规格测试及新增样本回放/DID 对照），均通过。隔离构建保持上游 JSONValue 真实访问级别；真实 UDP/密码学及 macOS App 边界仍使用替身或未执行。新增 `FieldTelemetryLANTests` 需要 macOS 才运行；完整 App/CLI、既有控制回归和打包建议在本地用 `scripts/validate_macos.sh` 再验证，不将这些云端测试称为实机控制验收。
+本轮云端隔离构建执行了 20 项 Swift 逻辑测试（包含原有诊断、规格测试及新增样本回放/DID 对照），均通过。隔离构建保持上游 JSONValue 真实访问级别；真实 UDP/密码学及 macOS App 边界仍使用替身或未执行。当时的 `FieldTelemetryLANTests` 已被当前型号保护测试取代；完整 App/CLI、既有控制回归和打包建议在本地用 `scripts/validate_macos.sh` 再验证，不将这些云端测试称为实机控制验收。
 
 第二轮结果入库后，云端隔离构建的 22 项逻辑测试通过，新增断言保留九次 -4004 和三个 number 0/type mismatch。本次仅修改测试规格、回归样本和记录；没有变更生产寻址、类型映射或新增设备查询。macOS 完整构建及 LAN 集成测试仍由本地验证，隔离观察已完成，当前继续暂停现场操作。
+
+## 精确型号保护的离线验证与本地复测
+
+本轮云端干净构建执行 29 项离线测试，全部通过。使用实际 `MiioClient`、`LANMiotAPI`、调度器和策略源代码；日志、UDP 以及帧加解密在 Linux 隔离包中使用替身，未发送实机流量，不验证真实密码学或实机协议。测试覆盖已知型号客户端在 hello 前拒绝属性/控制请求、info 后识别并锁定型号、API 的零属性发包、混合写入批次的整体拒绝、info 连通性保留、其他型号继续读写，以及顺序敏感的 code-zero/value=2 只能保留为原始诊断证据。此前 Linux 工具链链接缓存问题通过干净构建解除，没有为此修改生产代码。
+
+新增的控制器启动/重连测试、HomeKit/Matter 映射保护测试、界面呈现测试还需 macOS 执行；完整 App/CLI 编译也需本地确认。测试不加载家庭配置，不访问钥匙串，不与真实卷帘通信：
+
+```sh
+env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build --product mijia-lan --force-resolved-versions
+env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build --product MijiaLANApp --force-resolved-versions
+env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'DeviceLANPolicy|FieldTelemetry|ReadOnlyDiagnosticsTests|FieldSpecificationTests' --force-resolved-versions
+```
+
+模拟 UI 已新增“客厅卷帘”条目，使用 192.0.2.12 文档地址和内存传输。该条目不需要缓存规格也能展示限制；它的信息查询模拟连通，属性与控制保持暂停。若需界面复测，先打包 Debug App，再使用既有隔离入口启动：
+
+```sh
+MIJIALAN_UI_PREVIEW=1 MIJIALAN_EPHEMERAL=1 build/MijiaLAN.app/Contents/MacOS/MijiaLAN
+```
+
+核对：卷帘可显示在线连通性，同时显示“局域网读数未验证”；详情、HomeKit 和 Matter 管理页均解释暂停；没有可用的电机、位置、反向或模式控制；其他模拟设备继续正常显示与控制。桥接保持关闭，不扫码、不重置配对。不要运行诊断命令或启动真实家庭配置来验证“没有请求”；用离线测试的发包计数核对即可。当前不安排进一步实机请求，也不发布 Release。

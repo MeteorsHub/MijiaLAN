@@ -18,7 +18,8 @@ enum ControlCenterPreview {
             ("cooker", "米家智能微压 IH 电饭煲 3L", "chunmi.cooker.cmwy3", "厨房", "192.0.2.8"),
             ("fan", "米家智能直流变频循环扇 落地式", "dmaker.fan.p28", "卧室", "192.0.2.9"),
             ("plug3", "客厅-米家智能插座 3", "cuco.plug.v3", "客厅", "192.0.2.10"),
-            ("plug2", "米家智能插座 3", "cuco.plug.v3", "卧室", "192.0.2.11")
+            ("plug2", "米家智能插座 3", "cuco.plug.v3", "卧室", "192.0.2.11"),
+            ("curtain", "客厅卷帘", "dooya.motor.dc1545", "客厅", "192.0.2.12")
         ]
         return LocalHomeConfig(devices: rows.map { LocalDevice(did: $0.0, name: $0.1, model: $0.2, host: $0.4, token: String(repeating: "0", count: 32), roomName: $0.3) })
     }()
@@ -28,6 +29,7 @@ actor ControlCenterPreviewTransport: MiioTransport {
     private let token = Data(repeating: 0, count: 16)
     private let latency: Duration
     private var values: [String: [String: JSONValue]] = [
+        "192.0.2.12": [:],
         "192.0.2.3": ["power": .string("on"), "bright": .number(71), "ct": .number(3500)],
         "192.0.2.6": ["power": .string("off"), "mode": .string("auto"), "tar_temp": .number(29),
                           "fan_level": .string("auto_fan"), "ver_swing": .string("on"), "load_power": .number(1)]
@@ -53,7 +55,8 @@ actor ControlCenterPreviewTransport: MiioTransport {
         if case .array(let array) = request["params"] { args = array } else { args = [] }
         let result: JSONValue
         if method == "miIO.info" {
-            result = .object(["model": .string(host == "192.0.2.3" ? "yeelink.light.lamp4" : "lumi.acpartner.mcn02")])
+            let model = host == "192.0.2.12" ? "dooya.motor.dc1545" : (host == "192.0.2.3" ? "yeelink.light.lamp4" : "lumi.acpartner.mcn02")
+            result = .object(["model": .string(model)])
         } else if method == "get_prop" {
             result = .array(args.map { values[host]?[$0.stringValue ?? ""] ?? .null })
         } else if method.hasPrefix("set_"), let value = args.first {

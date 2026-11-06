@@ -13,6 +13,7 @@ public actor MiioClient {
     private let timeout: Duration
     private let retries: Int
 
+    private var propertyRequestRestriction: String?
     private var deviceID: UInt32?
     private var clock: (stamp: UInt32, at: ContinuousClock.Instant)?
     private var nextRequestID = Int.random(in: 1...9_000)
@@ -38,7 +39,8 @@ public actor MiioClient {
         port: UInt16 = MiioPacket.port,
         transport: any MiioTransport = UDPMiioTransport(),
         timeout: Duration = .seconds(2),
-        retries: Int = 2
+        retries: Int = 2,
+        knownModel: String? = nil
     ) {
         self.host = host
         self.port = port
@@ -46,6 +48,7 @@ public actor MiioClient {
         self.transport = transport
         self.timeout = timeout
         self.retries = max(0, retries)
+        self.propertyRequestRestriction = knownModel.flatMap { DeviceLANPolicy.restriction(for: $0) }
     }
 
     /// The hello reply's header: device ID and clock. Does not prove the token is right.
@@ -65,6 +68,9 @@ public actor MiioClient {
     public func call(_ method: String, params: JSONValue = .array([]), timeout: Duration? = nil, retryCount: Int? = nil) async throws -> JSONValue {
         await acquire()
         defer { release() }
+        if let reason = propertyRequestRestriction, method != "miIO.info" {
+            throw DeviceControlError.unsupported(reason)
+        }
         try Task.checkCancellation()
         var lastError: any Error = MiioError.timeout
         var helloAnswered = false
@@ -77,7 +83,10 @@ public actor MiioClient {
                     helloAnswered = true
                 }
                 try Task.checkCancellation()
-                return try await send(method, params: params, timeout: timeout ?? self.timeout)
+                let result = try await send(method, params: params, timeout: timeout ?? self.timeout)
+                if method == "miIO.info", let model = result["model"]?.stringValue,
+                   let reason = DeviceLANPolicy.restriction(for: model) { propertyRequestRestriction = reason }
+                return result
             } catch MiioError.timeout {
                 lastError = MiioError.timeout
                 deviceID = nil

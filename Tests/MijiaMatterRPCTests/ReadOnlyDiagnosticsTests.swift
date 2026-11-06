@@ -47,7 +47,7 @@ struct ReadOnlyDiagnosticsTests {
                 return .object(["model": .string(model), "fw_ver": .string("1.2.3"), "token": .string("private-token")])
             }
             let row = diagnosticObject(diagnosticArray(params).first)
-            if row["piid"] == .number(2) { throw MiioError.deviceError(code: -4004, message: "private-error-payload") }
+            if row["piid"] == .number(1) { throw MiioError.deviceError(code: -4004, message: "private-error-payload") }
             return .array([.object(["siid": row["siid"] ?? .null, "piid": row["piid"] ?? .null,
                                    "code": .number(0), "value": .number(27.5)])])
         }
@@ -58,10 +58,15 @@ struct ReadOnlyDiagnosticsTests {
                     host: "192.0.2.55", token: "private-token", specType: "urn:miot-spec-v2:device:motor-controller:0000A01D:dooya-dc1545:1")
     }
 
+    private var dehumidifier: LocalDevice {
+        LocalDevice(did: "private-did", name: "private-name", model: "xiaomi.derh.13l",
+                    host: "192.0.2.55", token: "private-token")
+    }
+
     @Test("Actual diagnostic collection is one property per read, preserves errors and performs no writes")
     func collection() async throws {
-        let script = Script(model: curtain.model)
-        let collected = await ReadOnlyDiagnostics.collect(device: curtain, slot: 0) { try await script.call($0, $1) }
+        let script = Script(model: dehumidifier.model)
+        let collected = await ReadOnlyDiagnostics.collect(device: dehumidifier, slot: 0) { try await script.call($0, $1) }
         let report = diagnosticObject(collected)
         let requests = await script.requests
         #expect(requests.map(\.0) == ["miIO.info"] + Array(repeating: "get_properties", count: 6))
@@ -73,13 +78,13 @@ struct ReadOnlyDiagnosticsTests {
         #expect(report["specificationSource"] == .string("imported_config"))
         let text = String(decoding: try JSONEncoder().encode(report), as: UTF8.self)
         #expect(!text.contains("private-"))
-        #expect(!text.contains(curtain.host))
+        #expect(!text.contains(dehumidifier.host))
     }
 
     @Test("A mismatched device stops after info without querying properties")
     func mismatch() async {
         let script = Script(model: "other.model")
-        let collected = await ReadOnlyDiagnostics.collect(device: curtain, slot: 0) { try await script.call($0, $1) }
+        let collected = await ReadOnlyDiagnostics.collect(device: dehumidifier, slot: 0) { try await script.call($0, $1) }
         let report = diagnosticObject(collected)
         #expect(report["error"] == .string("model_mismatch_no_properties_queried"))
         #expect(await script.requests.count == 1)
@@ -139,35 +144,17 @@ struct ReadOnlyDiagnosticsTests {
         }
     }
 
-    @Test("Curtain follow-up compares bounded read-only DID forms and never reveals actual identifiers")
-    func curtainFollowup() async throws {
+    @Test("Paused curtain diagnostics and follow-up emit no hello, info or property calls")
+    func curtainPaused() async {
         let script = FollowupScript(model: curtain.model)
-        let collected = await ReadOnlyDiagnostics.collectFollowup(device: curtain, slot: 0, protocolDID: "private-handshake-id") {
+        let collected = await ReadOnlyDiagnostics.collect(device: curtain, slot: 0) { await script.call($0, $1) }
+        let followup = await ReadOnlyDiagnostics.collectFollowup(device: curtain, slot: 0, protocolDID: "private-handshake-id") {
             await script.call($0, $1)
         }
-        let report = diagnosticObject(collected)
-        #expect(report["configuredDidMatchesHandshake"] == .bool(false))
-        let readings = diagnosticArray(report["readings"])
-        #expect(readings.count == 12)
-        for value in readings {
-            let row = diagnosticObject(value)
-            let piid = try #require(row["piid"])
-            #expect([JSONValue.number(2), .number(3), .number(4)].contains(piid))
-            #expect(row["siid"] == .number(2))
-            if row["requestDidForm"] == .string("hassMiotAlias") {
-                #expect(row["code"] == .number(0))
-                #expect(row["rawValue"] == .number(25))
-            } else { #expect(row["code"] == .number(-4004)) }
-        }
-        let requests = await script.requests
-        #expect(requests.count == 13)
-        #expect(requests.first?.0 == "miIO.info")
-        #expect(requests.dropFirst().allSatisfy { $0.0 == "get_properties" && diagnosticArray($0.1).count == 1 })
-        let output = String(decoding: try JSONEncoder().encode(collected), as: UTF8.self)
-        #expect(!output.contains("private-"))
-        #expect(!output.contains(curtain.host))
-        let deduplicated = ReadOnlyDiagnostics.followupProbes(device: curtain, protocolDID: curtain.did)
-        #expect(deduplicated.count == 9)
+        #expect(diagnosticObject(collected)["error"] == .string("property_requests_paused"))
+        #expect(diagnosticObject(followup)["propertyRequestsSent"] == .number(0))
+        #expect(await script.requests.isEmpty)
+        #expect(ReadOnlyDiagnostics.followupProbes(device: curtain, protocolDID: curtain.did).isEmpty)
     }
 
     @Test("Feeder follow-up reads only the three reported bool fields, preserving numeric/boolean conflicts")
@@ -189,7 +176,8 @@ struct ReadOnlyDiagnosticsTests {
     @Test("Follow-up identity mismatch stops before any property query")
     func followupMismatch() async {
         let script = FollowupScript(model: "other.model")
-        let report = await ReadOnlyDiagnostics.collectFollowup(device: curtain, slot: 0, protocolDID: "private-handshake-id") {
+        let device = LocalDevice(did: "private", name: "private", model: "xiaomi.feeder.pi2001", host: "192.0.2.1", token: "private")
+        let report = await ReadOnlyDiagnostics.collectFollowup(device: device, slot: 0, protocolDID: nil) {
             await script.call($0, $1)
         }
         #expect(diagnosticObject(report)["error"] == .string("model_mismatch_no_properties_queried"))

@@ -139,7 +139,11 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     /// The last value actually read from the device, companions included.
-    public func latestValue(_ key: MiotPropKey) -> JSONValue? { latest[key] }
+    public func latestValue(_ key: MiotPropKey) -> JSONValue? {
+        guard let device = config().devices.first(where: { $0.did == key.did }),
+              DeviceLANPolicy.allowsPropertyRequests(for: device.model) else { return nil }
+        return latest[key]
+    }
 
     // MARK: MiCloudAPI
 
@@ -178,7 +182,7 @@ public actor LANMiotAPI: MiCloudAPI {
         var values: [MiotPropKey: JSONValue] = [:]
         await withTaskGroup(of: (LocalDevice, MiioClient, Result<[MiotPropKey: JSONValue], any Error>).self) { group in
             for (did, keys) in byDid {
-                guard let device = devices[did] else { continue }
+                guard let device = devices[did], DeviceLANPolicy.allowsPropertyRequests(for: device.model) else { continue }
                 let client = client(for: device)
                 let legacy = LegacyMiioProfile.forModel(device.model)
                 let extra = (companions[did] ?? []).filter { !requested.contains($0) }
@@ -214,6 +218,11 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     public func setProps(_ writes: [MiotPropWrite]) async throws {
+        // Validate the entire batch before any device receives a write.
+        for did in Set(writes.map(\.did)) {
+            let device = try localDevice(forDid: did)
+            if let reason = DeviceLANPolicy.restriction(for: device.model) { throw DeviceControlError.unsupported(reason) }
+        }
         for (did, group) in Dictionary(grouping: writes, by: \.did) {
             let (device, client) = try client(forDid: did)
             do {
@@ -235,7 +244,9 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     public func action(_ call: MiotActionCall) async throws {
-        let (device, client) = try client(forDid: call.did)
+        let device = try localDevice(forDid: call.did)
+        if let reason = DeviceLANPolicy.restriction(for: device.model) { throw DeviceControlError.unsupported(reason) }
+        let client = client(for: device)
         guard LegacyMiioProfile.forModel(device.model) == nil else { throw MiioError.unsupportedByLegacyDevice }
         do {
             try await client.action(call)
@@ -255,7 +266,13 @@ public actor LANMiotAPI: MiCloudAPI {
     public func readCapabilities(did: String, capabilities: [DeviceCapability]) async -> [String: DeviceReading] {
         var endpoint: (LocalDevice, MiioClient)?
         do {
-            let (device, client) = try client(forDid: did)
+            let device = try localDevice(forDid: did)
+            if let reason = DeviceLANPolicy.restriction(for: device.model) {
+                return Dictionary(uniqueKeysWithValues: capabilities.filter(\.readable).map {
+                    ($0.id, DeviceReading(error: reason))
+                })
+            }
+            let client = client(for: device)
             endpoint = (device, client)
             let props = capabilities.filter { $0.readable }.map { (siid: $0.siid, piid: $0.iid) }
             let readings: [MiotPropKey: DeviceReading]
@@ -292,15 +309,20 @@ public actor LANMiotAPI: MiCloudAPI {
             consecutiveFailures[device.did] = 0
         }
         let client = MiioClient(host: device.host, token: MiioToken.parse(device.token) ?? Data(),
-                                port: port, transport: transport, timeout: commandTimeout, retries: 1)
+                                port: port, transport: transport, timeout: commandTimeout, retries: 1, knownModel: device.model)
         clients[device.did] = (device, client)
         return client
     }
 
-    private func client(forDid did: String) throws -> (LocalDevice, MiioClient) {
+    private func localDevice(forDid did: String) throws -> LocalDevice {
         guard let device = config().devices.first(where: { $0.did == did }) else {
             throw MiioError.badResponse(L10n.tr("设备 \(did) 不在本地清单里", "Device \(did) is not in the local list."))
         }
+        return device
+    }
+
+    private func client(forDid did: String) throws -> (LocalDevice, MiioClient) {
+        let device = try localDevice(forDid: did)
         return (device, client(for: device))
     }
 

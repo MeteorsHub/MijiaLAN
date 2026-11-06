@@ -12,10 +12,16 @@ struct DeviceInformation: View {
                 if let room = snapshot.device.roomName { infoRow(L10n.tr("房间", "Room"), value: room) }
                 infoRow(L10n.tr("IP 地址", "IP Address"), value: snapshot.device.host)
                 infoRow(L10n.tr("型号", "Model"), value: snapshot.device.model)
+                infoRow(L10n.tr("连通性", "Connectivity"), value: snapshot.isOnline
+                    ? L10n.tr("在线（设备信息可达）", "Online (device info reachable)") : ConnectionIssue(health: snapshot.health).title)
+                if snapshot.lanReadingsRestriction != nil {
+                    infoRow(L10n.tr("局域网读数", "LAN Readings"), value: DeviceLANPolicy.unverifiedReadingsTitle)
+                    infoRow(L10n.tr("最近信息响应", "Last Info Response"), value: snapshot.health.lastSeen?.formatted() ?? L10n.tr("尚未确认", "Not Confirmed"))
+                }
                 Divider()
                 Text(L10n.tr("当前读数", "Current Readings")).fontWeight(.medium)
                 ForEach(snapshot.capabilities.filter(\.readable)) { capability in
-                    infoRow(capability.title, value: snapshot.readings[capability.id]?.error ?? capability.formatted(snapshot.value(capability.id)))
+                    infoRow(capability.title, value: snapshot.lanReadingsRestriction ?? snapshot.readings[capability.id]?.error ?? capability.formatted(snapshot.value(capability.id)))
                         .help("\(capability.siid).\(capability.iid) · \(capability.service) · \(snapshot.readings[capability.id]?.updatedAt?.formatted() ?? L10n.tr("尚未读取", "Not Read Yet"))")
                 }
                 let limited = snapshot.capabilities.filter { $0.limitation != nil }

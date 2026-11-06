@@ -37,6 +37,8 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
     }
 
     private let lock = NSLock()
+    private var exchanges = 0
+    var exchangeCount: Int { lock.withLock { exchanges } }
     private var devices: [String: Device] = [:]
 
     @discardableResult
@@ -51,6 +53,7 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
 
     func exchange(_ packet: Data, host: String, port: UInt16, timeout: Duration) async throws -> Data {
         try lock.withLock {
+            exchanges += 1
             if devices[host]?.unreachable == true { throw MiioError.hostUnreachable }
             guard let device = devices[host], !device.offline else { throw MiioError.timeout }
             return try Self.respond(to: packet, device: device)

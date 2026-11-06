@@ -34,6 +34,7 @@ public enum MatterDevicePlan {
     }
     public static func entries(_ snapshots: [DeviceSnapshot]) -> [Entry] {
         snapshots.sorted { $0.id < $1.id }.flatMap { s -> [Entry] in
+            guard DeviceLANPolicy.allowsPropertyRequests(for: s.device.model) else { return [] }
             var result: [Entry] = []
             func add(_ suffix: String, _ kind: String, _ bindings: [String: DeviceCapability]) {
                 var values: [String: JSONValue] = [:]

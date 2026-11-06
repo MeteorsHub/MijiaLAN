@@ -1,0 +1,281 @@
+{
+  "source": "Transcribed local-thread report; not original wire packets.",
+  "receivedDate": "2026-11-06",
+  "model": "dooya.motor.dc1545",
+  "firmware": "1.1.3",
+  "observedDeviceCount": 6,
+  "propertyRequestsReported": 11,
+  "writesSent": false,
+  "reportedChecks": {
+    "infoModelMatched": true,
+    "configuredDidMatchesHandshake": true,
+    "packetChecksumValid": true,
+    "responseRequestIdMatched": true
+  },
+  "cases": [
+    {
+      "name": "status_first_six_devices",
+      "reportedRequestCount": 6,
+      "requestOrder": [
+        {
+          "siid": 2,
+          "piid": 2
+        },
+        {
+          "siid": 2,
+          "piid": 3
+        },
+        {
+          "siid": 2,
+          "piid": 4
+        },
+        {
+          "siid": 2,
+          "piid": 5
+        },
+        {
+          "siid": 2,
+          "piid": 9
+        },
+        {
+          "siid": 2,
+          "piid": 10
+        }
+      ],
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 2,
+          "code": 0,
+          "hasValue": true,
+          "value": 2
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 4,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 5,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 9,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 10,
+          "code": -4004,
+          "hasValue": false
+        }
+      ]
+    },
+    {
+      "name": "app_cache_order",
+      "reportedRequestCount": 1,
+      "requestOrder": [
+        {
+          "siid": 2,
+          "piid": 9
+        },
+        {
+          "siid": 2,
+          "piid": 2
+        },
+        {
+          "siid": 2,
+          "piid": 4
+        },
+        {
+          "siid": 2,
+          "piid": 3
+        },
+        {
+          "siid": 2,
+          "piid": 5
+        },
+        {
+          "siid": 2,
+          "piid": 10
+        }
+      ],
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 9,
+          "code": 0,
+          "hasValue": true,
+          "value": 2
+        },
+        {
+          "siid": 2,
+          "piid": 2,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 4,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 5,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 10,
+          "code": -4004,
+          "hasValue": false
+        }
+      ]
+    },
+    {
+      "name": "swap_first_two_only",
+      "reportedRequestCount": 1,
+      "requestOrder": [
+        {
+          "siid": 2,
+          "piid": 2
+        },
+        {
+          "siid": 2,
+          "piid": 9
+        },
+        {
+          "siid": 2,
+          "piid": 4
+        },
+        {
+          "siid": 2,
+          "piid": 3
+        },
+        {
+          "siid": 2,
+          "piid": 5
+        },
+        {
+          "siid": 2,
+          "piid": 10
+        }
+      ],
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 2,
+          "code": 0,
+          "hasValue": true,
+          "value": 2
+        },
+        {
+          "siid": 2,
+          "piid": 9,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 4,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 5,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 10,
+          "code": -4004,
+          "hasValue": false
+        }
+      ]
+    },
+    {
+      "name": "single_status",
+      "reportedRequestCount": 1,
+      "requestOrder": [
+        {
+          "siid": 2,
+          "piid": 2
+        }
+      ],
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 2,
+          "code": 0,
+          "hasValue": true,
+          "value": 2
+        }
+      ]
+    },
+    {
+      "name": "single_fault",
+      "reportedRequestCount": 1,
+      "requestOrder": [
+        {
+          "siid": 2,
+          "piid": 9
+        }
+      ],
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 9,
+          "code": 0,
+          "hasValue": true,
+          "value": 2
+        }
+      ]
+    },
+    {
+      "name": "single_current_position",
+      "reportedRequestCount": 1,
+      "requestOrder": [
+        {
+          "siid": 2,
+          "piid": 3
+        }
+      ],
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 3,
+          "code": -4004,
+          "hasValue": false
+        }
+      ]
+    }
+  ],
+  "subsequentUserReport": "Curtain control became unavailable again after probes; timing does not establish a trigger or causal mechanism."
+}

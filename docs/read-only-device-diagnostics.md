@@ -1,5 +1,7 @@
 # 家庭设备最小只读诊断
 
+> `dooya.motor.dc1545` 已因次序敏感回包和未解决的现场风险暂停属性协议。新版 `diagnose` / `diagnose-followup` 对该型号返回 `property_requests_paused`，不执行属性探针。下文白名单和命令为历史流程说明，当前不要对家庭设备重跑。最新限制见 [household-followup-diagnostics.md](household-followup-diagnostics.md)。
+
 先核对运行进程路径、可执行文件 SHA-256、Info.plist 版本；只有匹配构建记录时才声称对应源码提交。
 无需重启已运行的 App，不改变桥接开关、配对或任何设备设置。仅在家庭环境、用户授权后查询。
 
@@ -40,7 +42,7 @@ security find-generic-password -s com.mijialan.MijiaLAN -a secrets -w |
 不要在上述管道中插入 `tee`、调试打印或 `set -x`。若钥匙串访问被拒绝或没有该项，停止并报告，不导出其他凭据。
 先本地检查最终报告，再只反馈型号、固件、规格 URN 和属性结果。不发送原始清单或整个钥匙串。
 
-当前查询：
+历史查询白名单（dooya.motor.dc1545 已暂停）：
 
 - `dooya.motor.dc1545`：2.2、2.3、2.4、2.5、2.9、2.10；不读取只写 2.1。
 - `xiaomi.pet_waterer.70m2`：2.1、2.3、2.4、2.7、2.10、2.11，区分两条出水间隔。

@@ -25,6 +25,10 @@ public struct CapabilityHomeKitPlan: Sendable {
 public enum CapabilityHomeKitMapper {
     public static func plan(snapshot s: DeviceSnapshot, legacyDevice: SmartDevice?, names: [String: String],
                             identifiers: inout [String: UInt64]) -> CapabilityHomeKitPlan {
+        guard DeviceLANPolicy.allowsPropertyRequests(for: s.device.model) else {
+            return CapabilityHomeKitPlan(info: AccessoryInfo(name: s.device.name, manufacturer: "Xiaomi", model: s.device.model,
+                serialNumber: s.id, firmwareRevision: "1.0.0"), services: [], bindings: [:], signature: "lan-properties-paused:" + s.device.model)
+        }
         var configured: [HomeKitRole: String] = [:]
         for (key, name) in names { if let role = HomeKitRole(rawValue: key) { configured[role] = name } }
         let base = legacyDevice.flatMap { HomeKitAccessoryMapper.plan(for: $0, name: $0.name, configuredNames: configured) }
@@ -167,6 +171,7 @@ public enum CapabilityHomeKitMapper {
 
     public static func value(_ binding: CapabilityHAPBinding, snapshot s: DeviceSnapshot,
                              legacyValues: [HomeKitRole: HAPCharacteristicValue], names: [String: String]) -> HAPCharacteristicValue? {
+        guard DeviceLANPolicy.allowsPropertyRequests(for: s.device.model) else { return nil }
         switch binding {
         case .name(let key, let title): return .string(names[key] ?? title)
         case .constant(let v): return v
@@ -218,6 +223,7 @@ public enum CapabilityHomeKitMapper {
     }
 
     public static func commands(_ binding: CapabilityHAPBinding, value: HAPCharacteristicValue, snapshot s: DeviceSnapshot) throws -> [CapabilityCommand] {
+        guard DeviceLANPolicy.allowsPropertyRequests(for: s.device.model) else { throw HAPError.unavailable }
         let n: Double? = switch value {
         case .bool(let v): v ? 1 : 0
         case .uint8(let v): Double(v)

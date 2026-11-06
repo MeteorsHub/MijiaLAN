@@ -120,12 +120,14 @@ public struct DeviceCapability: Equatable, Sendable, Identifiable {
     public static func actionID(_ siid: Int, _ aiid: Int) -> String { "a:\(siid):\(aiid)" }
 
     public func validated(_ value: JSONValue) throws -> JSONValue {
-        try validate(value, enforceStep: true)
+        if let reason = DeviceLANPolicy.restriction(for: model) { throw DeviceControlError.unsupported(reason) }
+        return try validate(value, enforceStep: true)
     }
 
     /// Sensor samples may be finer than the writable step. Types, bounds and enums still apply.
     /// Never coerce numeric strings or 0/1 into booleans when accepting device telemetry.
     public func validatedReading(_ value: JSONValue) throws -> JSONValue {
+        if let reason = DeviceLANPolicy.restriction(for: model) { throw DeviceControlError.unsupported(reason) }
         if isNumeric, case .number = value {
             return try validate(value, enforceStep: format != "float")
         }
@@ -155,6 +157,13 @@ public struct DeviceCapability: Equatable, Sendable, Identifiable {
 
     /// A malformed property remains diagnosable and cannot supply a confirmed state to a bridge.
     public func checkedReading(_ reading: DeviceReading) -> DeviceReading {
+        if let reason = DeviceLANPolicy.restriction(for: model) {
+            var paused = reading
+            paused.rawValue = reading.rawValue ?? reading.value
+            paused.value = nil
+            paused.error = reading.error ?? reason
+            return paused
+        }
         guard reading.isAvailable, let value = reading.value else { return reading }
         do {
             _ = try validatedReading(value)
@@ -179,6 +188,7 @@ public struct DeviceCapability: Equatable, Sendable, Identifiable {
     }
 
     public func formatted(_ value: JSONValue?) -> String {
+        if !DeviceLANPolicy.allowsPropertyRequests(for: model) { return DeviceLANPolicy.unverifiedReadingsTitle }
         guard let value else { return L10n.tr("尚无读数", "No Reading") }
         if let n = value.doubleValue {
             if let option = options.first(where: { Double($0.value) == n }) {
@@ -248,7 +258,8 @@ public struct DeviceSnapshot: Equatable, Sendable, Identifiable {
     }
     public var id: String { device.did }
     public var isOnline: Bool { health.state == .online }
-    public var controls: [DeviceCapability] { capabilities.filter { $0.control != .unsupported && $0.control != .reading } }
+    public var lanReadingsRestriction: String? { DeviceLANPolicy.restriction(for: device.model) }
+    public var controls: [DeviceCapability] { DeviceLANPolicy.allowsPropertyRequests(for: device.model) ? capabilities.filter { $0.control != .unsupported && $0.control != .reading } : [] }
     public var primaryPower: DeviceCapability? {
         capability(schema.category, "on") ?? (schema.category == "outlet" ? capability("switch", "on") : nil)
     }
@@ -256,16 +267,20 @@ public struct DeviceSnapshot: Equatable, Sendable, Identifiable {
         capabilities.first { $0.kind == .property && $0.service == service && $0.name == name }
     }
     public func value(_ id: String) -> JSONValue? {
-        guard readings[id]?.isAvailable == true else { return nil }
+        guard DeviceLANPolicy.allowsPropertyRequests(for: device.model), readings[id]?.isAvailable == true else { return nil }
         return readings[id]?.value
     }
     public func value(_ service: String, _ name: String) -> JSONValue? {
         capability(service, name).flatMap { value($0.id) }
     }
-    public func controlValue(_ c: DeviceCapability) -> JSONValue? { c.prepared ? prepared[c.id] : value(c.id) }
+    public func controlValue(_ c: DeviceCapability) -> JSONValue? {
+        guard DeviceLANPolicy.allowsPropertyRequests(for: device.model) else { return nil }
+        return c.prepared ? prepared[c.id] : value(c.id)
+    }
 
     /// An observed read failure disables only its corresponding control until it can be confirmed again.
     public func controlUnavailableReason(_ c: DeviceCapability) -> String? {
+        if let reason = lanReadingsRestriction { return reason }
         guard !c.prepared, c.kind == .property else { return nil }
         if c.readable, let error = readings[c.id]?.error { return error }
         if device.model == "dooya.motor.dc1545", c.siid == 2, c.name == "motor-control",
@@ -374,6 +389,11 @@ public enum DeviceCapabilityCatalog {
                     // A current-state field is not a future cooking parameter.
                     writable = false; control = .reading
                 }
+                if let reason = DeviceLANPolicy.restriction(for: model) {
+                    writable = false
+                    control = readable ? .reading : .unsupported
+                    limitation = reason
+                }
                 result.append(DeviceCapability(
                     id: DeviceCapability.propertyID(service.iid, p.iid), model: model, specification: schema.type, declaredAccess: p.access, kind: .property, siid: service.iid, iid: p.iid,
                     service: service.name, name: p.name, title: title, format: p.format, readable: readable,
@@ -383,7 +403,7 @@ public enum DeviceCapabilityCatalog {
                 ))
             }
             for a in service.actions {
-                let supported = legacy == nil && actionNames.contains(a.name) && service.name == schema.category
+                let supported = DeviceLANPolicy.allowsPropertyRequests(for: model) && legacy == nil && actionNames.contains(a.name) && service.name == schema.category
                 result.append(DeviceCapability(
                     id: DeviceCapability.actionID(service.iid, a.iid), model: model, specification: schema.type, kind: .action, siid: service.iid, iid: a.iid,
                     service: service.name, name: a.name,

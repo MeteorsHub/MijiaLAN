@@ -11,26 +11,35 @@ struct ControlCenterDeviceDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if let reason = DeviceLANPolicy.restriction(for: device.model) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(DeviceLANPolicy.unverifiedReadingsTitle, systemImage: "pause.circle")
+                        .font(.callout.weight(.medium))
+                    Text(reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
             if let snapshot = model.devices.snapshots[device.did] {
                 if !snapshot.isOnline { OfflineDeviceCard(model: model, device: device) }
-                if snapshot.schema.category == "air-conditioner" {
-                    AirConditionerControl(snapshot: snapshot, working: working, perform: run)
-                    Text(L10n.tr("家庭中的当前温度使用设定温度占位，此设备没有实测室温读数。", "Home uses the target temperature as a placeholder for the current temperature. This device does not report measured room temperature."))
-                        .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    additionalControls(snapshot, excluding: ["p:2:1", "p:2:2", "p:2:3", "p:3:1", "p:3:2"])
-                } else if snapshot.schema.category == "light", let brightness = snapshot.capability("light", "brightness") {
-                    LampControl(controller: model.devices, snapshot: snapshot, brightness: brightness)
-                    if let temperature = snapshot.capability("light", "color-temperature"), temperature.control == .number {
-                        LampColorTemperatureControl(controller: model.devices, snapshot: snapshot, capability: temperature)
+                if DeviceLANPolicy.allowsPropertyRequests(for: device.model) {
+                    if snapshot.schema.category == "air-conditioner" {
+                        AirConditionerControl(snapshot: snapshot, working: working, perform: run)
+                        Text(L10n.tr("家庭中的当前温度使用设定温度占位，此设备没有实测室温读数。", "Home uses the target temperature as a placeholder for the current temperature. This device does not report measured room temperature."))
+                            .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        additionalControls(snapshot, excluding: ["p:2:1", "p:2:2", "p:2:3", "p:3:1", "p:3:2"])
+                    } else if snapshot.schema.category == "light", let brightness = snapshot.capability("light", "brightness") {
+                        LampControl(controller: model.devices, snapshot: snapshot, brightness: brightness)
+                        if let temperature = snapshot.capability("light", "color-temperature"), temperature.control == .number {
+                            LampColorTemperatureControl(controller: model.devices, snapshot: snapshot, capability: temperature)
+                        }
+                        additionalControls(snapshot, excluding: [brightness.id, snapshot.primaryPower?.id ?? "", snapshot.capability("light", "color-temperature")?.id ?? ""])
+                    } else {
+                        CapabilityControls(controller: model.devices, snapshot: snapshot, excluding: [snapshot.primaryPower?.id ?? ""])
                     }
-                    additionalControls(snapshot, excluding: [brightness.id, snapshot.primaryPower?.id ?? "", snapshot.capability("light", "color-temperature")?.id ?? ""])
-                } else {
-                    CapabilityControls(controller: model.devices, snapshot: snapshot, excluding: [snapshot.primaryPower?.id ?? ""])
-                }
-                // Lamp values already show the result. A transient feedback row resizes
-                // the menu-bar window on every streamed write and confirmation.
-                if snapshot.schema.category != "light" {
-                    DeviceCommandFeedback(snapshot: snapshot)
+                    // Lamp values already show the result. A transient feedback row resizes
+                    // the menu-bar window on every streamed write and confirmation.
+                    if snapshot.schema.category != "light" {
+                        DeviceCommandFeedback(snapshot: snapshot)
+                    }
                 }
                 if let error {
                     Label(error, systemImage: "exclamationmark.circle")

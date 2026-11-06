@@ -149,7 +149,8 @@ final class AppModel {
 
     /// Whether Apple Home has an accessory type for this device at all.
     func homeKitSupports(_ device: LocalDevice) -> Bool {
-        devices.snapshots[device.did]?.controls.isEmpty == false
+        guard DeviceLANPolicy.allowsPropertyRequests(for: device.model) else { return false }
+        return devices.snapshots[device.did]?.controls.isEmpty == false
     }
 
     func remove(_ device: LocalDevice) {

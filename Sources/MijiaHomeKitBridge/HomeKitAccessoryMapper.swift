@@ -1,6 +1,7 @@
 import Foundation
 import HAPCore
 import MijiaCore
+import MijiaLAN
 
 /// A characteristic the bridge keeps in sync with one device. Within an accessory it is found by its service and
 /// characteristic type, because the HAP bridge assigns the instance IDs.
@@ -143,6 +144,7 @@ public enum HomeKitAccessoryMapper {
     public static func plan(
         for device: SmartDevice, name: String, configuredNames: [HomeKitRole: String] = [:]
     ) -> HomeKitAccessoryPlan? {
+        guard DeviceLANPolicy.allowsPropertyRequests(for: device.model) else { return nil }
         let specs = characteristicSpecs(for: device, configuredNames: configuredNames)
         guard !specs.isEmpty else { return nil }
 
@@ -186,6 +188,7 @@ public enum HomeKitAccessoryMapper {
 
     /// The store action for a write from Apple Home, or nil when it is read-only or changes nothing.
     public static func write(_ role: HomeKitRole, value: HAPCharacteristicValue, to device: SmartDevice) -> HomeKitWrite? {
+        guard DeviceLANPolicy.allowsPropertyRequests(for: device.model) else { return nil }
         guard let number = number(from: value) else { return nil }
         switch (role, device.kind) {
         case (.lightOn, .light(let s)):

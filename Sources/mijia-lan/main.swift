@@ -64,6 +64,7 @@ struct MijiaLANCommand {
             print("did \(header.deviceID)\tmodel \(info.model)\tmac \(info.mac ?? "-")\tfw \(info.firmware ?? "-")")
         case "get":
             let client = try makeClient(args, port: port)
+            try await requireVerifiedPropertyProtocol(client)
             let props = try args.dropFirst(3).map(parseProp)
             guard !props.isEmpty else { return usage() }
             let header = try await client.handshake()
@@ -75,6 +76,7 @@ struct MijiaLANCommand {
             }
         case "set":
             let client = try makeClient(args, port: port)
+            try await requireVerifiedPropertyProtocol(client)
             let header = try await client.handshake()
             let did = String(header.deviceID)
             let writes = try args.dropFirst(3).map { item -> MiotPropWrite in
@@ -103,6 +105,7 @@ struct MijiaLANCommand {
         case "call":
             let client = try makeClient(args, port: port)
             guard args.count >= 4 else { return usage() }
+            if args[3] != "miIO.info" { try await requireVerifiedPropertyProtocol(client) }
             let params = try args.count >= 5 ? parseJSON(args[4]) : .array([])
             print(try await client.call(args[3], params: params).compactJSONString)
         default:
@@ -151,6 +154,11 @@ struct MijiaLANCommand {
     static func parseJSON(_ text: String) throws -> JSONValue {
         if let value = try? JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)) { return value }
         return .string(text)
+    }
+
+    private static func requireVerifiedPropertyProtocol(_ client: MiioClient) async throws {
+        let info = try await client.info()
+        if let reason = DeviceLANPolicy.restriction(for: info.model) { throw DeviceControlError.unsupported(reason) }
     }
 
     static func usage() {

@@ -48,6 +48,7 @@ enum DevicePresentation {
     static func summary(_ snapshot: DeviceSnapshot?) -> String {
         guard let s = snapshot else { return L10n.tr("等待设备信息", "Waiting for Device Information") }
         guard s.isOnline else { return ConnectionIssue(health: s.health).title }
+        if s.lanReadingsRestriction != nil { return DeviceLANPolicy.unverifiedReadingsTitle }
         let on = s.primaryPower.flatMap { s.value($0.id)?.boolValue }
         if on == false {
             return L10n.tr("已关闭", "Off")

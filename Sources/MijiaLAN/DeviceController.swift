@@ -113,7 +113,10 @@ public final class DeviceController {
                     .appendingPathComponent(type.replacingOccurrences(of: ":", with: "_") + ".json")
                 return (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(DeviceSchema.self, from: $0) }
             }
-            guard let schema = DeviceSchema.bundled(model: device.model) ?? cached else {
+            // The restriction is independent of whether a specification was imported/cached.
+            let restrictedPlaceholder: DeviceSchema? = DeviceLANPolicy.allowsPropertyRequests(for: device.model) ? nil
+                : DeviceSchema(model: device.model, type: device.specType ?? "motor-controller", description: nil, services: [])
+            guard let schema = DeviceSchema.bundled(model: device.model) ?? cached ?? restrictedPlaceholder else {
                 snapshots[device.did] = nil
                 continue
             }
@@ -175,7 +178,7 @@ public final class DeviceController {
         let health = await api.currentHealth()
         retryStates = await api.retryStates()
         snapshots[did]?.health = health[did] ?? LANDeviceHealth()
-        if let snapshot = snapshots[did], snapshot.isOnline {
+        if let snapshot = snapshots[did], snapshot.isOnline, DeviceLANPolicy.allowsPropertyRequests(for: snapshot.device.model) {
             await refresh(did: did, capabilities: snapshot.capabilities.filter(\.readable), joinExisting: true)
             lastSlow[did] = Date()
         }
@@ -197,7 +200,7 @@ public final class DeviceController {
         let health = await api.currentHealth()
         for did in Array(snapshots.keys) { snapshots[did]?.health = health[did] ?? LANDeviceHealth() }
         await withTaskGroup(of: Void.self) { group in
-            for (did, snapshot) in snapshots where snapshot.isOnline {
+            for (did, snapshot) in snapshots where snapshot.isOnline && DeviceLANPolicy.allowsPropertyRequests(for: snapshot.device.model) {
                 let slow = Date().timeIntervalSince(lastSlow[did] ?? .distantPast) >= 60
                 if slow { lastSlow[did] = Date() }
                 let caps = snapshot.capabilities.filter { $0.readable && (slow || !$0.lowFrequency) }
@@ -222,7 +225,7 @@ public final class DeviceController {
                 // Never hold the health stream up behind a slow device's property request.
                 for did in recovered {
                     Task { [weak self] in
-                        guard let self, let snapshot = self.snapshotStorage[did] else { return }
+                        guard let self, let snapshot = self.snapshotStorage[did], DeviceLANPolicy.allowsPropertyRequests(for: snapshot.device.model) else { return }
                         await self.refresh(did: did, capabilities: snapshot.capabilities.filter(\.readable), joinExisting: true)
                         self.lastSlow[did] = Date()
                         self.publish()
@@ -237,7 +240,7 @@ public final class DeviceController {
             await prior.task.value
             if joinExisting { return }
         }
-        guard !Task.isCancelled, let device = snapshotStorage[did]?.device else { return }
+        guard !Task.isCancelled, let device = snapshotStorage[did]?.device, DeviceLANPolicy.allowsPropertyRequests(for: device.model) else { return }
         let id = UUID()
         let task = Task { await self.readAndCommit(did: did, device: device, capabilities: capabilities) }
         readTasks[did] = (id, task)
@@ -310,6 +313,7 @@ public final class DeviceController {
             return
         }
         guard let snapshot = snapshots[did] else { throw DeviceControlError.unavailable(did) }
+        if let reason = snapshot.lanReadingsRestriction { throw DeviceControlError.unsupported(reason) }
         if case .setLightBrightness(let number) = command {
             guard snapshot.schema.category == "light", let brightness = snapshot.capability("light", "brightness"),
                   brightness.writable, brightness.control == .number else {

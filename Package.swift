@@ -66,7 +66,7 @@ let package = Package(
         ),
         .testTarget(
             name: "MijiaLANAppTests",
-            dependencies: ["MijiaLANApp"],
+            dependencies: ["MijiaLANApp", "MijiaLAN", .product(name: "MijiaCore", package: "MenuBarMijia")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
