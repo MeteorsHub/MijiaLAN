@@ -1,0 +1,130 @@
+{
+  "source": "Transcribed local-thread diagnose-followup report; not original wire packets.",
+  "receivedDate": "2026-11-06",
+  "diagnosticCommit": "b610a642189c3e2165186fb10220ca340ebcf23d",
+  "writesVerified": false,
+  "devices": [
+    {
+      "model": "dooya.motor.dc1545",
+      "specification": "urn:miot-spec-v2:device:motor-controller:0000A01D:dooya-dc1545:1",
+      "specificationSource": "earlier household cache report",
+      "infoModelMatched": true,
+      "configuredDidMatchesHandshake": true,
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 2,
+          "requestDidForm": "configured",
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 2,
+          "requestDidForm": "pythonMiioAlias",
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 2,
+          "requestDidForm": "hassMiotAlias",
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "requestDidForm": "configured",
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "requestDidForm": "pythonMiioAlias",
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "requestDidForm": "hassMiotAlias",
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 4,
+          "requestDidForm": "configured",
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 4,
+          "requestDidForm": "pythonMiioAlias",
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 4,
+          "requestDidForm": "hassMiotAlias",
+          "code": -4004,
+          "hasValue": false
+        }
+      ]
+    },
+    {
+      "model": "xiaomi.feeder.pi2001",
+      "specification": "urn:miot-spec-v2:device:pet-feeder:0000A06C:xiaomi-pi2001:3",
+      "specificationSource": "earlier household cache report",
+      "infoModelMatched": true,
+      "readings": [
+        {
+          "siid": 5,
+          "piid": 3,
+          "requestDidForm": "configured",
+          "code": 0,
+          "hasValue": true,
+          "value": 0,
+          "declaredFormat": "bool",
+          "declaredAccess": [
+            "read",
+            "write",
+            "notify"
+          ]
+        },
+        {
+          "siid": 5,
+          "piid": 4,
+          "requestDidForm": "configured",
+          "code": 0,
+          "hasValue": true,
+          "value": 0,
+          "declaredFormat": "bool",
+          "declaredAccess": [
+            "read",
+            "write",
+            "notify"
+          ]
+        },
+        {
+          "siid": 5,
+          "piid": 6,
+          "requestDidForm": "configured",
+          "code": 0,
+          "hasValue": true,
+          "value": 0,
+          "declaredFormat": "bool",
+          "declaredAccess": [
+            "read",
+            "write",
+            "notify"
+          ]
+        }
+      ]
+    }
+  ]
+}

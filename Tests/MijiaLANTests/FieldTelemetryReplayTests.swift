@@ -8,6 +8,8 @@ struct FieldTelemetryReplayTests {
         let model: String
         let specification: String
         let readings: [Row]
+        let infoModelMatched: Bool?
+        let configuredDidMatchesHandshake: Bool?
     }
     private struct Row: Decodable {
         let siid: Int
@@ -15,12 +17,16 @@ struct FieldTelemetryReplayTests {
         let code: Int
         let hasValue: Bool
         let value: JSONValue?
+        let requestDidForm: String?
     }
     private struct Corpus: Decodable { let devices: [Sample] }
-    private func load(_ model: String) throws -> DeviceSnapshot {
-        let corpusURL = try #require(Bundle.module.url(forResource: "household-readings-2026-11-06", withExtension: "json"))
+    private func sample(_ model: String, resource: String) throws -> Sample {
+        let corpusURL = try #require(Bundle.module.url(forResource: resource, withExtension: "json"))
         let corpus = try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: corpusURL))
-        let sample = try #require(corpus.devices.first { $0.model == model })
+        return try #require(corpus.devices.first { $0.model == model })
+    }
+    private func load(_ model: String, resource: String = "household-readings-2026-11-06") throws -> DeviceSnapshot {
+        let sample = try sample(model, resource: resource)
         let schemaURL = try #require(Bundle.module.url(forResource: model, withExtension: "json"))
         let schema = try JSONDecoder().decode(DeviceSchema.self, from: Data(contentsOf: schemaURL))
         // The general dehumidifier fixture is v2. Its identical selected temperature definition
@@ -104,6 +110,49 @@ struct FieldTelemetryReplayTests {
         #expect(snapshot.readings.values.allSatisfy { $0.isAvailable })
         #expect(snapshot.value("p:2:29") == .number(100))
         #expect(snapshot.capabilities.filter { $0.kind == .action }.allSatisfy { !$0.writable })
+    }
+
+    @Test("Household follow-up found no successful curtain DID representation and leaves position unconfirmed")
+    func followupCurtain() throws {
+        let resource = "household-followup-readings-2026-11-06"
+        let observed = try sample("dooya.motor.dc1545", resource: resource)
+        #expect(observed.infoModelMatched == true)
+        #expect(observed.configuredDidMatchesHandshake == true)
+        #expect(observed.readings.count == 9)
+        #expect(Set(observed.readings.compactMap(\.requestDidForm)) == ["configured", "pythonMiioAlias", "hassMiotAlias"])
+        #expect(observed.readings.allSatisfy { $0.code == -4004 && !$0.hasValue && $0.value == nil })
+        let snapshot = try load("dooya.motor.dc1545", resource: resource)
+        #expect(snapshot.isOnline)
+        #expect(snapshot.readings.count == 3)
+        for name in ["status", "current-position", "target-position"] {
+            #expect(snapshot.value("motor-controller", name) == nil)
+        }
+        let motor = try #require(snapshot.capability("motor-controller", "motor-control"))
+        #expect(snapshot.controlUnavailableReason(motor) != nil)
+    }
+
+    @Test("Feeder's three observed numeric zero readings remain raw conflicts with the cached bool declarations")
+    func followupFeeder() throws {
+        let resource = "household-followup-readings-2026-11-06"
+        let observed = try sample("xiaomi.feeder.pi2001", resource: resource)
+        #expect(observed.infoModelMatched == true)
+        #expect(observed.readings.count == 3)
+        let snapshot = try load("xiaomi.feeder.pi2001", resource: resource)
+        #expect(snapshot.isOnline)
+        for piid in [3, 4, 6] {
+            let id = DeviceCapability.propertyID(5, piid)
+            let cap = try #require(snapshot.capabilitiesByID[id])
+            let reading = try #require(snapshot.readings[id])
+            #expect(cap.format == "bool")
+            #expect(cap.readable && cap.writable)
+            #expect(reading.code == 0)
+            #expect(reading.rawValue == .number(0))
+            #expect(reading.rawValue != .bool(false))
+            #expect(!reading.isAvailable)
+            #expect(snapshot.value(id) == nil)
+            #expect(snapshot.controlUnavailableReason(cap) != nil)
+            #expect(throws: DeviceControlError.self) { try cap.validatedReading(.number(1)) }
+        }
     }
 
     @Test("MIoT property errors retain their documented per-property meaning")

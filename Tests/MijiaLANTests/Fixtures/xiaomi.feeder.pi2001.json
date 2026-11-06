@@ -255,9 +255,48 @@
           "iid": 1,
           "type": "pet-food-out",
           "in": [
-            7
+            8
           ],
           "out": []
+        }
+      ]
+    },
+    {
+      "iid": 5,
+      "type": "pet-feeder-costom",
+      "properties": [
+        {
+          "iid": 3,
+          "type": "add-meal-state",
+          "comment": "加餐提醒开关",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ]
+        },
+        {
+          "iid": 4,
+          "type": "plan-process-display",
+          "comment": "计划进度显示开关",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ]
+        },
+        {
+          "iid": 6,
+          "type": "food-intake-state",
+          "comment": "进食量低提醒开关状态",
+          "format": "bool",
+          "access": [
+            "read",
+            "write",
+            "notify"
+          ]
         }
       ]
     }

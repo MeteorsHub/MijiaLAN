@@ -93,5 +93,6 @@ struct FieldSpecificationTests {
         let action = try #require(feeder.first { $0.name == "pet-food-out" })
         #expect(!action.writable)
         #expect(action.control == .unsupported)
+        #expect(action.inputs == [8])
     }
 }

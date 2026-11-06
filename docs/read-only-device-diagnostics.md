@@ -59,4 +59,4 @@ security find-generic-password -s com.mijialan.MijiaLAN -a secrets -w |
 
 先核对 `git rev-parse HEAD`，构建并执行 `swift test --filter ReadOnlyDiagnosticsTests`。云端的可移植测试不替代 macOS CLI 编译和真实只读查询。
 
-第一轮实机采集已于本地线程完成；第二轮有限 DID 对照和喂食器三个字段请使用 [household-followup-diagnostics.md](household-followup-diagnostics.md) 的 `diagnose-followup`，无需重跑全部 11 台。
+第一、二轮实机采集均已完成；结果见 [household-followup-diagnostics.md](household-followup-diagnostics.md)。用户随后报告米家控制也异常，当前暂停设备查询，先完成退出 MijiaLAN 后的隔离观察；不要重跑以上命令。
