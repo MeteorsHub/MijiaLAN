@@ -59,4 +59,4 @@ security find-generic-password -s com.mijialan.MijiaLAN -a secrets -w |
 
 先核对 `git rev-parse HEAD`，构建并执行 `swift test --filter ReadOnlyDiagnosticsTests`。云端的可移植测试不替代 macOS CLI 编译和真实只读查询。
 
-第一、二轮实机采集均已完成；结果见 [household-followup-diagnostics.md](household-followup-diagnostics.md)。用户随后报告米家控制也异常；退出 MijiaLAN 后，手机控制未驱动卷帘；用户澄清实体遥控可驱动卷帘，实体动作后米家状态能正确更新，具体字段和值未提供。隔离观察已完成，MijiaLAN 保持退出，继续暂停设备查询，不重跑以上命令。
+第一、二轮实机采集均已完成；结果见 [household-followup-diagnostics.md](household-followup-diagnostics.md)。用户随后报告米家控制也异常；退出 MijiaLAN 后，手机控制未驱动卷帘；用户澄清实体遥控可驱动卷帘，实体动作后米家状态能正确更新，具体字段和值未提供。用户之后自行断电重启卷帘，已确认手机米家恢复控制、MijiaLAN 仍退出；这不代表 LAN 属性或桥接控制已通过。继续暂停设备查询，不重跑以上命令。
