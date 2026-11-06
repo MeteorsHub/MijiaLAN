@@ -21,12 +21,24 @@ enum MatterRPC {
 
     static func devices(_ snapshots: [DeviceSnapshot]) -> [Device] { MatterDevicePlan.devices(snapshots) }
 
+    @MainActor static func pollingConfiguration(_ config: LocalHomeConfig) -> LocalHomeConfig {
+        // Catalog construction is offline. Exclude unexported devices before creating the poller.
+        let catalogAPI = LANMiotAPI(config: { config })
+        let catalog = DeviceController(api: catalogAPI, config: { config })
+        let sourceIDs = Set(MatterDevicePlan.entries(Array(catalog.snapshots.values)).map(\.sourceID))
+        catalog.shutdown()
+        var filtered = config
+        filtered.devices = config.devices.filter { sourceIDs.contains($0.did) }
+        return filtered
+    }
+
     @MainActor static func run(configURL: URL) async throws {
         guard let config = LocalHomeConfig.decode(try Data(contentsOf: configURL)) else {
             throw MiioError.badResponse("Invalid local-home configuration")
         }
-        let api = LANMiotAPI(config: { config })
-        let controller = DeviceController(api: api, config: { config })
+        let boundedConfig = pollingConfiguration(config)
+        let api = LANMiotAPI(config: { boundedConfig })
+        let controller = DeviceController(api: api, config: { boundedConfig })
         defer { controller.shutdown() }
         // readLine blocks, so keep it off the main actor used by DeviceController.
         while let line = await Task.detached(operation: { readLine() }).value {

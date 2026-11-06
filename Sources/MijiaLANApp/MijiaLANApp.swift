@@ -45,6 +45,7 @@ final class MijiaLANApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationWillTerminate(_ notification: Notification) {
+        model?.curtainValidation.disable()
         model?.matter.shutdown()
         lifetime.stop()
     }

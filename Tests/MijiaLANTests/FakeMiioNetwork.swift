@@ -11,6 +11,10 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         let deviceID: UInt32
         var stamp: UInt32 = 5_000
         var model = "yeelink.light.fake1"
+        var firmware = "1.0.0"
+        var simulateCurtainMovement = false
+        var writeTimeout = false
+        var wrongResponseID = false
         var props: [String: JSONValue] = [:]
         var propertyErrors: [String: Int] = [:]
         var offline = false
@@ -107,7 +111,7 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         }
         switch method {
         case "miIO.info":
-            reply["result"] = .object(["model": .string(device.model), "mac": .string("AA:BB:CC:00:11:22"), "fw_ver": .string("1.0.0")])
+            reply["result"] = .object(["model": .string(device.model), "mac": .string("AA:BB:CC:00:11:22"), "fw_ver": .string(device.firmware)])
         case "get_properties":
             reply["result"] = .array((params.arrayValue ?? []).map { item in
                 let key = "\(item["siid"]?.intValue ?? 0).\(item["piid"]?.intValue ?? 0)"
@@ -128,10 +132,14 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
                 let key = "\(item["siid"]?.intValue ?? 0).\(item["piid"]?.intValue ?? 0)"
                 if key == "9.9" { return .object(["code": .number(-4004)]) }
                 device.props[key] = item["value"] ?? .null
+                if device.simulateCurtainMovement, key == "2.4" {
+                    device.props["2.3"] = item["value"]; device.props["2.2"] = .number(1)
+                }
                 if device.quantizeSpeed, key == "8.1", let n = item["value"]?.doubleValue { device.props[key] = .number((n / 10).rounded() * 10) }
                 if device.omitWriteCode { return .object([:]) }
                 return .object(["did": item["did"] ?? .null, "siid": item["siid"] ?? .null, "piid": item["piid"] ?? .null, "code": .number(0)])
             })
+            if device.writeTimeout { throw MiioError.timeout }
         case "action":
             device.receivedWrites.append(params)
             if device.actionTimeout { throw MiioError.timeout }
@@ -141,6 +149,7 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         default:
             reply["error"] = .object(["code": .number(-32601), "message": .string("Method not found.")])
         }
+        if device.wrongResponseID { reply["id"] = .number(-1) }
         let body = Data(JSONValue.object(reply).compactJSONString.utf8) + [0]
         return try MiioPacket.encode(body, token: device.token, deviceID: device.deviceID, stamp: device.stamp)
     }

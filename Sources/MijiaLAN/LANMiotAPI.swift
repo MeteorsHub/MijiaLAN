@@ -54,6 +54,11 @@ public actor LANMiotAPI: MiCloudAPI {
     private var lastPublishedHealth: LANHealthUpdate?
     private var configuredDevices: [LocalDevice]?
     private var isShutdown = false
+    private var curtainAutoInfoSuspended = false
+    private var curtainStarting = false
+    private var curtainGeneration = UUID()
+    private var curtainSession: (id: UUID, device: LocalDevice, lease: CurtainValidationLease, session: CurtainValidationSession)?
+
     /// Properties MijiaCore does not ask for but the app shows (a climate device's swing and power draw). They are
     /// read in the same request as the rest of their device, so they cost no extra round trip.
     private var companions: [String: [MiotPropKey]] = [:]
@@ -111,6 +116,62 @@ public actor LANMiotAPI: MiCloudAPI {
     public func startProbing() {
         guard !isShutdown else { return }
         synchronizeConfiguration()
+        publishHealth()
+    }
+
+    /// Session-only, one selected curtain. The ordinary property/control policy remains closed.
+    public func beginCurtainValidation(did: String) async throws -> CurtainValidationSession {
+        try await beginCurtainValidation(did: did, clock: CurtainValidationSession.Clock())
+    }
+
+    func beginCurtainValidation(did: String, clock: CurtainValidationSession.Clock) async throws -> CurtainValidationSession {
+        guard !isShutdown, !curtainStarting else { throw DeviceControlError.busy }
+        let device = try localDevice(forDid: did)
+        guard device.model == CurtainValidationSession.model, device.specType == CurtainValidationSession.specification else {
+            throw DeviceControlError.unsupported("Curtain model/specification")
+        }
+        curtainStarting = true
+        defer { curtainStarting = false }
+        let generation = UUID()
+        curtainGeneration = generation
+        let previous = curtainSession
+        curtainSession = nil
+        previous?.lease.invalidate()
+        if let previous { await previous.session.end() }
+        // Cancel automatic metadata probes for all curtains before the selected session starts.
+        // Keep them suspended for this API lifetime, including when validation pauses or is disabled.
+        curtainAutoInfoSuspended = true
+        configuredDevices = nil
+        synchronizeConfiguration()
+        for existing in clients.values where existing.device.model == CurtainValidationSession.model {
+            try await existing.client.waitUntilIdle()
+        }
+        try Task.checkCancellation()
+        guard curtainGeneration == generation, !isShutdown,
+              config().devices.contains(where: { ProbeScheduler.sameEndpoint($0, device) && $0.specType == device.specType }) else {
+            throw DeviceControlError.wrongDevice
+        }
+        let lease = CurtainValidationLease()
+        let source = config
+        let session = CurtainValidationSession(device: device, client: client(for: device), clock: clock, isCurrent: {
+            lease.isValid && source().devices.contains { ProbeScheduler.sameEndpoint($0, device) && $0.specType == device.specType }
+        }, onInfo: { [weak self] in await self?.curtainInfoReceived(device: device, generation: generation) })
+        curtainSession = (generation, device, lease, session)
+        return session
+    }
+
+    public func endCurtainValidation() async {
+        curtainGeneration = UUID()
+        let previous = curtainSession
+        curtainSession = nil
+        previous?.lease.invalidate()
+        if let previous { await previous.session.end() }
+    }
+
+    private func curtainInfoReceived(device: LocalDevice, generation: UUID) {
+        guard curtainSession?.id == generation, !isShutdown,
+              config().devices.contains(where: { ProbeScheduler.sameEndpoint($0, device) }) else { return }
+        record(device.did, .online, error: nil)
         publishHealth()
     }
 
@@ -391,6 +452,12 @@ public actor LANMiotAPI: MiCloudAPI {
         for old in configuredDevices ?? [] where !devices.contains(where: { ProbeScheduler.sameEndpoint($0, old) }) {
             resumeProbeWaiters(old.did)
         }
+        if let active = curtainSession, !devices.contains(where: { ProbeScheduler.sameEndpoint($0, active.device) && $0.specType == active.device.specType }) {
+            active.lease.invalidate()
+            curtainSession = nil
+            curtainGeneration = UUID()
+            Task { await active.session.end() }
+        }
         configuredDevices = devices
         let known = Set(devices.map(\.did))
         for (did, existing) in clients where !devices.contains(where: { ProbeScheduler.sameEndpoint($0, existing.device) }) {
@@ -399,7 +466,7 @@ public actor LANMiotAPI: MiCloudAPI {
         }
         health = health.filter { known.contains($0.key) }
         latest = latest.filter { known.contains($0.key.did) && clients[$0.key.did] != nil }
-        for id in probes.configure(devices) { cancelProbe(id) }
+        for id in probes.configure(devices.filter { !curtainAutoInfoSuspended || $0.model != CurtainValidationSession.model }) { cancelProbe(id) }
     }
 
     private func isCurrent(_ device: LocalDevice, client: MiioClient) -> Bool {
@@ -483,6 +550,13 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     public func shutdown() {
+        if let active = curtainSession {
+            active.lease.invalidate()
+            curtainSession = nil
+            Task { await active.session.end() }
+        }
+        curtainGeneration = UUID()
+
         isShutdown = true
         probeTimer?.cancel(); probeTimer = nil; timerDeadline = nil
         for task in probeTasks.values { task.cancel() }; probeTasks = [:]

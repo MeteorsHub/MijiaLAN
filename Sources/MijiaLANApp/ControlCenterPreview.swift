@@ -19,9 +19,9 @@ enum ControlCenterPreview {
             ("fan", "米家智能直流变频循环扇 落地式", "dmaker.fan.p28", "卧室", "192.0.2.9"),
             ("plug3", "客厅-米家智能插座 3", "cuco.plug.v3", "客厅", "192.0.2.10"),
             ("plug2", "米家智能插座 3", "cuco.plug.v3", "卧室", "192.0.2.11"),
-            ("curtain", "客厅卷帘", "dooya.motor.dc1545", "客厅", "192.0.2.12")
+            ("123", "客厅卷帘", "dooya.motor.dc1545", "客厅", "192.0.2.12")
         ]
-        return LocalHomeConfig(devices: rows.map { LocalDevice(did: $0.0, name: $0.1, model: $0.2, host: $0.4, token: String(repeating: "0", count: 32), roomName: $0.3) })
+        return LocalHomeConfig(devices: rows.map { LocalDevice(did: $0.0, name: $0.1, model: $0.2, host: $0.4, token: String(repeating: "0", count: 32), specType: $0.2 == CurtainValidationSession.model ? CurtainValidationSession.specification : nil, roomName: $0.3) })
     }()
 }
 
@@ -29,7 +29,7 @@ actor ControlCenterPreviewTransport: MiioTransport {
     private let token = Data(repeating: 0, count: 16)
     private let latency: Duration
     private var values: [String: [String: JSONValue]] = [
-        "192.0.2.12": [:],
+        "192.0.2.12": ["2.2": .number(1), "2.3": .number(29), "2.4": .number(29), "2.5": .bool(false), "2.9": .number(0), "2.10": .bool(false)],
         "192.0.2.3": ["power": .string("on"), "bright": .number(71), "ct": .number(3500)],
         "192.0.2.6": ["power": .string("off"), "mode": .string("auto"), "tar_temp": .number(29),
                           "fan_level": .string("auto_fan"), "ver_swing": .string("on"), "load_power": .number(1)]
@@ -56,7 +56,18 @@ actor ControlCenterPreviewTransport: MiioTransport {
         let result: JSONValue
         if method == "miIO.info" {
             let model = host == "192.0.2.12" ? "dooya.motor.dc1545" : (host == "192.0.2.3" ? "yeelink.light.lamp4" : "lumi.acpartner.mcn02")
-            result = .object(["model": .string(model)])
+            result = .object(["model": .string(model), "fw_ver": .string("1.1.3")])
+        } else if host == "192.0.2.12", method == "get_properties" {
+            result = .array(args.map { item in
+                guard case .object(let fields) = item else { return .null }
+                let key = "\(fields["siid"]?.intValue ?? 0).\(fields["piid"]?.intValue ?? 0)"
+                return .object(["siid": fields["siid"] ?? .null, "piid": fields["piid"] ?? .null,
+                    "code": .number(values[host]?[key] == nil ? -4003 : 0), "value": values[host]?[key] ?? .null])
+            })
+        } else if host == "192.0.2.12", method == "set_properties", args.count == 1, case .object(let fields) = args[0],
+                  fields["siid"] == .number(2), fields["piid"] == .number(4), let target = fields["value"] {
+            values[host]?["2.4"] = target; values[host]?["2.3"] = target; values[host]?["2.2"] = .number(1)
+            result = .array([.object(["code": .number(0)])])
         } else if method == "get_prop" {
             result = .array(args.map { values[host]?[$0.stringValue ?? ""] ?? .null })
         } else if method.hasPrefix("set_"), let value = args.first {

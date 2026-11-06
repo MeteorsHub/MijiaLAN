@@ -66,9 +66,43 @@ public actor MiioClient {
     /// wrong token shows up; that case throws `MiioError.noEncryptedReply` rather than `.timeout`.
     /// `timeout` overrides the client's per-attempt wait for this call.
     public func call(_ method: String, params: JSONValue = .array([]), timeout: Duration? = nil, retryCount: Int? = nil) async throws -> JSONValue {
+        try await performCall(method, params: params, timeout: timeout, retryCount: retryCount, validation: false)
+    }
+
+    // Only the dedicated, paced validation session can use these typed operations.
+    enum CurtainRequest: Sendable {
+        case info
+        case read(did: String, confirmation: Bool)
+        case position(did: String, target: Int)
+    }
+    func curtainNeedsHandshake() -> Bool { needsHandshake }
+    func waitUntilIdle() async throws {
         await acquire()
         defer { release() }
-        if let reason = propertyRequestRestriction, method != "miIO.info" {
+        try Task.checkCancellation()
+    }
+    func curtainRequest(_ request: CurtainRequest, isCurrent: @escaping @Sendable () -> Bool) async throws -> JSONValue {
+        let method: String
+        let params: JSONValue
+        switch request {
+        case .info: method = "miIO.info"; params = .array([])
+        case .read(let did, let confirmation):
+            method = "get_properties"
+            let ids = confirmation ? [3, 2] : [2, 3, 4, 5, 9, 10]
+            params = .array(ids.map { .object(["did": .string(did), "siid": .number(2), "piid": .number(Double($0))]) })
+        case .position(let did, let target):
+            guard (1...99).contains(target) else { throw DeviceControlError.invalidValue("position") }
+            method = "set_properties"
+            params = .array([.object(["did": .string(did), "siid": .number(2), "piid": .number(4), "value": .number(Double(target))])])
+        }
+        return try await performCall(method, params: params, timeout: nil, retryCount: 0, validation: true, validationCheck: isCurrent)
+    }
+
+    private func performCall(_ method: String, params: JSONValue, timeout: Duration?, retryCount: Int?, validation: Bool, validationCheck: (@Sendable () -> Bool)? = nil) async throws -> JSONValue {
+        await acquire()
+        defer { release() }
+        if validation, validationCheck?() != true { throw DeviceControlError.wrongDevice }
+        if !validation, let reason = propertyRequestRestriction, method != "miIO.info" {
             throw DeviceControlError.unsupported(reason)
         }
         try Task.checkCancellation()
@@ -79,11 +113,13 @@ public actor MiioClient {
             try Task.checkCancellation()
             do {
                 if needsHandshake {
+                    // Validation handshakes are separately scheduled; never hide a second packet here.
+                    if validation { throw DeviceControlError.unavailable("Handshake expired") }
                     try await handshake(timeout: timeout)
                     helloAnswered = true
                 }
                 try Task.checkCancellation()
-                let result = try await send(method, params: params, timeout: timeout ?? self.timeout)
+                let result = try await send(method, params: params, timeout: timeout ?? self.timeout, strictResponse: validation)
                 if method == "miIO.info", let model = result["model"]?.stringValue,
                    let reason = DeviceLANPolicy.restriction(for: model) { propertyRequestRestriction = reason }
                 return result
@@ -104,7 +140,7 @@ public actor MiioClient {
         return ContinuousClock.now - clock.at > Self.clockMaxAge
     }
 
-    private func send(_ method: String, params: JSONValue, timeout: Duration) async throws -> JSONValue {
+    private func send(_ method: String, params: JSONValue, timeout: Duration, strictResponse: Bool) async throws -> JSONValue {
         guard let deviceID, let clock else { throw MiioError.timeout }
         let id = takeRequestID()
         let body = JSONValue.object(["id": .number(Double(id)), "method": .string(method), "params": params])
@@ -116,8 +152,13 @@ public actor MiioClient {
 
         let reply = try await transport.exchange(packet, host: host, port: port, timeout: timeout)
         let (header, payload) = try MiioPacket.decode(reply, token: token)
-        self.clock = (header.stamp, .now)
         guard let json = Self.parseJSON(payload) else { throw MiioError.badResponse(L10n.tr("无法解析 JSON", "Could not parse JSON.")) }
+        if strictResponse {
+            guard header.deviceID == deviceID, json["id"] == .number(Double(id)) else {
+                throw MiioError.badResponse("Response identity mismatch")
+            }
+        }
+        self.clock = (header.stamp, .now)
         if let error = json["error"] {
             throw MiioError.deviceError(code: error["code"]?.intValue ?? 0, message: error["message"]?.stringValue ?? "")
         }

@@ -138,20 +138,26 @@ final class MatterBridgeController {
                 Task {
                     var reply = Reply(id: id)
                     do {
-                        guard let controller else { throw DeviceControlError.offline }
-                        if message.method == "set" {
-                            guard let did = message.did, selected.contains(where: { $0.did == did }),
-                                  let value = message.value ?? message.on.map(JSONValue.bool) else { throw DeviceControlError.unsupported("Matter") }
-                            try await MatterDevicePlan.execute(controller: controller, endpoint: did, property: message.property ?? "on", value: value)
-                        } else if message.method == "snapshot" { await controller.refreshNow() }
-                        else { throw DeviceControlError.unsupported("RPC") }
-                        reply.devices = selected
+                        reply.devices = try await handleRPC(method: message.method, did: message.did,
+                            value: message.value ?? message.on.map(JSONValue.bool), property: message.property)
                     } catch { reply.error = "Device operation failed" }
                     guard generation == token, var bytes = try? JSONEncoder().encode(reply) else { return }
                     bytes.append(10); try? input?.write(contentsOf: bytes)
                 }
             }
         }
+    }
+    // A snapshot reads the shared cache only. It must never trigger a second LAN polling loop.
+    func handleRPC(method: String?, did: String? = nil, value: JSONValue? = nil, property: String? = nil) async throws -> [MatterDevicePlan.Device] {
+        guard let controller else { throw DeviceControlError.offline }
+        switch method {
+        case "snapshot": break
+        case "set":
+            guard let did, selected.contains(where: { $0.did == did }), let value else { throw DeviceControlError.unsupported("Matter") }
+            try await MatterDevicePlan.execute(controller: controller, endpoint: did, property: property ?? "on", value: value)
+        default: throw DeviceControlError.unsupported("RPC")
+        }
+        return selected
     }
     private func updateAwake() {
         if let activity { ProcessInfo.processInfo.endActivity(activity); self.activity = nil }

@@ -35,3 +35,17 @@ struct MatterRPCTests {
         #expect(!String(decoding: data, as: UTF8.self).contains("192.0.2.1"))
     }
 }
+
+@MainActor struct MatterPollingScopeTests {
+    @Test("Standalone Matter polling excludes unexported devices before any probing starts")
+    func boundedScope() {
+        let config = LocalHomeConfig(devices: [
+            LocalDevice(did: "1", name: "Light", model: "yeelink.light.lamp4", host: "192.0.2.1", token: "test-only"),
+            LocalDevice(did: "2", name: "Curtain", model: CurtainValidationSession.model, host: "192.0.2.2", token: "test-only", specType: CurtainValidationSession.specification),
+            LocalDevice(did: "3", name: "Unknown", model: "unknown.test", host: "192.0.2.3", token: "test-only")])
+        let bounded = MatterRPC.pollingConfiguration(config)
+        #expect(bounded.devices.map(\.did) == ["1"])
+        #expect(bounded.devices[0] == config.devices[0])
+        #expect(config.devices.count == 3)
+    }
+}

@@ -18,6 +18,9 @@ struct ControlCenterDeviceDetail: View {
                     Text(reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
             }
+            if device.model == CurtainValidationSession.model {
+                CurtainValidationPanel(controller: model.curtainValidation, device: device)
+            }
             if let snapshot = model.devices.snapshots[device.did] {
                 if !snapshot.isOnline { OfflineDeviceCard(model: model, device: device) }
                 if DeviceLANPolicy.allowsPropertyRequests(for: device.model) {

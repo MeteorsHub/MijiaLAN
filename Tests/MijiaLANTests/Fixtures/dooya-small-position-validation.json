@@ -1,0 +1,22 @@
+{
+  "source": "Local household thread 01a1b156-dd7f-7873-88dc-943821f74830, user-confirmed summary; no packet captures supplied to cloud",
+  "model": "dooya.motor.dc1545",
+  "firmware": "1.1.3",
+  "specification": "urn:miot-spec-v2:device:motor-controller:0000A01D:dooya-dc1545:1",
+  "method": "set_properties",
+  "siid": 2,
+  "piid": 4,
+  "intervalSeconds": 5,
+  "moves": [
+    {"label": "客厅透明", "start": 29, "target": 34, "current": 34, "status": 1, "writeCode": 0},
+    {"label": "客厅遮阳", "start": 7, "target": 12, "current": 12, "status": 1, "writeCode": 0},
+    {"label": "主卧透明", "start": 30, "target": 35, "current": 35, "status": 1, "writeCode": 0},
+    {"label": "主卧遮阳", "start": 0, "target": 5, "current": 5, "status": 1, "writeCode": 0},
+    {"label": "书房透明", "start": 5, "target": 10, "current": 10, "status": 1, "writeCode": 0},
+    {"label": "书房遮阳", "start": 0, "target": 5, "current": 5, "status": 1, "writeCode": 0}
+  ],
+  "timeoutsBeforeWrite": ["客厅遮阳", "书房透明"],
+  "hardwareAcceptance": ["User confirmed physical movement per device or room", "User confirmed phone Mi Home still controlled each device afterwards"],
+  "notAccepted": ["Open", "Close", "Stop", "long running polling", "multiple simultaneous devices", "bridge control"],
+  "replayNote": "Only the move summary is field evidence. Other properties and packet timing in the fake network are synthetic test inputs."
+}

@@ -35,6 +35,7 @@ final class AppModel {
         s.capabilities.first { $0.name == "electric-power" }.flatMap { s.value($0.id)?.doubleValue }
     } }
     let devices: DeviceController
+    let curtainValidation: CurtainValidationController
     var importState: ImportState = .idle
     private(set) var lastImportSummary: String?
     var importRegion: String = "cn"
@@ -52,6 +53,7 @@ final class AppModel {
     @ObservationIgnored private let configBox: ConfigBox
     @ObservationIgnored private let api: LANMiotAPI
     @ObservationIgnored private var importTask: Task<Void, Never>?
+    @ObservationIgnored private var discoverySuspendedForValidation = false
     @ObservationIgnored private var rediscoveryTask: Task<Void, Never>?
     @ObservationIgnored private var bridgeAttached = false
     @ObservationIgnored private let usesPreviewDevices: Bool
@@ -96,6 +98,7 @@ final class AppModel {
         api = LANMiotAPI(config: { box.value })
         #endif
         self.api = api
+        curtainValidation = CurtainValidationController(api: api)
         let controller = DeviceController(api: api, config: { box.value })
         devices = controller
         let provider = CapabilityHomeProvider(controller: controller)
@@ -110,6 +113,11 @@ final class AppModel {
         matter.attach(controller)
 
         if preview || (ephemeral && environment["MIJIALAN_SNAPSHOT"] != nil) { bridge.isEnabled = false }
+        curtainValidation.prepare = { [weak self] in
+            guard let self else { throw CancellationError() }
+            self.discoverySuspendedForValidation = true
+            while self.isRediscovering || self.isAddingManually { try await Task.sleep(for: .milliseconds(100)) }
+        }
         attachBridgeIfNeeded()
         if !preview { startRediscoveryLoop() }
     }
@@ -225,6 +233,10 @@ final class AppModel {
     // MARK: Manual Add
 
     func addManually(host: String, token: String, name: String) {
+        guard !discoverySuspendedForValidation else {
+            manualAddError = L10n.tr("卷帘验证期间已暂停手动添加探测，请重启后再添加设备", "Manual probing is suspended for this validation run. End validation and restart before adding devices.")
+            return
+        }
         guard !isAddingManually else { return }
         isAddingManually = true
         manualAddError = nil
@@ -262,6 +274,10 @@ final class AppModel {
     }
 
     private func rediscover() async {
+        guard !discoverySuspendedForValidation else {
+            lastRediscoveryNote = L10n.tr("卷帘验证期间已暂停局域网发现，本次运行不再广播", "LAN discovery is suspended for curtain validation until the app restarts.")
+            return
+        }
         if usesPreviewDevices {
             lastRediscoveryAt = Date()
             lastRediscoveryNote = L10n.tr("预览环境使用模拟设备", "The preview uses simulated devices.")
@@ -272,6 +288,7 @@ final class AppModel {
         defer { isRediscovering = false }
         do {
             let found = try await MiioDiscovery.discover()
+            guard !discoverySuspendedForValidation else { return }
             lastRediscoveryAt = Date()
             var next = config
             let moved = next.updateHosts(from: found)
