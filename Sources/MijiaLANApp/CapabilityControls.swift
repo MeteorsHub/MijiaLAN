@@ -38,7 +38,10 @@ private struct CapabilityControlRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 control
             }
-            .disabled(working || (!capability.prepared && !snapshot.isOnline))
+            .disabled(working || (!capability.prepared && !snapshot.isOnline) || snapshot.controlUnavailableReason(capability) != nil)
+            if let reason = snapshot.controlUnavailableReason(capability) {
+                Text(reason).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             if let error { Text(error).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
         }
     }

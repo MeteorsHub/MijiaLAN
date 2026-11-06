@@ -153,6 +153,31 @@ public struct DeviceCapability: Equatable, Sendable, Identifiable {
         throw DeviceControlError.unsupported(limitation ?? title)
     }
 
+    /// A malformed property remains diagnosable and cannot supply a confirmed state to a bridge.
+    public func checkedReading(_ reading: DeviceReading) -> DeviceReading {
+        guard reading.isAvailable, let value = reading.value else { return reading }
+        do {
+            _ = try validatedReading(value)
+            return reading
+        } catch {
+            var rejected = reading
+            rejected.rawValue = value
+            rejected.value = nil
+            let type: String
+            switch value {
+            case .bool: type = "boolean"
+            case .number: type = "number"
+            case .string: type = "string"
+            case .null: type = "null"
+            case .array: type = "array"
+            case .object: type = "object"
+            }
+            rejected.error = L10n.tr("设备读数不符合规格（规格：\(format)，实际：\(type)）",
+                "Reading does not match the specification (expected: \(format), received: \(type)).")
+            return rejected
+        }
+    }
+
     public func formatted(_ value: JSONValue?) -> String {
         guard let value else { return L10n.tr("尚无读数", "No Reading") }
         if let n = value.doubleValue {
@@ -190,11 +215,13 @@ public enum DeviceControlError: LocalizedError, Equatable, Sendable {
 
 public struct DeviceReading: Equatable, Sendable {
     public var value: JSONValue?
+    /// Unvalidated telemetry retained only for diagnosis; never returned by DeviceSnapshot.value.
+    public var rawValue: JSONValue?
     public var updatedAt: Date?
     public var code: Int?
     public var error: String?
-    public init(value: JSONValue? = nil, updatedAt: Date? = nil, code: Int? = nil, error: String? = nil) {
-        self.value = value; self.updatedAt = updatedAt; self.code = code; self.error = error
+    public init(value: JSONValue? = nil, updatedAt: Date? = nil, code: Int? = nil, error: String? = nil, rawValue: JSONValue? = nil) {
+        self.value = value; self.updatedAt = updatedAt; self.code = code; self.error = error; self.rawValue = rawValue
     }
     public var isAvailable: Bool { value != nil && error == nil && (code == nil || code == 0) }
 }
@@ -237,13 +264,24 @@ public struct DeviceSnapshot: Equatable, Sendable, Identifiable {
     }
     public func controlValue(_ c: DeviceCapability) -> JSONValue? { c.prepared ? prepared[c.id] : value(c.id) }
 
+    /// An observed read failure disables only its corresponding control until it can be confirmed again.
+    public func controlUnavailableReason(_ c: DeviceCapability) -> String? {
+        guard !c.prepared, c.kind == .property else { return nil }
+        if c.readable, let error = readings[c.id]?.error { return error }
+        if device.model == "dooya.motor.dc1545", c.siid == 2, c.name == "motor-control",
+           (value("motor-controller", "status") == nil || value("motor-controller", "current-position") == nil) {
+            return L10n.tr("尚无法确认卷帘状态，请先完成只读诊断", "Curtain state is unconfirmed. Complete read-only diagnostics first.")
+        }
+        return nil
+    }
+
     /// Contact/read timestamps remain accurate without making a no-change poll a semantic update.
     func hasSameValues(as other: DeviceSnapshot?) -> Bool {
         guard let other, health.state == other.health.state, health.lastError == other.health.lastError,
               prepared == other.prepared, readings.count == other.readings.count else { return false }
         return readings.allSatisfy { id, reading in
             guard let previous = other.readings[id] else { return false }
-            return reading.value == previous.value && reading.code == previous.code && reading.error == previous.error
+            return reading.value == previous.value && reading.rawValue == previous.rawValue && reading.code == previous.code && reading.error == previous.error
         }
     }
 }

@@ -1,5 +1,7 @@
 # 家庭设备排查：已确认修正与验收边界
 
+> 此页记录 b1100d9 时的阶段性结果。2026-11-06 已收到第一轮实机读取报告，最新事实、修正和第二轮探针见 [household-followup-diagnostics.md](household-followup-diagnostics.md)。下文“待采集”描述仅适用于当时，不代表最新状态。
+
 本轮基于用户的只读 UI 文字报告、源码及公开规格进行修正；未收到真实属性原始报文。远程运行 App 的 SHA-256 已由本地线程确认与 262a540 构建一致；卷帘缓存 URN 已确认是 `urn:miot-spec-v2:device:motor-controller:0000A01D:dooya-dc1545:1`。其他型号的实际固件/规格版本仍待只读诊断，不将测试 fixture 当作实机证据。
 
 已修正：

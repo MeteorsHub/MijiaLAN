@@ -1,0 +1,323 @@
+{
+  "source": "Transcribed from the local thread sanitized read-only report; not original wire packets.",
+  "receivedDate": "2026-11-06",
+  "writesVerified": false,
+  "devices": [
+    {
+      "model": "dooya.motor.dc1545",
+      "specification": "urn:miot-spec-v2:device:motor-controller:0000A01D:dooya-dc1545:1",
+      "firmware": "1.1.3",
+      "matchingDevices": 6,
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 2,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 4,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 5,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 9,
+          "code": -4004,
+          "hasValue": false
+        },
+        {
+          "siid": 2,
+          "piid": 10,
+          "code": -4004,
+          "hasValue": false
+        }
+      ]
+    },
+    {
+      "model": "xiaomi.pet_waterer.70m2",
+      "specification": "urn:miot-spec-v2:device:pet-drinking-fountain:0000A067:xiaomi-70m2:2",
+      "firmware": "1.0.47_0030",
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 1,
+          "code": 0,
+          "hasValue": true,
+          "value": true
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "code": 0,
+          "hasValue": true,
+          "value": 1
+        },
+        {
+          "siid": 2,
+          "piid": 4,
+          "code": 0,
+          "hasValue": true,
+          "value": 1
+        },
+        {
+          "siid": 2,
+          "piid": 7,
+          "code": 0,
+          "hasValue": true,
+          "value": 60
+        },
+        {
+          "siid": 2,
+          "piid": 10,
+          "code": 0,
+          "hasValue": true,
+          "value": false
+        },
+        {
+          "siid": 2,
+          "piid": 11,
+          "code": -4001,
+          "hasValue": false
+        }
+      ]
+    },
+    {
+      "model": "giot.heater.v13daf",
+      "specification": "urn:miot-spec-v2:device:heater:0000A01A:giot-v13daf:1",
+      "firmware": "1.1.3",
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 1,
+          "code": 0,
+          "hasValue": true,
+          "value": false
+        },
+        {
+          "siid": 2,
+          "piid": 2,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "code": 0,
+          "hasValue": true,
+          "value": 8
+        },
+        {
+          "siid": 3,
+          "piid": 1,
+          "code": 0,
+          "hasValue": true,
+          "value": true
+        },
+        {
+          "siid": 3,
+          "piid": 2,
+          "code": 0,
+          "hasValue": true,
+          "value": 4
+        }
+      ]
+    },
+    {
+      "model": "xiaomi.derh.13l",
+      "specification": "urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:1",
+      "firmware": "2.2.2",
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 1,
+          "code": 0,
+          "hasValue": true,
+          "value": true
+        },
+        {
+          "siid": 2,
+          "piid": 2,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 5,
+          "code": 0,
+          "hasValue": true,
+          "value": 50
+        },
+        {
+          "siid": 3,
+          "piid": 1,
+          "code": 0,
+          "hasValue": true,
+          "value": 45
+        },
+        {
+          "siid": 3,
+          "piid": 2,
+          "code": 0,
+          "hasValue": true,
+          "value": 22.1
+        }
+      ]
+    },
+    {
+      "model": "iot.tow_w.jd015",
+      "specification": "urn:miot-spec-v2:device:towel-rack:0000A09A:iot-jd015:1",
+      "firmware": "1.1.3",
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 1,
+          "code": 0,
+          "hasValue": true,
+          "value": true
+        },
+        {
+          "siid": 2,
+          "piid": 2,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 3,
+          "code": 0,
+          "hasValue": true,
+          "value": 3
+        },
+        {
+          "siid": 2,
+          "piid": 4,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 5,
+          "code": 0,
+          "hasValue": true,
+          "value": 65
+        },
+        {
+          "siid": 2,
+          "piid": 6,
+          "code": 0,
+          "hasValue": true,
+          "value": 59
+        }
+      ]
+    },
+    {
+      "model": "xiaomi.feeder.pi2001",
+      "specification": "urn:miot-spec-v2:device:pet-feeder:0000A06C:xiaomi-pi2001:3",
+      "firmware": "2.1.9_0139",
+      "readings": [
+        {
+          "siid": 2,
+          "piid": 1,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 6,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 10,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 11,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 13,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 15,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 26,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 28,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 29,
+          "code": 0,
+          "hasValue": true,
+          "value": 100
+        },
+        {
+          "siid": 2,
+          "piid": 31,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        },
+        {
+          "siid": 2,
+          "piid": 32,
+          "code": 0,
+          "hasValue": true,
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

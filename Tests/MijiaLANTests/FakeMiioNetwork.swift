@@ -12,6 +12,7 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         var stamp: UInt32 = 5_000
         var model = "yeelink.light.fake1"
         var props: [String: JSONValue] = [:]
+        var propertyErrors: [String: Int] = [:]
         var offline = false
         var actionTimeout = false
         var quantizeSpeed = false
@@ -107,6 +108,10 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         case "get_properties":
             reply["result"] = .array((params.arrayValue ?? []).map { item in
                 let key = "\(item["siid"]?.intValue ?? 0).\(item["piid"]?.intValue ?? 0)"
+                if let code = device.propertyErrors[key] {
+                    return .object(["did": item["did"] ?? .null, "siid": item["siid"] ?? .null,
+                                    "piid": item["piid"] ?? .null, "code": .number(Double(code))])
+                }
                 guard let value = device.props[key] else {
                     return .object(["did": item["did"] ?? .null, "siid": item["siid"] ?? .null, "piid": item["piid"] ?? .null, "code": .number(-4003)])
                 }

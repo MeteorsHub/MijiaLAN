@@ -218,7 +218,7 @@ extension MiioClient {
         try Self.checkCodes([result])
     }
 
-    /// MIoT per-item codes: 0 done, 1 accepted; negatives are errors (e.g. -4004 invalid value, -4003 not writable).
+    /// MIoT per-item codes: 0 done, 1 accepted; negatives are property/action errors.
     static func checkCodes(_ items: [JSONValue]) throws {
         for item in items {
             guard let code = item["code"]?.intValue else { throw MiioError.badResponse(L10n.tr("响应缺少返回码", "The response is missing a result code.")) }
@@ -227,12 +227,7 @@ extension MiioClient {
     }
 
     static func propertyError(_ code: Int?) -> String {
-        switch code {
-        case -4003: return L10n.tr("不支持或没有访问权限（-4003）", "Unsupported or access denied (-4003).")
-        case -4004: return L10n.tr("参数错误（-4004）", "Invalid arguments (-4004).")
-        case .some(let code): return L10n.tr("设备返回错误（\(code)）", "Device error (\(code)).")
-        case nil: return L10n.tr("设备响应缺少返回码或读数", "The response is missing a result code or reading.")
-        }
+        MiotPropertyStatus.description(code)
     }
 }
 

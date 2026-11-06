@@ -1,0 +1,26 @@
+{
+  "model": "xiaomi.derh.13l",
+  "type": "urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:1",
+  "services": [
+    {
+      "iid": 3,
+      "type": "environment",
+      "properties": [
+        {
+          "iid": 2,
+          "type": "temperature",
+          "format": "float",
+          "access": [
+            "read",
+            "notify"
+          ],
+          "value-range": [
+            -30,
+            100,
+            1
+          ]
+        }
+      ]
+    }
+  ]
+}

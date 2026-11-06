@@ -251,12 +251,7 @@ public final class DeviceController {
         let health = await api.currentHealth()
         guard !Task.isCancelled, var snapshot = snapshots[did], ProbeScheduler.sameEndpoint(snapshot.device, device) else { return }
         for (key, var reading) in readings {
-            if let value = reading.value, reading.isAvailable,
-               let cap = snapshot.capabilitiesByID[key], cap.format != "string",
-               (try? cap.validatedReading(value)) == nil {
-                reading.error = L10n.tr("设备返回的数据类型或取值不符合规格", "The returned value or data type does not match the device specification.")
-                reading.value = nil
-            }
+            if let cap = snapshot.capabilitiesByID[key] { reading = cap.checkedReading(reading) }
             // Keep the last confirmed value for diagnosis, but never return it as a fresh successful read.
             if reading.value == nil {
                 reading.value = snapshot.readings[key]?.value
@@ -338,6 +333,7 @@ public final class DeviceController {
         }
         guard let cap = snapshot.capabilitiesByID[id],
               ![.unsupported, .reading].contains(cap.control) else { throw DeviceControlError.unsupported(id) }
+        if snapshot.isOnline, let reason = snapshot.controlUnavailableReason(cap) { throw DeviceControlError.unavailable(reason) }
         switch command {
         case .batch, .setLightBrightness: return
         case .adjust(_, let delta):

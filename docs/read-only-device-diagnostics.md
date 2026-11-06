@@ -58,3 +58,5 @@ security find-generic-password -s com.mijialan.MijiaLAN -a secrets -w |
 `-4004`、`-4001` 只能作为返回码保留，不据此断定不支持 MIoT。
 
 先核对 `git rev-parse HEAD`，构建并执行 `swift test --filter ReadOnlyDiagnosticsTests`。云端的可移植测试不替代 macOS CLI 编译和真实只读查询。
+
+第一轮实机采集已于本地线程完成；第二轮有限 DID 对照和喂食器三个字段请使用 [household-followup-diagnostics.md](household-followup-diagnostics.md) 的 `diagnose-followup`，无需重跑全部 11 台。

@@ -68,6 +68,71 @@ enum ReadOnlyDiagnostics {
     }
     typealias Call = @Sendable (String, JSONValue) async throws -> JSONValue
 
+    struct Probe: Sendable {
+        let siid: Int
+        let piid: Int
+        let didForm: String
+        let wireDID: String
+        var params: JSONValue {
+            .array([.object(["did": .string(wireDID), "siid": .number(Double(siid)), "piid": .number(Double(piid))])])
+        }
+    }
+
+    /// Fixed, explicit follow-up only. It does not change production addressing or try arbitrary methods.
+    static func followupProbes(device: LocalDevice, protocolDID: String?) -> [Probe] {
+        switch device.model {
+        case "dooya.motor.dc1545":
+            return [2, 3, 4].flatMap { piid -> [Probe] in
+                var forms = [("configured", device.did)]
+                if let protocolDID, protocolDID != device.did { forms.append(("handshake", protocolDID)) }
+                // Read-only addressing patterns used by the referenced upstream implementations.
+                forms.append(("pythonMiioAlias", "2-\(piid)"))
+                forms.append(("hassMiotAlias", "prop.2.\(piid)"))
+                return forms.map { Probe(siid: 2, piid: piid, didForm: $0.0, wireDID: $0.1) }
+            }
+        case "xiaomi.feeder.pi2001":
+            // Addresses and bool/read access verified against the household Mac's cache report.
+            // 5.1 feeding schedules and all feeding actions are deliberately absent.
+            return [3, 4, 6].map { Probe(siid: 5, piid: $0, didForm: "configured", wireDID: device.did) }
+        default: return []
+        }
+    }
+
+    static func collectFollowup(device: LocalDevice, slot: Int, protocolDID: String?, call: Call) async -> JSONValue {
+        let probes = followupProbes(device: device, protocolDID: protocolDID)
+        guard !probes.isEmpty else { return .object(["error": .string("model_not_allowlisted")]) }
+        var report: [String: JSONValue] = ["slot": .number(Double(slot)), "configuredModel": .string(device.model)]
+        do {
+            let info = try await call("miIO.info", .array([]))
+            report["firmware"] = .object(firmware(info))
+            guard case .object(let fields) = info, fields["model"] == .string(device.model) else {
+                report["error"] = .string("model_mismatch_no_properties_queried")
+                return .object(report)
+            }
+            if let protocolDID { report["configuredDidMatchesHandshake"] = .bool(protocolDID == device.did) }
+            var readings: [JSONValue] = []
+            for probe in probes {
+                var row: [String: JSONValue]
+                do {
+                    let result = try await call("get_properties", probe.params)
+                    row = reading(result, siid: probe.siid, piid: probe.piid)
+                } catch {
+                    row = ["siid": .number(Double(probe.siid)), "piid": .number(Double(probe.piid)),
+                           "method": .string("get_properties"), "error": .string("rpc_failed")]
+                    if case MiioError.deviceError(let code, _) = error { row["code"] = .number(Double(code)) }
+                }
+                // Preserve only the addressing category, never an actual configured/handshake/echoed DID.
+                row["requestDidForm"] = .string(probe.didForm)
+                readings.append(.object(row))
+            }
+            report["readings"] = .array(readings)
+        } catch {
+            report["error"] = .string("info_failed_no_properties_queried")
+            if case MiioError.deviceError(let code, _) = error { report["code"] = .number(Double(code)) }
+        }
+        return .object(report)
+    }
+
     /// Reads only model-matched specification cache files, never an account/config/pairing directory.
     /// These are cached candidates, not proof of the running App's currently loaded schema version.
     static func cachedSpecifications(model: String, directory: URL) -> [JSONValue] {
@@ -131,17 +196,39 @@ enum ReadOnlyDiagnostics {
         return .object(report)
     }
 
-    static func run(_ input: Data, port: UInt16) async throws {
+    static func run(_ input: Data, port: UInt16, followup: Bool = false) async throws {
         guard let config = LocalHomeConfig.decode(input) else { throw MiioError.badResponse("Invalid diagnostic input") }
         var reports: [JSONValue] = []
-        for (index, device) in config.devices.filter({ properties[$0.model] != nil }).prefix(12).enumerated() {
+        var seenModels: Set<String> = []
+        let devices = config.devices.filter { device in
+            guard properties[device.model] != nil else { return false }
+            if !followup { return true }
+            guard ["dooya.motor.dc1545", "xiaomi.feeder.pi2001"].contains(device.model) else { return false }
+            return seenModels.insert(device.model).inserted
+        }
+        for (index, device) in devices.prefix(12).enumerated() {
             guard let token = MiioToken.parse(device.token) else {
                 reports.append(.object(["slot": .number(Double(index)), "configuredModel": .string(device.model), "error": .string("invalid_token")]))
                 continue
             }
             let client = MiioClient(host: device.host, token: token, port: port, timeout: .seconds(2), retries: 0)
-            var report = await collect(device: device, slot: index) { method, params in
-                try await client.call(method, params: params, retryCount: 0)
+            var report: JSONValue
+            if followup {
+                var protocolDID: String?
+                if device.model == "dooya.motor.dc1545" {
+                    do { protocolDID = String(try await client.handshake().deviceID) }
+                    catch {
+                        reports.append(.object(["slot": .number(Double(index)), "configuredModel": .string(device.model), "error": .string("handshake_failed")]))
+                        continue
+                    }
+                }
+                report = await collectFollowup(device: device, slot: index, protocolDID: protocolDID) { method, params in
+                    try await client.call(method, params: params, retryCount: 0)
+                }
+            } else {
+                report = await collect(device: device, slot: index) { method, params in
+                    try await client.call(method, params: params, retryCount: 0)
+                }
             }
             if case .object(var fields) = report {
                 fields["cachedSpecifications"] = .array(cachedSpecifications(model: device.model, directory: LocalHomeProvider.specCacheDirectory))
