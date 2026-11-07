@@ -6,17 +6,16 @@ import SwiftUI
 struct CurtainControlPanel: View {
     let controller: CurtainControlController
     let device: LocalDevice
-    @State private var draft = 0.0
-    @State private var targetText = ""
-    @State private var dragging = false
+    @State private var draft = CurtainPositionDraft()
     @FocusState private var typing: Bool
     private var state: CurtainControlSession.State? { controller.states[device.did] }
     private var enabled: Bool { controller.includes(device.did) }
     private var busy: Bool { controller.isWorking(device.did) }
     private var canMove: Bool { enabled && !busy && state?.phase == .ready && state?.position != nil }
-    private var target: Int? { Int(targetText.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    private var target: Int? { draft.target }
     private func commit(_ value: Int) {
         guard canMove, (0...100).contains(value) else { return }
+        draft.submitted()
         controller.send(device.did, .position(value))
     }
     var body: some View {
@@ -36,23 +35,24 @@ struct CurtainControlPanel: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let date = state?.sampledAt { Text(date.formatted()).font(.caption).foregroundStyle(.secondary) }
-                Slider(value: Binding(get: { draft }, set: { draft = $0; targetText = String(Int($0.rounded())) }), in: 0...100, step: 1,
+                Slider(value: Binding(get: { draft.slider }, set: { draft.drag($0) }), in: 0...100, step: 1,
                        onEditingChanged: { editing in
-                    dragging = editing
-                    if !editing { commit(Int(draft.rounded())) }
+                    let value = Int(draft.slider.rounded())
+                    draft.setDragging(editing)
+                    if !editing { commit(value) }
                 })
                 .disabled(!canMove)
                 .accessibilityLabel(L10n.tr("卷帘目标位置，松手发送", "Curtain target position; release to send"))
                 HStack {
-                    TextField(L10n.tr("目标位置 %", "Target Position %"), text: $targetText)
+                    TextField(L10n.tr("目标位置 %", "Target Position %"), text: Binding(get: { draft.text }, set: { draft.editText($0) }))
                         .textFieldStyle(.roundedBorder).frame(width: 100).focused($typing)
                     Button(L10n.tr("确认位置", "Set Position")) { if let target { commit(target) } }
                         .disabled(!canMove || target == nil || !(0...100).contains(target ?? -1))
                 }
                 HStack {
-                    Button(L10n.tr("全开", "Open")) { controller.send(device.did, .open) }.disabled(!canMove)
-                    Button(L10n.tr("全关", "Close")) { controller.send(device.did, .close) }.disabled(!canMove)
-                    Button(L10n.tr("停止", "Stop")) { controller.send(device.did, .stop) }
+                    Button(L10n.tr("全开", "Open")) { draft.discard(); controller.send(device.did, .open) }.disabled(!canMove)
+                    Button(L10n.tr("全关", "Close")) { draft.discard(); controller.send(device.did, .close) }.disabled(!canMove)
+                    Button(L10n.tr("停止", "Stop")) { draft.discard(); controller.send(device.did, .stop) }
                         .disabled(state?.canStop != true || controller.stopping.contains(device.did))
                         .keyboardShortcut(".", modifiers: [.command])
                     Spacer()
@@ -73,8 +73,14 @@ struct CurtainControlPanel: View {
             Text(L10n.tr("选择会保存，重启后自动读取状态。0% 全遮住，100% 全拉开。拖动只预览，松手或确认后发送一次；停止优先发送。HomeKit/Matter 卷帘控制尚未开放。", "Your selection is saved; startup reads state only. 0% closed, 100% open. Drag to preview, release or confirm to send once; Stop has priority. HomeKit/Matter curtain control is not enabled."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+        .onChange(of: typing) { _, value in draft.focus(value) }
+        .onChange(of: device.did) { _, _ in
+            typing = false
+            draft = CurtainPositionDraft()
+            draft.receive(state?.position)
+        }
         .onChange(of: state?.position, initial: true) { _, position in
-            if !dragging, !typing, let position { draft = Double(position); targetText = String(position) }
+            draft.receive(position)
         }
     }
 }

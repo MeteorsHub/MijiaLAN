@@ -123,14 +123,17 @@ struct MiioClientTests {
         await #expect(throws: MiioError.timeout) { try await client.info() }
     }
 
-    @Test("Device errors and rejected writes surface as deviceError")
-    func deviceErrors() async throws {
-        let network = FakeMiioNetwork()
-        network.add(host: "192.168.1.54", token: token, deviceID: 81)
-        let client = MiioClient(host: "192.168.1.54", token: MiioToken.parse(token)!, transport: network)
-        await #expect(throws: MiioError.deviceError(code: -32601, message: "Method not found.")) { try await client.call("nope") }
-        await #expect(throws: MiioError.deviceError(code: -4004, message: "参数错误（-4004）")) {
-            try await client.setProperties([MiotPropWrite(did: "81", siid: 9, piid: 9, value: .number(1))])
+    @Test("Device errors retain the correct code and localized internal-error meaning", arguments: ["zh", "en"])
+    func deviceErrors(_ language: String) async throws {
+        try await L10n.$overrideLanguage.withValue(language == "zh" ? .zhHans : .en) {
+            let network = FakeMiioNetwork()
+            network.add(host: "192.168.1.54", token: token, deviceID: 81)
+            let client = MiioClient(host: "192.168.1.54", token: MiioToken.parse(token)!, transport: network)
+            await #expect(throws: MiioError.deviceError(code: -32601, message: "Method not found.")) { try await client.call("nope") }
+            let message = language == "zh" ? "设备内部错误（-4004）" : "Device internal error (-4004)."
+            await #expect(throws: MiioError.deviceError(code: -4004, message: message)) {
+                try await client.setProperties([MiotPropWrite(did: "81", siid: 9, piid: 9, value: .number(1))])
+            }
         }
     }
 
