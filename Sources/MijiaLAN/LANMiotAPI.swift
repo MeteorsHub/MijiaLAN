@@ -55,6 +55,9 @@ public actor LANMiotAPI: MiCloudAPI {
     private var configuredDevices: [LocalDevice]?
     private var isShutdown = false
     private var curtainAutoInfoSuspended = false
+    private let curtainScheduler = CurtainRequestScheduler()
+    private var dailyCurtains: [String: (device: LocalDevice, lease: CurtainValidationLease, session: CurtainControlSession)] = [:]
+    private var dailyStarting: Set<String> = []
     private var curtainStarting = false
     private var curtainGeneration = UUID()
     private var curtainSession: (id: UUID, device: LocalDevice, lease: CurtainValidationLease, session: CurtainValidationSession)?
@@ -125,7 +128,7 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     func beginCurtainValidation(did: String, clock: CurtainValidationSession.Clock) async throws -> CurtainValidationSession {
-        guard !isShutdown, !curtainStarting else { throw DeviceControlError.busy }
+        guard !isShutdown, !curtainStarting, dailyCurtains.isEmpty, dailyStarting.isEmpty else { throw DeviceControlError.busy }
         let device = try localDevice(forDid: did)
         guard device.model == CurtainValidationSession.model, device.specType == CurtainValidationSession.specification else {
             throw DeviceControlError.unsupported("Curtain model/specification")
@@ -158,6 +161,50 @@ public actor LANMiotAPI: MiCloudAPI {
         }, onInfo: { [weak self] in await self?.curtainInfoReceived(device: device, generation: generation) })
         curtainSession = (generation, device, lease, session)
         return session
+    }
+
+    /// Persistent opt-in is owned by the App; each runtime session still checks identity/spec/firmware.
+    public func beginCurtainControl(did: String) async throws -> CurtainControlSession {
+        try await beginCurtainControl(did: did, scheduler: curtainScheduler, clock: .init())
+    }
+    func beginCurtainControl(did: String, scheduler: CurtainRequestScheduler, clock: CurtainValidationSession.Clock) async throws -> CurtainControlSession {
+        guard !isShutdown, curtainSession == nil, !curtainStarting, !dailyStarting.contains(did) else { throw DeviceControlError.busy }
+        let device = try localDevice(forDid: did)
+        guard device.model == CurtainValidationSession.model, device.specType == CurtainValidationSession.specification else {
+            throw DeviceControlError.unsupported("Curtain model/specification")
+        }
+        if let existing = dailyCurtains[did], ProbeScheduler.sameEndpoint(existing.device, device), existing.device.specType == device.specType {
+            return existing.session
+        }
+        dailyStarting.insert(did)
+        defer { dailyStarting.remove(did) }
+        curtainAutoInfoSuspended = true
+        configuredDevices = nil
+        synchronizeConfiguration()
+        // Quiesce legacy metadata paths before any managed session can send packets.
+        for existing in clients.values where existing.device.model == CurtainValidationSession.model {
+            try await existing.client.waitUntilIdle()
+        }
+        try Task.checkCancellation()
+        guard !isShutdown, config().devices.contains(where: { ProbeScheduler.sameEndpoint($0, device) && $0.specType == device.specType }) else {
+            throw DeviceControlError.wrongDevice
+        }
+        let lease = CurtainValidationLease(), source = config
+        let session = CurtainControlSession(device: device, client: client(for: device), scheduler: scheduler, clock: clock, isCurrent: {
+            lease.isValid && source().devices.contains { ProbeScheduler.sameEndpoint($0, device) && $0.specType == device.specType }
+        }, onInfo: { [weak self] in await self?.dailyCurtainInfoReceived(device) })
+        dailyCurtains[did] = (device, lease, session)
+        return session
+    }
+    public func endCurtainControl(did: String) async {
+        guard let previous = dailyCurtains.removeValue(forKey: did) else { return }
+        previous.lease.invalidate()
+        await previous.session.end()
+    }
+    private func dailyCurtainInfoReceived(_ device: LocalDevice) {
+        guard !isShutdown, let active = dailyCurtains[device.did], active.lease.isValid,
+              ProbeScheduler.sameEndpoint(active.device, device) else { return }
+        record(device.did, .online, error: nil); publishHealth()
     }
 
     public func endCurtainValidation() async {
@@ -458,6 +505,11 @@ public actor LANMiotAPI: MiCloudAPI {
             curtainGeneration = UUID()
             Task { await active.session.end() }
         }
+        for (did, active) in dailyCurtains where !devices.contains(where: { ProbeScheduler.sameEndpoint($0, active.device) && $0.specType == active.device.specType }) {
+            active.lease.invalidate()
+            dailyCurtains[did] = nil
+            Task { await active.session.end() }
+        }
         configuredDevices = devices
         let known = Set(devices.map(\.did))
         for (did, existing) in clients where !devices.contains(where: { ProbeScheduler.sameEndpoint($0, existing.device) }) {
@@ -550,6 +602,11 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     public func shutdown() {
+        for active in dailyCurtains.values {
+            active.lease.invalidate()
+            Task { await active.session.end() }
+        }
+        dailyCurtains = [:]
         if let active = curtainSession {
             active.lease.invalidate()
             curtainSession = nil

@@ -92,7 +92,7 @@ private struct OnlineDeviceTile: View {
                 .foregroundStyle(isOn ? .white : .primary).frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(DevicePresentation.tileName(device)).font(.system(size: 14, weight: .semibold)).lineLimit(2)
-                    Text([device.roomName, DevicePresentation.summary(snapshot)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                    Text([device.roomName, model.deviceSummary(device)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                         .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -102,7 +102,7 @@ private struct OnlineDeviceTile: View {
         .buttonStyle(ControlCenterButtonStyle(radius: 14))
         .background(palette.tile, in: .rect(cornerRadius: 14))
         .disabled(working)
-        .accessibilityLabel("\(DevicePresentation.name(device))，\(DevicePresentation.summary(snapshot))")
+        .accessibilityLabel("\(DevicePresentation.name(device))，\(model.deviceSummary(device))")
         .accessibilityHint(canToggle ? L10n.tr("按下切换电源", "Press to toggle power.") : L10n.tr("按下查看设备控制", "Press to open device controls."))
         .overlay(alignment: .topTrailing) {
             ControlCenterIconButton(title: L10n.tr("\(DevicePresentation.name(device))详细设置", "\(DevicePresentation.name(device)) details"), symbol: "chevron.right", action: open).padding(5)

@@ -4,6 +4,8 @@ import SwiftUI
 
 struct DeviceInformation: View {
     let snapshot: DeviceSnapshot
+    var curtainState: CurtainControlSession.State? = nil
+    var usesCurtainControl = false
 
     var body: some View {
         PanelDisclosure(L10n.tr("设备信息", "Device Information"), deviceID: snapshot.id, section: "information") {
@@ -15,17 +17,26 @@ struct DeviceInformation: View {
                 infoRow(L10n.tr("连通性", "Connectivity"), value: snapshot.isOnline
                     ? L10n.tr("在线（设备信息可达）", "Online (device info reachable)") : ConnectionIssue(health: snapshot.health).title)
                 if snapshot.lanReadingsRestriction != nil {
-                    infoRow(L10n.tr("局域网读数", "LAN Readings"), value: DeviceLANPolicy.unverifiedReadingsTitle)
+                    if !usesCurtainControl {
+                        infoRow(L10n.tr("局域网读数", "LAN Readings"), value: DeviceLANPolicy.unverifiedReadingsTitle)
+                    }
                     infoRow(L10n.tr("最近信息响应", "Last Info Response"), value: snapshot.health.lastSeen?.formatted() ?? L10n.tr("尚未确认", "Not Confirmed"))
                 }
                 Divider()
                 Text(L10n.tr("当前读数", "Current Readings")).fontWeight(.medium)
-                ForEach(snapshot.capabilities.filter(\.readable)) { capability in
-                    infoRow(capability.title, value: snapshot.lanReadingsRestriction ?? snapshot.readings[capability.id]?.error ?? capability.formatted(snapshot.value(capability.id)))
-                        .help("\(capability.siid).\(capability.iid) · \(capability.service) · \(snapshot.readings[capability.id]?.updatedAt?.formatted() ?? L10n.tr("尚未读取", "Not Read Yet"))")
+                if usesCurtainControl {
+                    infoRow(L10n.tr("实际位置", "Actual Position"), value: curtainState?.position.map { "\($0)%" } ?? L10n.tr("尚未确认", "Not Confirmed"))
+                    infoRow(L10n.tr("工作状态", "Motor State"), value: curtainState?.motorStatus.map {
+                        $0 == 1 ? L10n.tr("已停止", "Stopped") : L10n.tr("运动中", "Moving")
+                    } ?? L10n.tr("尚未确认", "Not Confirmed"))
+                } else {
+                    ForEach(snapshot.capabilities.filter(\.readable)) { capability in
+                        infoRow(capability.title, value: snapshot.lanReadingsRestriction ?? snapshot.readings[capability.id]?.error ?? capability.formatted(snapshot.value(capability.id)))
+                            .help("\(capability.siid).\(capability.iid) · \(capability.service) · \(snapshot.readings[capability.id]?.updatedAt?.formatted() ?? L10n.tr("尚未读取", "Not Read Yet"))")
+                    }
                 }
                 let limited = snapshot.capabilities.filter { $0.limitation != nil }
-                if !limited.isEmpty {
+                if !usesCurtainControl && !limited.isEmpty {
                     Divider()
                     PanelDisclosure(L10n.tr("兼容性说明", "Compatibility"), deviceID: snapshot.id, section: "compatibility") {
                         VStack(alignment: .leading, spacing: 10) {

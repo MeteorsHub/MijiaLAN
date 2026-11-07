@@ -65,8 +65,14 @@ actor ControlCenterPreviewTransport: MiioTransport {
                     "code": .number(values[host]?[key] == nil ? -4003 : 0), "value": values[host]?[key] ?? .null])
             })
         } else if host == "192.0.2.12", method == "set_properties", args.count == 1, case .object(let fields) = args[0],
-                  fields["siid"] == .number(2), fields["piid"] == .number(4), let target = fields["value"] {
-            values[host]?["2.4"] = target; values[host]?["2.3"] = target; values[host]?["2.2"] = .number(1)
+                  fields["siid"] == .number(2), let value = fields["value"] {
+            if fields["piid"] == .number(4) {
+                values[host]?["2.4"] = value; values[host]?["2.3"] = value
+            } else if fields["piid"] == .number(1) {
+                if value == .number(2) { values[host]?["2.4"] = .number(100); values[host]?["2.3"] = .number(100) }
+                if value == .number(0) { values[host]?["2.4"] = .number(0); values[host]?["2.3"] = .number(0) }
+            }
+            values[host]?["2.2"] = .number(1)
             result = .array([.object(["code": .number(0)])])
         } else if method == "get_prop" {
             result = .array(args.map { values[host]?[$0.stringValue ?? ""] ?? .null })

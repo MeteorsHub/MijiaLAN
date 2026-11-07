@@ -13,6 +13,8 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         var model = "yeelink.light.fake1"
         var firmware = "1.0.0"
         var simulateCurtainMovement = false
+        var curtainMotionSamples: [(position: Int, status: Int)] = []
+        var curtainHasWritten = false
         var writeTimeout = false
         var wrongResponseID = false
         var props: [String: JSONValue] = [:]
@@ -113,6 +115,10 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         case "miIO.info":
             reply["result"] = .object(["model": .string(device.model), "mac": .string("AA:BB:CC:00:11:22"), "fw_ver": .string(device.firmware)])
         case "get_properties":
+            if device.curtainHasWritten, !device.curtainMotionSamples.isEmpty {
+                let sample = device.curtainMotionSamples.removeFirst()
+                device.props["2.3"] = .number(Double(sample.position)); device.props["2.2"] = .number(Double(sample.status))
+            }
             reply["result"] = .array((params.arrayValue ?? []).map { item in
                 let key = "\(item["siid"]?.intValue ?? 0).\(item["piid"]?.intValue ?? 0)"
                 if let code = device.propertyErrors[key] {
@@ -132,8 +138,17 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
                 let key = "\(item["siid"]?.intValue ?? 0).\(item["piid"]?.intValue ?? 0)"
                 if key == "9.9" { return .object(["code": .number(-4004)]) }
                 device.props[key] = item["value"] ?? .null
-                if device.simulateCurtainMovement, key == "2.4" {
-                    device.props["2.3"] = item["value"]; device.props["2.2"] = .number(1)
+                if device.model == CurtainValidationSession.model, ["2.1", "2.4"].contains(key) {
+                    device.curtainHasWritten = true
+                    if key == "2.1" {
+                        if item["value"] == .number(2) { device.props["2.4"] = .number(100) }
+                        if item["value"] == .number(0) { device.props["2.4"] = .number(0) }
+                        if item["value"] == .number(1) { device.curtainMotionSamples = []; device.props["2.2"] = .number(1) }
+                    }
+                    if !device.curtainMotionSamples.isEmpty { device.props["2.2"] = .number(2) }
+                    else if device.simulateCurtainMovement, key == "2.4" || item["value"] != .number(1) {
+                        device.props["2.3"] = device.props["2.4"]; device.props["2.2"] = .number(1)
+                    }
                 }
                 if device.quantizeSpeed, key == "8.1", let n = item["value"]?.doubleValue { device.props[key] = .number((n / 10).rounded() * 10) }
                 if device.omitWriteCode { return .object([:]) }

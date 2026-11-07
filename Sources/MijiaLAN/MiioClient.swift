@@ -69,11 +69,12 @@ public actor MiioClient {
         try await performCall(method, params: params, timeout: timeout, retryCount: retryCount, validation: false)
     }
 
-    // Only the dedicated, paced validation session can use these typed operations.
+    // Only dedicated curtain sessions can use these typed operations; generic routes remain locked.
     enum CurtainRequest: Sendable {
         case info
         case read(did: String, confirmation: Bool)
         case position(did: String, target: Int)
+        case motor(did: String, value: Int)
     }
     func curtainNeedsHandshake() -> Bool { needsHandshake }
     func waitUntilIdle() async throws {
@@ -91,11 +92,15 @@ public actor MiioClient {
             let ids = confirmation ? [3, 2] : [2, 3, 4, 5, 9, 10]
             params = .array(ids.map { .object(["did": .string(did), "siid": .number(2), "piid": .number(Double($0))]) })
         case .position(let did, let target):
-            guard (1...99).contains(target) else { throw DeviceControlError.invalidValue("position") }
+            guard (0...100).contains(target) else { throw DeviceControlError.invalidValue("position") }
             method = "set_properties"
             params = .array([.object(["did": .string(did), "siid": .number(2), "piid": .number(4), "value": .number(Double(target))])])
+        case .motor(let did, let value):
+            guard (0...2).contains(value) else { throw DeviceControlError.invalidValue("motor-control") }
+            method = "set_properties"
+            params = .array([.object(["did": .string(did), "siid": .number(2), "piid": .number(1), "value": .number(Double(value))])])
         }
-        return try await performCall(method, params: params, timeout: nil, retryCount: 0, validation: true, validationCheck: isCurrent)
+        return try await performCall(method, params: params, timeout: .seconds(2), retryCount: 0, validation: true, validationCheck: isCurrent)
     }
 
     private func performCall(_ method: String, params: JSONValue, timeout: Duration?, retryCount: Int?, validation: Bool, validationCheck: (@Sendable () -> Bool)? = nil) async throws -> JSONValue {

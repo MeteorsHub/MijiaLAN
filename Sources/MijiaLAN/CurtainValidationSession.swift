@@ -157,7 +157,7 @@ public actor CurtainValidationSession {
         }
     }
 
-    private static func values(_ result: JSONValue, expected: Set<Int>) throws -> [Int: JSONValue] {
+    static func values(_ result: JSONValue, expected: Set<Int>) throws -> [Int: JSONValue] {
         guard case .array(let rows) = result, rows.count == expected.count else { throw DeviceControlError.notConfirmed }
         var values: [Int: JSONValue] = [:]
         for row in rows {
@@ -170,7 +170,7 @@ public actor CurtainValidationSession {
         }
         return values
     }
-    private static func integer(_ value: JSONValue?, range: ClosedRange<Int>) throws -> Int {
+    static func integer(_ value: JSONValue?, range: ClosedRange<Int>) throws -> Int {
         guard case .number(let n) = value, n.isFinite, let number = Int(exactly: n), range.contains(number) else {
             throw DeviceControlError.notConfirmed
         }

@@ -11,7 +11,7 @@ struct ControlCenterDeviceDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let reason = DeviceLANPolicy.restriction(for: device.model) {
+            if !model.curtains.includes(device.did), let reason = DeviceLANPolicy.restriction(for: device.model) {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(DeviceLANPolicy.unverifiedReadingsTitle, systemImage: "pause.circle")
                         .font(.callout.weight(.medium))
@@ -19,7 +19,7 @@ struct ControlCenterDeviceDetail: View {
                 }
             }
             if device.model == CurtainValidationSession.model {
-                CurtainValidationPanel(controller: model.curtainValidation, device: device)
+                CurtainControlPanel(controller: model.curtains, device: device)
             }
             if let snapshot = model.devices.snapshots[device.did] {
                 if !snapshot.isOnline { OfflineDeviceCard(model: model, device: device) }
@@ -49,7 +49,7 @@ struct ControlCenterDeviceDetail: View {
                         .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 }
                 Divider()
-                DeviceInformation(snapshot: snapshot)
+                DeviceInformation(snapshot: snapshot, curtainState: model.curtains.states[device.did], usesCurtainControl: model.curtains.includes(device.did))
             } else {
                 Text(L10n.tr("尚未获取到设备接口。请重试或在设置中重新导入设备。", "Device controls are not available yet. Retry or re-import the device in Settings."))
                     .font(.callout).foregroundStyle(.secondary)

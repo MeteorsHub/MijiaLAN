@@ -9,7 +9,7 @@ public enum DeviceLANPolicy {
 
     public static func restriction(for model: String) -> String? {
         guard !allowsPropertyRequests(for: model) else { return nil }
-        return L10n.tr("常规局域网读写默认暂停，桥接控制未启用；小幅位置验证需单独选择设备", "Regular LAN reads/writes are paused by default; bridge control is disabled. Small position validation requires selecting a device.")
+        return L10n.tr("通用读写及桥接控制暂停；可在此设备详情中启用独立调度的日常控制", "Generic reads/writes and bridge control are paused. Daily App control can be enabled in this device’s details.")
     }
 
     public static var unverifiedReadingsTitle: String {
