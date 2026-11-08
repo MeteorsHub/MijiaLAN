@@ -3,164 +3,132 @@ import Observation
 import MijiaCore
 import MijiaLAN
 
-/// Saved per-device opt-in, one background loop, and independently interruptible Stop actions.
+/// Saved preference only. No startup request, background loop, or automatic reconnect.
 @Observable @MainActor
 final class CurtainControlController {
     private let api: LANMiotAPI
+    let events: CurtainEventLog
+    @ObservationIgnored private let makeSession: @Sendable (String) async throws -> CurtainControlSession
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var devices: [String: LocalDevice] = [:]
     @ObservationIgnored private var sessions: [String: CurtainControlSession] = [:]
     @ObservationIgnored private var sessionIDs: [String: UUID] = [:]
     @ObservationIgnored private var observers: [String: Task<Void, Never>] = [:]
-    @ObservationIgnored private var starts: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var ends: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var actions: [String: (id: UUID, task: Task<Void, Never>)] = [:]
-    @ObservationIgnored private var background: Task<Void, Never>?
     @ObservationIgnored var prepare: @MainActor () async throws -> Void = {}
     private(set) var enabledIDs: Set<String>
     private(set) var states: [String: CurtainControlSession.State] = [:]
     private(set) var errors: [String: String] = [:]
-    private(set) var connecting: Set<String> = []
     private(set) var working: Set<String> = []
     private(set) var stopping: Set<String> = []
-    private(set) var backgroundReading: Set<String> = []
     static let preferenceKey = "curtain.daily.enabled"
 
-    init(api: LANMiotAPI, defaults: UserDefaults) {
-        self.api = api; self.defaults = defaults
+    init(api: LANMiotAPI, defaults: UserDefaults, makeSession: (@Sendable (String) async throws -> CurtainControlSession)? = nil) {
+        self.api = api; self.defaults = defaults; events = api.curtainEvents
+        self.makeSession = makeSession ?? { try await api.beginCurtainControl(did: $0) }
         enabledIDs = Set(defaults.stringArray(forKey: Self.preferenceKey) ?? [])
     }
     func includes(_ did: String) -> Bool { enabledIDs.contains(did) }
-    func isWorking(_ did: String) -> Bool { connecting.contains(did) || working.contains(did) || backgroundReading.contains(did) }
+    func isWorking(_ did: String) -> Bool { working.contains(did) }
     func setEnabled(_ device: LocalDevice, _ value: Bool) {
         if value { enabledIDs.insert(device.did) } else { enabledIDs.remove(device.did) }
         defaults.set(enabledIDs.sorted(), forKey: Self.preferenceKey)
         devices[device.did] = device
-        if value { start(device) } else { end(device.did) }
+        events.record(device.did, source: .preference, stage: .idle, outcome: .noPacket, reason: .manualOnly)
+        if !value { end(device.did) }
     }
     func reconcile(_ configured: [LocalDevice]) {
         let next = Dictionary(uniqueKeysWithValues: configured.map { ($0.did, $0) })
+        guard next != devices else { return }
         for did in Array(sessionIDs.keys) where next[did] != devices[did] || !enabledIDs.contains(did) { end(did) }
+        events.register(configured.filter { $0.model == CurtainValidationSession.model }.map(\.did))
+        for device in configured where enabledIDs.contains(device.did) && device.model == CurtainValidationSession.model {
+            events.record(device.did, source: .startup, stage: .idle, outcome: .noPacket, reason: .manualOnly)
+            events.record(device.did, source: .idleBackground, stage: .idle, outcome: .noPacket, reason: .manualOnly)
+        }
         devices = next
-        for device in configured where enabledIDs.contains(device.did) && device.model == CurtainValidationSession.model && sessionIDs[device.did] == nil {
-            start(device)
-        }
-        if background == nil {
-            background = Task { [weak self] in
-                while !Task.isCancelled {
-                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
-                    guard let self else { return }
-                    await self.refreshEnabled()
-                }
-            }
-        }
     }
-    private func start(_ device: LocalDevice) {
-        guard starts[device.did] == nil, sessions[device.did] == nil else { return }
-        let did = device.did, id = UUID()
-        sessionIDs[did] = id; connecting.insert(did); errors[did] = nil
-        let previousEnd = ends[did]
-        starts[did] = Task {
-            defer { if sessionIDs[did] == id { starts[did] = nil; connecting.remove(did) } }
-            do {
-                await previousEnd?.value
-                try Task.checkCancellation()
-                try await prepare()
-                try Task.checkCancellation()
-                let session = try await api.beginCurtainControl(did: did)
-                guard sessionIDs[did] == id, enabledIDs.contains(did), !Task.isCancelled else {
-                    await api.endCurtainControl(did: did); return
-                }
-                sessions[did] = session
-                let updates = await session.updates()
-                observers[did] = Task { [weak self] in
-                    for await state in updates {
-                        guard let self, self.sessionIDs[did] == id else { return }
-                        self.states[did] = state
-                    }
-                }
-                _ = try await session.start()
-            } catch {
-                if sessionIDs[did] == id, !Task.isCancelled { errors[did] = error.localizedDescription }
+    private func session(_ did: String) async throws -> CurtainControlSession {
+        try Task.checkCancellation()
+        if let existing = sessions[did] { return existing }
+        await ends[did]?.value
+        try Task.checkCancellation()
+        try await prepare()
+        try Task.checkCancellation()
+        let created = try await makeSession(did)
+        guard includes(did), !Task.isCancelled else { await api.endCurtainControl(did: did); throw CancellationError() }
+        let id = UUID()
+        sessionIDs[did] = id; sessions[did] = created
+        let updates = await created.updates()
+        observers[did] = Task { [weak self] in
+            for await state in updates {
+                guard let self, self.sessionIDs[did] == id else { return }
+                self.states[did] = state
             }
         }
+        return created
     }
     private func end(_ did: String) {
-        let start = starts.removeValue(forKey: did)
-        start?.cancel()
-        actions.removeValue(forKey: did)?.task.cancel()
+        let action = actions.removeValue(forKey: did)?.task
+        action?.cancel()
         observers.removeValue(forKey: did)?.cancel()
         sessionIDs[did] = nil; sessions[did] = nil
-        states[did] = nil; errors[did] = nil
-        connecting.remove(did); working.remove(did); stopping.remove(did); backgroundReading.remove(did)
+        states[did] = nil; errors[did] = nil; working.remove(did); stopping.remove(did)
         let previous = ends[did]
         ends[did] = Task {
             await previous?.value
             await api.endCurtainControl(did: did)
-            await start?.value
+            await action?.value
         }
     }
-    func reconnect(_ device: LocalDevice) {
-        guard !isWorking(device.did) else { return }
-        end(device.did)
-        if includes(device.did) { start(device) }
-    }
-    func send(_ did: String, _ command: CurtainControlSession.Command) {
-        guard let session = sessions[did], includes(did) else { return }
+    // Explicit retry UI is a single read, not a separate connection recovery loop.
+    func reconnect(_ device: LocalDevice) { read(device.did) }
+    func send(_ did: String, _ command: CurtainControlSession.Command) { request(did, command) }
+    func read(_ did: String) { request(did, nil) }
+    private func request(_ did: String, _ command: CurtainControlSession.Command?) {
+        guard includes(did), devices[did] != nil else { return }
         if command == .stop {
-            guard !stopping.contains(did), states[did]?.canStop == true else { return }
+            guard !stopping.contains(did), !isWorking(did) || states[did]?.canStop == true else { return }
             stopping.insert(did)
-            starts[did]?.cancel() // A cancelled startup read must not overwrite the Stop result.
-        } else if isWorking(did) { return }
-        let id = UUID(), sessionID = sessionIDs[did]
+        } else { guard !isWorking(did) else { return } }
+        let id = UUID()
         working.insert(did); errors[did] = nil
-        // Stop deliberately replaces the UI operation token, so a cancelled move cannot overwrite its result.
+        let source: CurtainEventLog.Source
+        switch command { case .position: source = .manualPosition; case .open: source = .manualOpen; case .close: source = .manualClose; case .stop: source = .manualStop; case nil: source = .manualRead }
+        events.record(did, operation: id, source: source, stage: .requested, outcome: .queued, target: command?.target)
         let task = Task {
             defer {
                 if actions[did]?.id == id { actions[did] = nil; working.remove(did); stopping.remove(did) }
             }
-            do { _ = try await session.perform(command) }
-            catch {
-                if actions[did]?.id == id, sessionIDs[did] == sessionID, !Task.isCancelled { errors[did] = error.localizedDescription }
+            do {
+                let session = try await session(did)
+                _ = try await session.manual(command, operationID: id)
+                if actions[did]?.id == id { states[did] = await session.snapshot() }
+            } catch {
+                if actions[did]?.id == id, !Task.isCancelled {
+                    if let session = sessions[did] { states[did] = await session.snapshot() }
+                    events.record(did, operation: id, source: source, stage: states[did]?.stage ?? .requested, outcome: .paused,
+                                  reason: CurtainEventLog.reason(error), code: CurtainEventLog.code(error))
+                    errors[did] = states[did]?.message ?? L10n.tr("本次请求未完成；已停止，不会自动重试。", "Request did not complete; stopped without automatic retry.")
+                }
             }
         }
         actions[did] = (id, task)
-    }
-    func read(_ did: String) {
-        guard !isWorking(did), let session = sessions[did] else { return }
-        let id = UUID(), sessionID = sessionIDs[did]
-        working.insert(did); errors[did] = nil
-        let task = Task {
-            defer { if actions[did]?.id == id { actions[did] = nil; working.remove(did) } }
-            do { _ = try await session.confirmByReading() }
-            catch {
-                if actions[did]?.id == id, sessionIDs[did] == sessionID, !Task.isCancelled { errors[did] = error.localizedDescription }
-            }
-        }
-        actions[did] = (id, task)
-    }
-    private func refreshEnabled() async {
-        // One loop for all enabled devices: no six independent timers or all-device refreshNow calls.
-        for did in enabledIDs.sorted() {
-            guard !Task.isCancelled else { return }
-            guard !isWorking(did), let session = sessions[did],
-                  let phase = states[did]?.phase, phase == .ready || phase == .moving else { continue }
-            backgroundReading.insert(did)
-            _ = try? await session.refresh()
-            backgroundReading.remove(did)
-        }
     }
     func summary(_ did: String) -> String? {
         guard includes(did) else { return nil }
-        guard let state = states[did], let position = state.position else {
-            return connecting.contains(did) ? L10n.tr("连接中", "Connecting") : L10n.tr("读数未确认", "Readings Unconfirmed")
-        }
-        let status = state.motorStatus == 1 ? L10n.tr("已停止", "Stopped") : L10n.tr("运动中", "Moving")
-        return "\(position)% · \(status)"
+        if isWorking(did) { return L10n.tr("本次手动请求进行中", "Manual Request Running") }
+        if states[did]?.failureReason != nil || errors[did] != nil { return L10n.tr("请求已停止 · 读数未确认", "Request Stopped · Readings Unconfirmed") }
+        guard let state = states[did], let position = state.position else { return L10n.tr("等待手动读取", "Awaiting Manual Read") }
+        return L10n.tr("上次 \(position)%", "Last read \(position)%")
     }
     func shutdown() {
-        background?.cancel(); background = nil
-        for did in Array(sessionIDs.keys) { end(did) }
-        // Keep saved opt-ins. Runtime shutdown never sends motor commands.
+        for did in Set(sessionIDs.keys).union(actions.keys) {
+            if let action = actions[did] { events.record(did, operation: action.id, source: .lifecycle, stage: .finished, outcome: .cancelled, reason: .cancelled) }
+            end(did)
+        }
+        events.record("application", source: .lifecycle, stage: .finished, outcome: .noPacket, reason: .manualOnly)
+        events.flush()
     }
 }

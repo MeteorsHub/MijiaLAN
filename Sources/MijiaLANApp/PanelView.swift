@@ -209,6 +209,8 @@ private struct PanelPage: View {
             detailHeader(title: L10n.tr("米家设备", "Mijia Devices"), backTitle: L10n.tr("设置", "Settings"), backRoute: .settings) { EmptyView() }
         case .settingsImport:
             detailHeader(title: L10n.tr("扫码导入", "QR Import"), backTitle: L10n.tr("设置", "Settings"), backRoute: .settings) { EmptyView() }
+        case .settingsDiagnostics:
+            detailHeader(title: L10n.tr("诊断日志", "Diagnostic Logs"), backTitle: L10n.tr("设置", "Settings"), backRoute: .settings) { EmptyView() }
         case .settingsManualAdd:
             detailHeader(title: L10n.tr("手动添加设备", "Add Device Manually"), backTitle: L10n.tr("设置", "Settings"), backRoute: .settings) { EmptyView() }
         }
@@ -253,6 +255,8 @@ private struct PanelPage: View {
             SettingsDeviceManagement(model: model)
         case .settingsImport:
             SettingsImportFlow(model: model, navigate: navigate)
+        case .settingsDiagnostics:
+            SettingsDiagnostics(journal: model.curtains.events)
         case .settingsManualAdd:
             SettingsManualDevice(model: model, draft: session.manual)
         }

@@ -54,7 +54,7 @@ public actor LANMiotAPI: MiCloudAPI {
     private var lastPublishedHealth: LANHealthUpdate?
     private var configuredDevices: [LocalDevice]?
     private var isShutdown = false
-    private var curtainAutoInfoSuspended = false
+    public nonisolated let curtainEvents: CurtainEventLog
     private let curtainScheduler = CurtainRequestScheduler()
     private var dailyCurtains: [String: (device: LocalDevice, lease: CurtainValidationLease, session: CurtainControlSession)] = [:]
     private var dailyStarting: Set<String> = []
@@ -78,16 +78,19 @@ public actor LANMiotAPI: MiCloudAPI {
         transport: any MiioTransport = UDPMiioTransport(),
         port: UInt16 = MiioPacket.port,
         probeTimeout: Duration = .milliseconds(2500),
-        commandTimeout: Duration = .seconds(5)
+        commandTimeout: Duration = .seconds(5),
+        curtainEvents: CurtainEventLog = .init()
     ) {
         self.init(config: config, transport: transport, port: port, probeTimeout: probeTimeout,
-                  commandTimeout: commandTimeout, clock: ProbeClock(), jitter: { Double.random(in: 0.9...1.1) })
+                  commandTimeout: commandTimeout, clock: ProbeClock(), curtainEvents: curtainEvents, jitter: { Double.random(in: 0.9...1.1) })
     }
 
     init(config: @escaping @Sendable () -> LocalHomeConfig, transport: any MiioTransport,
          port: UInt16 = MiioPacket.port, probeTimeout: Duration = .milliseconds(2500),
-         commandTimeout: Duration = .seconds(5), clock: ProbeClock, jitter: @escaping @Sendable () -> Double) {
+         commandTimeout: Duration = .seconds(5), clock: ProbeClock, curtainEvents: CurtainEventLog = .init(), jitter: @escaping @Sendable () -> Double) {
         self.config = config
+        self.curtainEvents = curtainEvents
+        curtainEvents.registerDevices(config().devices)
         self.transport = transport
         self.port = port
         self.probeTimeout = probeTimeout
@@ -143,7 +146,6 @@ public actor LANMiotAPI: MiCloudAPI {
         if let previous { await previous.session.end() }
         // Cancel automatic metadata probes for all curtains before the selected session starts.
         // Keep them suspended for this API lifetime, including when validation pauses or is disabled.
-        curtainAutoInfoSuspended = true
         configuredDevices = nil
         synchronizeConfiguration()
         for existing in clients.values where existing.device.model == CurtainValidationSession.model {
@@ -178,7 +180,6 @@ public actor LANMiotAPI: MiCloudAPI {
         }
         dailyStarting.insert(did)
         defer { dailyStarting.remove(did) }
-        curtainAutoInfoSuspended = true
         configuredDevices = nil
         synchronizeConfiguration()
         // Quiesce legacy metadata paths before any managed session can send packets.
@@ -192,7 +193,7 @@ public actor LANMiotAPI: MiCloudAPI {
         let lease = CurtainValidationLease(), source = config
         let session = CurtainControlSession(device: device, client: client(for: device), scheduler: scheduler, clock: clock, isCurrent: {
             lease.isValid && source().devices.contains { ProbeScheduler.sameEndpoint($0, device) && $0.specType == device.specType }
-        }, onInfo: { [weak self] in await self?.dailyCurtainInfoReceived(device) })
+        }, onInfo: { [weak self] in await self?.dailyCurtainInfoReceived(device) }, journal: curtainEvents)
         dailyCurtains[did] = (device, lease, session)
         return session
     }
@@ -417,7 +418,7 @@ public actor LANMiotAPI: MiCloudAPI {
             consecutiveFailures[device.did] = 0
         }
         let client = MiioClient(host: device.host, token: MiioToken.parse(device.token) ?? Data(),
-                                port: port, transport: transport, timeout: commandTimeout, retries: 1, knownModel: device.model)
+                                port: port, transport: transport, timeout: commandTimeout, retries: 1, knownModel: device.model, events: curtainEvents, eventIdentifier: device.did)
         clients[device.did] = (device, client)
         return client
     }
@@ -510,6 +511,10 @@ public actor LANMiotAPI: MiCloudAPI {
             dailyCurtains[did] = nil
             Task { await active.session.end() }
         }
+        for device in devices where device.model == CurtainValidationSession.model {
+            curtainEvents.record(device.did, source: .legacyProbe, stage: .idle, outcome: .noPacket, reason: .manualOnly)
+        }
+        curtainEvents.registerDevices(devices)
         configuredDevices = devices
         let known = Set(devices.map(\.did))
         for (did, existing) in clients where !devices.contains(where: { ProbeScheduler.sameEndpoint($0, existing.device) }) {
@@ -518,7 +523,7 @@ public actor LANMiotAPI: MiCloudAPI {
         }
         health = health.filter { known.contains($0.key) }
         latest = latest.filter { known.contains($0.key.did) && clients[$0.key.did] != nil }
-        for id in probes.configure(devices.filter { !curtainAutoInfoSuspended || $0.model != CurtainValidationSession.model }) { cancelProbe(id) }
+        for id in probes.configure(devices.filter { $0.model != CurtainValidationSession.model }) { cancelProbe(id) }
     }
 
     private func isCurrent(_ device: LocalDevice, client: MiioClient) -> Bool {
@@ -531,7 +536,13 @@ public actor LANMiotAPI: MiCloudAPI {
             let timeout = probeTimeout
             probeTasks[job.id] = Task { [weak self] in
                 let result: Result<Void, any Error>
-                do { _ = try await client.info(timeout: timeout); result = .success(()) }
+                do {
+                    let source: DeviceEventLog.Source = job.priority == .discovery ? .discovery : (job.priority == .manual ? .manualRead : .legacyProbe)
+                    _ = try await DeviceCommunicationContext.$source.withValue(source) {
+                        try await DeviceCommunicationContext.$operation.withValue(job.id) { try await client.info(timeout: timeout) }
+                    }
+                    result = .success(())
+                }
                 catch { result = .failure(error) }
                 guard !Task.isCancelled else { return }
                 await self?.finishProbe(job, client: client, result: result)

@@ -566,7 +566,13 @@ public final class HomeKitBridgeController {
             case .legacy(let role) where role.isConfiguredName: try await handleWrite(deviceId: did, role: role, value: value)
             default:
                 let commands = try CapabilityHomeKitMapper.commands(binding, value: value, snapshot: snapshot)
-                if !commands.isEmpty { try await capabilities.execute(did: did, .batch(commands), coalesce: true) }
+                if !commands.isEmpty {
+                    try await DeviceCommunicationContext.$source.withValue(.homeKit) {
+                        try await DeviceCommunicationContext.$operation.withValue(UUID()) {
+                            try await capabilities.execute(did: did, .batch(commands), coalesce: true)
+                        }
+                    }
+                }
             }
         } catch {
             if let bridge { await pushCapabilityValues(bridge: bridge) }
@@ -665,6 +671,11 @@ public final class HomeKitBridgeController {
     }
 
     private func handleWrite(deviceId: String, role: HomeKitRole, value: HAPCharacteristicValue) async throws {
+        if DeviceCommunicationContext.source == nil {
+            return try await DeviceCommunicationContext.$source.withValue(.homeKit) {
+                try await DeviceCommunicationContext.$operation.withValue(UUID()) { try await handleWrite(deviceId: deviceId, role: role, value: value) }
+            }
+        }
         defer {
             forceRefresh.insert(deviceId)
             scheduleSync()

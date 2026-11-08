@@ -1,0 +1,106 @@
+{
+  "source": "Local household thread 01a1b156-dd7f-7873-88dc-943821f74830; text report, no original packets supplied to cloud",
+  "model": "dooya.motor.dc1545",
+  "note": "App/bridge/diagnostics had exited. Batch and six separate single-property requests returned code 0 and value 14 at all six addresses. No writes/retries. Header, request ID and address matching were reported for the single-property comparison.",
+  "batch": [
+    {
+      "siid": 2,
+      "piid": 9,
+      "code": 0,
+      "value": 14
+    },
+    {
+      "siid": 2,
+      "piid": 2,
+      "code": 0,
+      "value": 14
+    },
+    {
+      "siid": 2,
+      "piid": 4,
+      "code": 0,
+      "value": 14
+    },
+    {
+      "siid": 2,
+      "piid": 3,
+      "code": 0,
+      "value": 14
+    },
+    {
+      "siid": 2,
+      "piid": 5,
+      "code": 0,
+      "value": 14
+    },
+    {
+      "siid": 2,
+      "piid": 10,
+      "code": 0,
+      "value": 14
+    }
+  ],
+  "singleResponses": [
+    [
+      {
+        "siid": 2,
+        "piid": 9,
+        "code": 0,
+        "value": 14
+      }
+    ],
+    [
+      {
+        "siid": 2,
+        "piid": 2,
+        "code": 0,
+        "value": 14
+      }
+    ],
+    [
+      {
+        "siid": 2,
+        "piid": 4,
+        "code": 0,
+        "value": 14
+      }
+    ],
+    [
+      {
+        "siid": 2,
+        "piid": 3,
+        "code": 0,
+        "value": 14
+      }
+    ],
+    [
+      {
+        "siid": 2,
+        "piid": 5,
+        "code": 0,
+        "value": 14
+      }
+    ],
+    [
+      {
+        "siid": 2,
+        "piid": 10,
+        "code": 0,
+        "value": 14
+      }
+    ]
+  ],
+  "supervisedWriteOnly": {
+    "method": "set_properties",
+    "siid": 2,
+    "piid": 4,
+    "value": 0,
+    "code": 0,
+    "preflightPropertiesRead": false,
+    "retried": false,
+    "postWriteRead": false,
+    "initialPhysicalPosition": null,
+    "userObservedMovement": false,
+    "note": "User confirmed stopped and explicitly requested close. One hello then one write; App/bridges exited. Ack matched encryption/device/request/address checks. Not product authorization to skip preflight; no trustworthy starting position."
+  }
+}

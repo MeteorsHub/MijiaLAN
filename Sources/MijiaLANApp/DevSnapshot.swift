@@ -58,6 +58,7 @@ enum DevSnapshot {
             case "settings-devices": .settingsDevices
             case "settings-import": .settingsImport
             case "settings-manual": .settingsManualAdd
+            case "settings-diagnostics": .settingsDiagnostics
             default: .device($0)
             }
         } ?? .home

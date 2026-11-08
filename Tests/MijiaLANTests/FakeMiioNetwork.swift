@@ -15,6 +15,7 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         var simulateCurtainMovement = false
         var curtainMotionSamples: [(position: Int, status: Int)] = []
         var curtainHasWritten = false
+        var failCurtainReadback = false
         var writeTimeout = false
         var wrongResponseID = false
         var props: [String: JSONValue] = [:]
@@ -154,6 +155,7 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
                 if device.omitWriteCode { return .object([:]) }
                 return .object(["did": item["did"] ?? .null, "siid": item["siid"] ?? .null, "piid": item["piid"] ?? .null, "code": .number(0)])
             })
+            if device.failCurtainReadback, device.curtainHasWritten { device.propertyErrors["2.3"] = -4004 }
             if device.writeTimeout { throw MiioError.timeout }
         case "action":
             device.receivedWrites.append(params)

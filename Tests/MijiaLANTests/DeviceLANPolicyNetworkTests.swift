@@ -77,7 +77,7 @@ struct DeviceLANPolicyNetworkTests {
         await api.shutdown()
     }
 
-    @Test("Startup and manual connectivity retry use info only; property requests remain paused while online")
+    @Test("Startup, idle refresh and compatibility retry do not send even hello/info for the exact curtain model")
     func connectivity() async throws {
         let network = FakeMiioNetwork()
         let fake = network.add(host: "test", token: token, deviceID: 123)
@@ -85,13 +85,13 @@ struct DeviceLANPolicyNetworkTests {
         let config = LocalHomeConfig(devices: [LocalDevice(did: "123", name: "Curtain", model: model, host: "test", token: token)])
         let api = LANMiotAPI(config: { config }, transport: network)
         let devices = try await api.deviceList()
-        #expect(devices.first?.isOnline == true)
+        #expect(devices.first?.isOnline == false)
         await api.retryDevice(did: "123")
         _ = await api.readCapabilities(did: "123", capabilities: try capabilities())
         let health = await api.currentHealth()
-        #expect(health["123"]?.state == .online)
-        #expect(!fake.receivedMethods.isEmpty)
-        #expect(fake.receivedMethods.allSatisfy { $0 == "miIO.info" })
+        #expect(health["123"]?.state != .online)
+        #expect(network.exchangeCount == 0)
+        #expect(fake.receivedMethods.isEmpty)
         await api.shutdown()
     }
 #if os(macOS)
@@ -108,11 +108,11 @@ struct DeviceLANPolicyNetworkTests {
         await controller.refreshNow()
         await controller.retry(did: "123")
         let snapshot = try #require(controller.snapshots["123"])
-        #expect(snapshot.isOnline)
+        #expect(!snapshot.isOnline)
         #expect(snapshot.lanReadingsRestriction != nil)
         #expect(snapshot.controls.isEmpty)
         await #expect(throws: DeviceControlError.self) { try await controller.execute(did: "123", .batch([.set("p:2:1", .number(2))])) }
-        #expect(fake.receivedMethods.allSatisfy { $0 == "miIO.info" })
+        #expect(fake.receivedMethods.isEmpty)
         #expect(fake.receivedWrites.isEmpty)
     }
 #endif

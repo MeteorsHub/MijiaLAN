@@ -92,10 +92,13 @@ final class AppModel {
         let box = ConfigBox(loaded)
         configBox = box
         let api: LANMiotAPI
+        let previewLog = FileManager.default.temporaryDirectory.appendingPathComponent("MijiaLAN-Preview/Diagnostics/device-events.jsonl")
+        let journal = DeviceEventLog(fileURL: preview ? previewLog : (ephemeral ? nil : DeviceEventLog.defaultURL), scope: preview ? .simulation : .app)
+        discoverySuspendedForCurtains = !DeviceLANPolicy.allowsAutomaticDiscovery(for: loaded.devices)
         #if DEBUG
-        api = preview ? LANMiotAPI(config: { box.value }, transport: ControlCenterPreviewTransport()) : LANMiotAPI(config: { box.value })
+        api = preview ? LANMiotAPI(config: { box.value }, transport: ControlCenterPreviewTransport(), curtainEvents: journal) : LANMiotAPI(config: { box.value }, curtainEvents: journal)
         #else
-        api = LANMiotAPI(config: { box.value })
+        api = LANMiotAPI(config: { box.value }, curtainEvents: journal)
         #endif
         self.api = api
         curtains = CurtainControlController(api: api, defaults: bridgeDefaults)
@@ -120,7 +123,7 @@ final class AppModel {
         }
         curtains.reconcile(config.devices)
         attachBridgeIfNeeded()
-        if !preview { startRediscoveryLoop() }
+        if !preview && !discoverySuspendedForCurtains { startRediscoveryLoop() }
     }
 
     // MARK: Devices
@@ -244,27 +247,27 @@ final class AppModel {
 
     func addManually(host: String, token: String, name: String) {
         guard !discoverySuspendedForCurtains else {
-            manualAddError = L10n.tr("卷帘独立调度已接管。请先关闭全部卷帘的日常控制并重启，再探测新设备", "Curtain control uses exclusive scheduling. Disable daily control for all curtains and restart before probing new devices.")
+            manualAddError = L10n.tr("卷帘独立调度已接管。已暂停此配置的自动发现与独立探测；卷帘只响应详情中的手动请求", "This configuration pauses discovery and separate probes; curtains only respond to explicit actions in device details.")
             return
         }
         guard !isAddingManually else { return }
         isAddingManually = true
         manualAddError = nil
         Task { [weak self] in
+            guard let self else { return }
             do {
                 let device = try await ManualDeviceProbe.probe(
                     host: host, token: token, name: name,
-                    specSource: MiotSpecStore(cacheDirectory: LocalHomeProvider.specCacheDirectory)
+                    specSource: MiotSpecStore(cacheDirectory: LocalHomeProvider.specCacheDirectory), events: self.curtains.events
                 )
-                guard let self else { return }
                 var next = self.config
                 next.merge([device])
                 self.apply(next)
                 self.lastImportSummary = L10n.tr("已添加 \(device.name)（\(device.model)）", "Added \(device.name) (\(device.model)).")
             } catch {
-                self?.manualAddError = Self.describe(error)
+                self.manualAddError = Self.describe(error)
             }
-            self?.isAddingManually = false
+            self.isAddingManually = false
         }
     }
 
@@ -285,6 +288,9 @@ final class AppModel {
 
     private func rediscover() async {
         guard !discoverySuspendedForCurtains else {
+            for device in config.devices where device.model == CurtainValidationSession.model {
+                curtains.events.record(device.did, source: .discovery, stage: .idle, outcome: .noPacket, reason: .manualOnly)
+            }
             lastRediscoveryNote = L10n.tr("卷帘独立调度已接管，本次运行不再发送发现广播", "LAN discovery is suspended while curtain scheduling owns this app run.")
             return
         }
@@ -297,7 +303,7 @@ final class AppModel {
         isRediscovering = true
         defer { isRediscovering = false }
         do {
-            let found = try await MiioDiscovery.discover()
+            let found = try await MiioDiscovery.discover(events: curtains.events)
             guard !discoverySuspendedForCurtains else { return }
             lastRediscoveryAt = Date()
             var next = config
@@ -329,6 +335,10 @@ final class AppModel {
         config = next
         configBox.value = next
         devices.reconcileConfiguration(force: true)
+        if !DeviceLANPolicy.allowsAutomaticDiscovery(for: next.devices) {
+            discoverySuspendedForCurtains = true
+            rediscoveryTask?.cancel(); rediscoveryTask = nil
+        }
         curtains.reconcile(next.devices)
         store.refreshNow()
         attachBridgeIfNeeded()

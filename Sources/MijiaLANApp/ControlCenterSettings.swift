@@ -79,6 +79,12 @@ struct ControlCenterSettings: View {
 
             Divider()
 
+            SettingsSection(L10n.tr("诊断", "Diagnostics")) {
+                SettingsGroup {
+                    SettingsNavigationRow(L10n.tr("诊断日志", "Diagnostic Logs"), symbol: "doc.text.magnifyingglass") { navigate(.settingsDiagnostics) }
+                }
+            }
+
             SettingsSection(L10n.tr("外观", "Appearance")) {
                 SettingsGroup {
                     HStack(spacing: 10) {

@@ -14,8 +14,9 @@ struct DeviceInformation: View {
                 if let room = snapshot.device.roomName { infoRow(L10n.tr("房间", "Room"), value: room) }
                 infoRow(L10n.tr("IP 地址", "IP Address"), value: snapshot.device.host)
                 infoRow(L10n.tr("型号", "Model"), value: snapshot.device.model)
-                infoRow(L10n.tr("连通性", "Connectivity"), value: snapshot.isOnline
-                    ? L10n.tr("在线（设备信息可达）", "Online (device info reachable)") : ConnectionIssue(health: snapshot.health).title)
+                infoRow(L10n.tr("连通性", "Connectivity"), value: snapshot.device.model == CurtainValidationSession.model
+                    ? (snapshot.health.lastSeen == nil ? L10n.tr("尚未手动验证", "Not Manually Verified Yet") : L10n.tr("上次手动信息可达（非实时）", "Last Manual Info Reachable (Not Live)"))
+                    : (snapshot.isOnline ? L10n.tr("在线（设备信息可达）", "Online (device info reachable)") : ConnectionIssue(health: snapshot.health).title))
                 if snapshot.lanReadingsRestriction != nil {
                     if !usesCurtainControl {
                         infoRow(L10n.tr("局域网读数", "LAN Readings"), value: DeviceLANPolicy.unverifiedReadingsTitle)
@@ -25,7 +26,7 @@ struct DeviceInformation: View {
                 Divider()
                 Text(L10n.tr("当前读数", "Current Readings")).fontWeight(.medium)
                 if usesCurtainControl {
-                    infoRow(L10n.tr("实际位置", "Actual Position"), value: curtainState?.position.map { "\($0)%" } ?? L10n.tr("尚未确认", "Not Confirmed"))
+                    infoRow(L10n.tr("上次有效位置", "Last Valid Position"), value: curtainState?.position.map { "\($0)%" } ?? L10n.tr("尚未确认", "Not Confirmed"))
                     infoRow(L10n.tr("工作状态", "Motor State"), value: curtainState?.motorStatus.map {
                         $0 == 1 ? L10n.tr("已停止", "Stopped") : L10n.tr("运动中", "Moving")
                     } ?? L10n.tr("尚未确认", "Not Confirmed"))

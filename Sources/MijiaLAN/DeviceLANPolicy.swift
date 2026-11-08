@@ -7,6 +7,10 @@ public enum DeviceLANPolicy {
         model != "dooya.motor.dc1545"
     }
 
+    public static func allowsAutomaticDiscovery(for devices: [LocalDevice]) -> Bool {
+        !devices.contains { $0.model == CurtainValidationSession.model }
+    }
+
     public static func restriction(for model: String) -> String? {
         guard !allowsPropertyRequests(for: model) else { return nil }
         return L10n.tr("通用读写及桥接控制暂停；可在此设备详情中启用独立调度的日常控制", "Generic reads/writes and bridge control are paused. Daily App control can be enabled in this device’s details.")

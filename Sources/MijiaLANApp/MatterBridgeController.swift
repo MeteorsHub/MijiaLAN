@@ -154,7 +154,11 @@ final class MatterBridgeController {
         case "snapshot": break
         case "set":
             guard let did, selected.contains(where: { $0.did == did }), let value else { throw DeviceControlError.unsupported("Matter") }
-            try await MatterDevicePlan.execute(controller: controller, endpoint: did, property: property ?? "on", value: value)
+            try await DeviceCommunicationContext.$source.withValue(.matter) {
+                try await DeviceCommunicationContext.$operation.withValue(UUID()) {
+                    try await MatterDevicePlan.execute(controller: controller, endpoint: did, property: property ?? "on", value: value)
+                }
+            }
         default: throw DeviceControlError.unsupported("RPC")
         }
         return selected

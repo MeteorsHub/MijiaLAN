@@ -111,25 +111,30 @@ public enum ManualDeviceProbe {
         name: String? = nil,
         specSource: (any MiotSpecSource)? = nil,
         transport: any MiioTransport = UDPMiioTransport(),
-        port: UInt16 = MiioPacket.port
+        port: UInt16 = MiioPacket.port,
+        events: DeviceEventLog? = nil
     ) async throws -> LocalDevice {
-        let host = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard CloudTokenImport.isIPv4(host) else { throw MiioError.socket(L10n.tr("不是有效的 IPv4 地址：\(host)", "Invalid IPv4 address: \(host)")) }
-        guard let tokenData = MiioToken.parse(token) else { throw MiioError.invalidToken }
-        let client = MiioClient(host: host, token: tokenData, port: port, transport: transport, timeout: .seconds(2), retries: 1)
-        let header = try await client.handshake()
-        let info = try await client.info()
-        let spec = try? await specSource?.spec(model: info.model, specType: nil)
-        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return LocalDevice(
-            did: String(header.deviceID),
-            name: trimmedName.isEmpty ? info.model : trimmedName,
-            model: info.model,
-            host: host,
-            token: MiioToken.hex(tokenData),
-            mac: info.mac,
-            specType: spec?.type
-        )
+        return try await DeviceCommunicationContext.$source.withValue(.manualAdd) {
+            try await DeviceCommunicationContext.$operation.withValue(UUID()) {
+                let host = host.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard CloudTokenImport.isIPv4(host) else { throw MiioError.socket(L10n.tr("不是有效的 IPv4 地址：\(host)", "Invalid IPv4 address: \(host)")) }
+                guard let tokenData = MiioToken.parse(token) else { throw MiioError.invalidToken }
+                let client = MiioClient(host: host, token: tokenData, port: port, transport: transport, timeout: .seconds(2), retries: 1, events: events)
+                let header = try await client.handshake()
+                let info = try await client.info()
+                let spec = try? await specSource?.spec(model: info.model, specType: nil)
+                let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return LocalDevice(
+                    did: String(header.deviceID),
+                    name: trimmedName.isEmpty ? info.model : trimmedName,
+                    model: info.model,
+                    host: host,
+                    token: MiioToken.hex(tokenData),
+                    mac: info.mac,
+                    specType: spec?.type
+                )
+            }
+        }
     }
 }
 

@@ -18,8 +18,22 @@ public struct MiioDatagram: Equatable, Sendable {
 public protocol MiioTransport: Sendable {
     /// Sends `packet` to `host:port` and returns the first datagram that comes back from that host.
     func exchange(_ packet: Data, host: String, port: UInt16, timeout: Duration) async throws -> Data
+    /// Optional exact send boundary. Fallback transports do not claim that a packet was sent.
+    func exchangeObserved(_ packet: Data, host: String, port: UInt16, timeout: Duration, onSent: @escaping @Sendable () -> Void) async throws -> Data
     /// Sends `packet` to every IPv4 broadcast address (`rounds` times, spread over `duration`) and collects replies.
     func broadcast(_ packet: Data, port: UInt16, duration: Duration, rounds: Int) async throws -> [MiioDatagram]
+    func broadcastObserved(_ packet: Data, port: UInt16, duration: Duration, rounds: Int, onSent: @escaping @Sendable () -> Void, onReply: @escaping @Sendable (String) -> Void) async throws -> [MiioDatagram]
+}
+
+extension MiioTransport {
+    public func broadcastObserved(_ packet: Data, port: UInt16, duration: Duration, rounds: Int, onSent: @escaping @Sendable () -> Void, onReply: @escaping @Sendable (String) -> Void) async throws -> [MiioDatagram] {
+        let replies = try await broadcast(packet, port: port, duration: duration, rounds: rounds)
+        for reply in replies { onReply(reply.host) }
+        return replies
+    }
+    public func exchangeObserved(_ packet: Data, host: String, port: UInt16, timeout: Duration, onSent: @escaping @Sendable () -> Void) async throws -> Data {
+        try await exchange(packet, host: host, port: port, timeout: timeout)
+    }
 }
 
 /// BSD sockets rather than Network.framework: broadcast discovery needs `SO_BROADCAST`, and a fresh socket per
@@ -31,9 +45,13 @@ public struct UDPMiioTransport: MiioTransport {
     public init() {}
 
     public func exchange(_ packet: Data, host: String, port: UInt16, timeout: Duration) async throws -> Data {
+        try await exchangeObserved(packet, host: host, port: port, timeout: timeout, onSent: {})
+    }
+    public func exchangeObserved(_ packet: Data, host: String, port: UInt16, timeout: Duration, onSent: @escaping @Sendable () -> Void) async throws -> Data {
         try await Self.run {
             let socket = try UDPSocket()
             try socket.send(packet, to: host, port: port)
+            onSent()
             let deadline = Date().addingTimeInterval(timeout.timeInterval)
             while true {
                 let remaining = deadline.timeIntervalSinceNow
@@ -44,6 +62,9 @@ public struct UDPMiioTransport: MiioTransport {
     }
 
     public func broadcast(_ packet: Data, port: UInt16, duration: Duration, rounds: Int) async throws -> [MiioDatagram] {
+        try await broadcastObserved(packet, port: port, duration: duration, rounds: rounds, onSent: {}, onReply: { _ in })
+    }
+    public func broadcastObserved(_ packet: Data, port: UInt16, duration: Duration, rounds: Int, onSent: @escaping @Sendable () -> Void, onReply: @escaping @Sendable (String) -> Void) async throws -> [MiioDatagram] {
         try await Self.run {
             let socket = try UDPSocket(broadcast: true)
             let targets = Self.broadcastAddresses()
@@ -55,7 +76,7 @@ public struct UDPMiioTransport: MiioTransport {
                 var sentAny = false
                 for target in targets {
                     // One interface without a route must not stop the others.
-                    if (try? socket.send(packet, to: target, port: port)) != nil { sentAny = true }
+                    if (try? socket.send(packet, to: target, port: port)) != nil { sentAny = true; onSent() }
                 }
                 if round == 0 && !sentAny {
                     throw MiioError.socket(L10n.tr("无法发送局域网广播（检查「本地网络」权限和 Wi-Fi 连接）", "Could not broadcast on the LAN. Check Local Network access and your Wi-Fi connection."))
@@ -65,6 +86,7 @@ public struct UDPMiioTransport: MiioTransport {
                     let remaining = roundEnd.timeIntervalSinceNow
                     guard remaining > 0, let datagram = try socket.receive(timeout: remaining) else { break }
                     replies.append(datagram)
+                    onReply(datagram.host)
                 }
             }
             return replies

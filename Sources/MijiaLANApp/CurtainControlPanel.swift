@@ -11,8 +11,21 @@ struct CurtainControlPanel: View {
     private var state: CurtainControlSession.State? { controller.states[device.did] }
     private var enabled: Bool { controller.includes(device.did) }
     private var busy: Bool { controller.isWorking(device.did) }
-    private var canMove: Bool { enabled && !busy && state?.phase == .ready && state?.position != nil }
+    private var canMove: Bool { enabled && !busy && (state == nil || state?.phase == .ready) }
     private var target: Int? { draft.target }
+    private var stageTitle: String {
+        if busy, state == nil || state?.stage == .idle { return L10n.tr("准备本次手动请求", "Preparing This Manual Request") }
+        return switch state?.stage {
+        case .requested, .waiting: L10n.tr("准备发送", "Preparing request")
+        case .hello: L10n.tr("阶段：握手", "Stage: Handshake")
+        case .info: L10n.tr("阶段：身份与固件检查", "Stage: Identity and firmware")
+        case .preflight: L10n.tr("阶段：读取 / 写前检查", "Stage: Reading / preflight")
+        case .write: L10n.tr("阶段：单次写入", "Stage: Single write")
+        case .confirmation: L10n.tr("阶段：操作后有限回读", "Stage: Bounded post-write readback")
+        case .finished: L10n.tr("本次请求结束；空闲不自动更新", "Request finished; no idle updates")
+        default: L10n.tr("等待手动操作；未发包", "Awaiting manual action; no packets")
+        }
+    }
     private func commit(_ value: Int) {
         guard canMove, (0...100).contains(value) else { return }
         draft.submitted()
@@ -25,10 +38,16 @@ struct CurtainControlPanel: View {
                 .toggleStyle(.switch).controlSize(.small)
             if enabled {
                 HStack {
-                    Text(L10n.tr("实际位置", "Actual Position"))
+                    Text(L10n.tr("上次读取位置", "Last Read Position"))
+                    Text("C\(controller.events.alias(for: device.did))").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Text(state?.position.map { "\($0)%" } ?? "—").monospacedDigit()
                     if busy { ProgressView().controlSize(.small) }
+                }
+                Text(stageTitle).font(.caption).foregroundStyle(.secondary)
+                if state?.position == nil, let old = state?.lastKnownPosition {
+                    Text(L10n.tr("上次有效位置 \(old)%（已过期，不作为当前状态）", "Last valid position \(old)% (stale, not current state)"))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if let status = state?.motorStatus {
                     Text(status == 1 ? L10n.tr("已停止", "Stopped") : L10n.tr("运动中", "Moving"))
@@ -53,24 +72,22 @@ struct CurtainControlPanel: View {
                     Button(L10n.tr("全开", "Open")) { draft.discard(); controller.send(device.did, .open) }.disabled(!canMove)
                     Button(L10n.tr("全关", "Close")) { draft.discard(); controller.send(device.did, .close) }.disabled(!canMove)
                     Button(L10n.tr("停止", "Stop")) { draft.discard(); controller.send(device.did, .stop) }
-                        .disabled(state?.canStop != true || controller.stopping.contains(device.did))
+                        .disabled(controller.stopping.contains(device.did) || (busy && state?.canStop != true))
                         .keyboardShortcut(".", modifiers: [.command])
                     Spacer()
                 }
                 if let command = state?.command, !((state?.confirmed) ?? false), let goal = command.target {
-                    Text(L10n.tr("目标 \(goal)% · 等待实际位置确认", "Target \(goal)% · Awaiting actual position"))
+                    Text(busy ? L10n.tr("目标 \(goal)% · 本次请求正在确认", "Target \(goal)% · Confirming this request") : L10n.tr("上次目标 \(goal)% · 结果未确认，无自动请求", "Previous target \(goal)% · Unconfirmed; no automatic requests"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
-                    Button(L10n.tr("仅回读确认", "Read to Confirm")) { controller.read(device.did) }
-                        .disabled(busy || state?.canStop != true)
-                    Button(L10n.tr("重新连接", "Reconnect")) { controller.reconnect(device) }
+                    Button(L10n.tr("手动读取一次", "Read Once")) { controller.read(device.did) }
                         .disabled(busy)
                 }
                 if let message = state?.message { Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                 if let error = controller.errors[device.did] { Text(error).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             }
-            Text(L10n.tr("选择会保存，重启后自动读取状态。0% 全遮住，100% 全拉开。拖动只预览，松手或确认后发送一次；停止优先发送。HomeKit/Matter 卷帘控制尚未开放。", "Your selection is saved; startup reads state only. 0% closed, 100% open. Drag to preview, release or confirm to send once; Stop has priority. HomeKit/Matter curtain control is not enabled."))
+            Text(L10n.tr("选择仅保存偏好，启动和空闲不通信。点击读取或控制才执行一次有限请求；没有自动重试或重连。0% 全遮住，100% 全拉开。HomeKit/Matter 卷帘控制未开放。", "Selection saves a preference only. Startup and idle are silent. Read or control explicitly to run one bounded operation; no automatic retry/reconnect. 0% closed, 100% open. HomeKit/Matter curtain control is disabled."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .onChange(of: typing) { _, value in draft.focus(value) }

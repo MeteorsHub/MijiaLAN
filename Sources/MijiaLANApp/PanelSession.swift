@@ -10,6 +10,7 @@ enum ControlCenterRoute: Hashable {
     case settingsDevices
     case settingsImport
     case settingsManualAdd
+    case settingsDiagnostics
 
     var depth: Int {
         switch self {
@@ -29,6 +30,7 @@ enum ControlCenterRoute: Hashable {
         case .settingsDevices: "devices"
         case .settingsImport: "import"
         case .settingsManualAdd: "manual"
+        case .settingsDiagnostics: "diagnostics"
         }
     }
 }

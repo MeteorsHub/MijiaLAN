@@ -172,6 +172,9 @@ public final class DeviceController {
     }
 
     public func retry(did: String) async {
+        if DeviceCommunicationContext.source == nil {
+            return await DeviceCommunicationContext.$source.withValue(.manualRead) { await retry(did: did) }
+        }
         guard snapshots[did] != nil else { return }
         observeHealthIfNeeded()
         await api.retryDevice(did: did)
@@ -249,6 +252,9 @@ public final class DeviceController {
     }
 
     private func readAndCommit(did: String, device: LocalDevice, capabilities: [DeviceCapability]) async {
+        if DeviceCommunicationContext.operation == nil {
+            return await DeviceCommunicationContext.$operation.withValue(UUID()) { await readAndCommit(did: did, device: device, capabilities: capabilities) }
+        }
         guard !capabilities.isEmpty else { return }
         let readings = await api.readCapabilities(did: did, capabilities: capabilities)
         let health = await api.currentHealth()
@@ -283,6 +289,11 @@ public final class DeviceController {
                         } catch { for reply in pending.replies { reply.resume(throwing: error) } }
                     }
                 }
+            }
+        }
+        if DeviceCommunicationContext.source == nil {
+            return try await DeviceCommunicationContext.$source.withValue(.userControl) {
+                try await DeviceCommunicationContext.$operation.withValue(UUID()) { try await execute(did: did, command, coalesce: coalesce) }
             }
         }
         let isAction = command.hasAction

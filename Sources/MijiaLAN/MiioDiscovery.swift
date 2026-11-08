@@ -16,10 +16,30 @@ public enum MiioDiscovery {
     /// Broadcasts the hello three times over `duration` and returns one entry per device ID, sorted by IP.
     public static func discover(
         duration: Duration = .seconds(3),
-        transport: any MiioTransport = UDPMiioTransport()
+        transport: any MiioTransport = UDPMiioTransport(),
+        events: DeviceEventLog? = nil
     ) async throws -> [MiioDiscoveredDevice] {
-        let replies = try await transport.broadcast(MiioPacket.hello, port: MiioPacket.port, duration: duration, rounds: 3)
-        return devices(from: replies)
+        let operation = UUID(), start = ContinuousClock.now
+        events?.record("application", operation: operation, source: .discovery, stage: .hello, outcome: .attempt, kind: .broadcast)
+        do {
+            let replies = try await transport.broadcastObserved(MiioPacket.hello, port: MiioPacket.port, duration: duration, rounds: 3, onSent: {
+                events?.record("application", operation: operation, source: .discovery, stage: .hello, outcome: .sent, kind: .broadcast)
+            }, onReply: { host in
+                guard let events else { return }
+                let c = start.duration(to: .now).components
+                events.record(events.identifier(forHost: host), operation: operation, source: .discovery, stage: .hello, outcome: .received,
+                              kind: .broadcast, elapsedMilliseconds: c.seconds * 1_000 + c.attoseconds / 1_000_000_000_000_000)
+            })
+            let found = devices(from: replies)
+            for device in found {
+                if let events { events.record(events.identifier(forHost: device.host), operation: operation, source: .discovery, stage: .finished, outcome: .validated, kind: .broadcast) }
+            }
+            return found
+        } catch {
+            events?.record("application", operation: operation, source: .discovery, stage: .hello, outcome: .paused,
+                           reason: DeviceEventLog.reason(error), kind: .broadcast)
+            throw error
+        }
     }
 
     static func devices(from replies: [MiioDatagram]) -> [MiioDiscoveredDevice] {

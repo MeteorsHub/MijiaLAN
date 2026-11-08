@@ -10,7 +10,7 @@ private actor NoCurtainTraffic: MiioTransport {
 }
 
 @MainActor struct CurtainControlPreferenceTests {
-    @Test("Per-device daily opt-ins persist, restore read-only startup, and are not cleared by shutdown")
+    @Test("Per-device daily opt-ins persist, restore without startup communication, and are not cleared by shutdown")
     func preferences() async throws {
         let suite = "curtain-preferences-" + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -20,19 +20,22 @@ private actor NoCurtainTraffic: MiioTransport {
         let config = LocalHomeConfig(devices: [device]), network = NoCurtainTraffic()
         let api = LANMiotAPI(config: { config }, transport: network)
         let controller = CurtainControlController(api: api, defaults: defaults)
-        // Stop before transport for this preference test; protocol startup is tested against fake devices elsewhere.
-        controller.prepare = { throw CancellationError() }
+        var prepareCalls = 0
+        controller.prepare = { prepareCalls += 1 }
         #expect(!controller.includes(device.did))
         controller.setEnabled(device, true)
         #expect(controller.includes(device.did))
         #expect(defaults.stringArray(forKey: CurtainControlController.preferenceKey) == [device.did])
         controller.shutdown()
         let restored = CurtainControlController(api: api, defaults: defaults)
-        restored.prepare = { throw CancellationError() }
+        restored.prepare = { prepareCalls += 1 }
         #expect(restored.includes(device.did))
         restored.reconcile(config.devices)
-        for _ in 0..<100 where restored.connecting.contains(device.did) { await Task.yield() }
+        // Exceeds the removed 30-second loop; uses only the in-memory transport.
+        try await Task.sleep(for: .seconds(31))
         #expect(await network.count == 0)
+        #expect(prepareCalls == 0)
+        #expect(!restored.isWorking(device.did))
         restored.setEnabled(device, false)
         #expect(!restored.includes(device.did))
         #expect(defaults.stringArray(forKey: CurtainControlController.preferenceKey) == [])

@@ -6,7 +6,7 @@ Control Mijia Wi-Fi devices from your Mac menu bar and bring them into Apple Hom
 
 MijiaLAN talks directly to devices over your local network using miIO / MIoT. Add a device with an existing token, or scan a QR code with Xiaomi Home to import credentials from Xiaomi once. Daily control then uses the LAN. Your Mac also acts as a HomeKit bridge for iPhone, Apple Watch, HomePod and Siri.
 
-> `dooya.motor.dc1545` daily App control is available per device: actual position, 0–100% targets, Open, Close and prioritized Stop. Full travel and Stop still require hardware acceptance; HomeKit/Matter control remains disabled. See the [acceptance checklist](docs/curtain-daily-control.md).
+> `dooya.motor.dc1545` preferences persist without startup or idle requests. Explicit position/Open/Close/Stop operations retain preflight validation and bounded readback. Settings provides private, rolling logs for all App-managed LAN device communication. See [silent mode and diagnostics](docs/device-diagnostics-and-curtain-silence.md).
 
 ## Features
 
