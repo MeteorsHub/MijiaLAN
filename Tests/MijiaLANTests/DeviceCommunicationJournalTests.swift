@@ -176,6 +176,8 @@ struct DeviceCommunicationJournalTests {
         let journal = DeviceEventLog(fileURL: file, maxEvents: 8, scope: .offlineTest, fileLimit: 2_048)
         journal.record("private-identifier", source: .manualPosition, stage: .write, outcome: .acknowledged, target: 64)
         journal.flush()
+        // Deliberately prime the exact URL's resource cache before repeated appends/rotations.
+        _ = try file.resourceValues(forKeys: [.fileSizeKey])
         // A persisted event from a prior day is not removed by an age cutoff.
         let criticalFile = file.appendingPathExtension("important")
         let bytes = try Data(contentsOf: criticalFile)
@@ -188,10 +190,36 @@ struct DeviceCommunicationJournalTests {
         #expect(journal.snapshot().count == 8)
         let reopened = DeviceEventLog(fileURL: file, maxEvents: 8, scope: .offlineTest, fileLimit: 2_048)
         #expect(try decode(reopened.exportData()).contains { $0.source == .manualPosition && $0.target == 64 && $0.timestamp < Date().addingTimeInterval(-86_400) })
-        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey])
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
         #expect(files.count <= 8)
-        for url in files { #expect(try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0 <= 2_048) }
+        for url in files {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let size = try #require((attributes[.size] as? NSNumber)?.uint64Value)
+            #expect(size <= 2_048)
+            #expect(try UInt64(Data(contentsOf: url).count) == size)
+        }
     }
+    @Test("A file grown past the load bound is rejected even when the reused URL cached its earlier small size")
+    func freshSizeBeforeLoading() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("events.jsonl")
+        let journal = DeviceEventLog(fileURL: file, scope: .offlineTest)
+        // Background traffic does not create a separate important file for this load-bound test.
+        journal.record("private-key", source: .backgroundPoll, stage: .preflight, outcome: .received)
+        journal.flush()
+        let initialSize = try #require(file.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        #expect(initialSize < 4_195_329)
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.truncate(atOffset: 4_195_329)
+        try handle.close()
+        let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        #expect((attributes[.size] as? NSNumber)?.uint64Value == 4_195_329)
+        let reopened = DeviceEventLog(fileURL: file, scope: .offlineTest)
+        #expect(reopened.snapshot().isEmpty)
+        #expect(reopened.exportData().isEmpty)
+    }
+
     @Test("A background failure retains its request/sent context in the critical archive after ordinary traffic rotates")
     func backgroundFailureContext() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

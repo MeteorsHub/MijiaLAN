@@ -180,16 +180,25 @@ public final class DeviceEventLog: @unchecked Sendable {
         (1...3).reversed().map { url.appendingPathExtension(String($0)) } + [url]
     }
     private static func load(_ url: URL) -> [Event] {
-        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 4_195_328,
-              let data = try? Data(contentsOf: url) else { return [] }
+        guard let size = try? freshFileSize(url), size <= 4_195_328,
+              let file = try? FileHandle(forReadingFrom: url) else { return [] }
+        defer { try? file.close() }
+        // Bound the read as well: the file may grow after the fresh size check.
+        guard let data = try? file.read(upToCount: 4_195_329), data.count <= 4_195_328 else { return [] }
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
         return data.split(separator: 10).compactMap { try? decoder.decode(Event.self, from: Data($0)) }
+    }
+    /// URL resource values can cache the pre-append size on macOS, including across rotation.
+    private static func freshFileSize(_ url: URL) throws -> UInt64 {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard let size = attributes[.size] as? NSNumber else { throw CocoaError(.fileReadUnknown) }
+        return size.uint64Value
     }
     private static func append(_ data: Data, to url: URL, limit: Int) throws {
         let fm = FileManager.default
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        if size + data.count > limit {
+        let size = fm.fileExists(atPath: url.path) ? try freshFileSize(url) : 0
+        if size > UInt64(limit) || UInt64(data.count) > UInt64(limit) - size {
             let oldest = url.appendingPathExtension("3")
             if fm.fileExists(atPath: oldest.path) { try fm.removeItem(at: oldest) }
             for index in (0...2).reversed() {

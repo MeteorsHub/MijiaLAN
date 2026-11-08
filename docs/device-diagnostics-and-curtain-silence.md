@@ -102,3 +102,16 @@ MIJIALAN_UI_PREVIEW=1 MIJIALAN_EPHEMERAL=1 MIJIALAN_PREVIEW_READBACK_ERROR=1 bui
 本轮使用实际 LAN API、客户端、会话、日志和调度器源代码执行隔离测试；Linux 的 UDP、加解密帧和部分日志基础设施使用替身，不能代表真实协议/密码学或新版本实机通过。新增覆盖启动/空闲零包、单次控制、无重试、错误位置不可用、阶段/原因、全 14 两种读取形态、应答不能单独证明动作、日志跨重开/跨天、滚动上限、关键上下文和隐私，以及普通设备/旧协议/动作/发现的日志路径。
 
 原生 App 控制器、模拟传输和两项 App 测试可在隔离包中编译；Linux Swift 6.1.3 的 Observation 链接问题使 App 测试运行仍留待 macOS。完整 macOS 构建、SwiftUI 页面/导出面板、31 秒空闲回归及原生模拟复测需要本地执行。本轮没有家庭设备通信或新的实机成功证据。
+
+### macOS 文件大小缓存修复
+
+本地对 6f0eccb 的 App/CLI 编译通过，Swift 212 项中 211 项通过，31 秒静默及失败界面回归通过。唯一失败是滚动文件的 2048 字节上限；独立 Foundation 对照确认，同一 URL 的 `resourceValues(.fileSizeKey)` 在追加后可能保留旧大小。
+
+后续修复中，追加和加载均改用 `FileManager.attributesOfItem(atPath:)[.size]` 获取新鲜大小；元数据读取失败不再被当作空文件继续追加。加载另用有界 FileHandle 读取，处理检查后文件增长。没有提高任何大小阈值。滚动回归主动预热 URL 缓存，再用实际文件系统大小及读取内容长度交叉断言；另验证小文件增大超过加载上限后，即使重用旧 URL 也不能加载。
+
+该修复的云端 76 项离线测试通过；macOS 缓存行为仍需本地定向及全量复跑，不追加实机设备请求：
+
+```sh
+env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter DeviceCommunicationJournalTests --force-resolved-versions
+env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer bash scripts/validate_macos.sh
+```
