@@ -73,7 +73,7 @@ private actor InteractionTransport: MiioTransport {
         let controller = CurtainControlController(api: api, defaults: defaults, makeSession: {
             try await api.beginCurtainControl(did: $0, scheduler: scheduler, clock: clock.clock)
         })
-        controller.reconcile([device]); controller.read(did)
+        controller.reconcile([device]); controller.setEnabled(device, true); controller.read(did)
         try await idle(controller)
         #expect(controller.states[did]?.position == 29)
         return Fixture(controller: controller, api: api, transport: transport, defaults: defaults, suite: suite)

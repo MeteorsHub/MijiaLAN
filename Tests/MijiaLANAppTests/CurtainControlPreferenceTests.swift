@@ -39,13 +39,16 @@ private actor CountedPreview: MiioTransport {
         devices.refreshCurtains = { [weak curtains] in await curtains?.pollConfigured() }
         return (curtains, devices, api)
     }
-    @Test("Default reads and controls ignore a legacy disabled preference; polling intervals persist")
+    @Test("Control opt-in restores legacy preference, does not itself communicate, and intervals persist")
     func preferences() async throws {
         let suite = "curtain-preferences-" + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set([String](), forKey: "curtain.daily.enabled")
         let network = CountedPreview(), (curtains, devices, api) = make(defaults, transport: network)
+        #expect(!curtains.includes(device().did))
+        #expect(!curtains.send(device().did, .position(64)))
+        curtains.setEnabled(device(), true)
         #expect(await network.count == 0)
         await devices.refreshNow()
         #expect(curtains.states[device().did]?.position == 29)
@@ -59,9 +62,10 @@ private actor CountedPreview: MiioTransport {
         let deadline = Date().addingTimeInterval(3)
         while curtains.isWorking(device().did), Date() < deadline { try await Task.sleep(for: .milliseconds(2)) }
         #expect(curtains.states[device().did]?.position == 64)
-        #expect(defaults.stringArray(forKey: "curtain.daily.enabled") == [])
+        #expect(defaults.stringArray(forKey: "curtain.daily.enabled") == [device().did])
         curtains.shutdown(); devices.shutdown(); await api.shutdown()
         let next = CountedPreview(), (restored, restoredDevices, restoredAPI) = make(defaults, transport: next)
+        #expect(restored.includes(device().did))
         #expect(restoredDevices.pollingIntervals == .init(foregroundSeconds: 8, backgroundSeconds: 45))
         #expect(await next.count == 0)
         await restoredDevices.refreshNow()
@@ -74,6 +78,7 @@ private actor CountedPreview: MiioTransport {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let network = CountedPreview(failReadback: true), (curtains, devices, api) = make(defaults, transport: network)
+        curtains.setEnabled(device(), true)
         curtains.send(device().did, .position(64))
         for _ in 0..<5_000 { if !curtains.isWorking(device().did) { break }; await Task.yield() }
         #expect(curtains.pausedPolling[device().did] == .propertyError)

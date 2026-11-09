@@ -1,5 +1,9 @@
 import MijiaCore
+#if canImport(Darwin)
 import Darwin
+#else
+import Glibc
+#endif
 import Foundation
 
 public struct MiioDatagram: Equatable, Sendable {
@@ -16,16 +20,31 @@ public struct MiioDatagram: Equatable, Sendable {
 
 /// The UDP seam, so the client and discovery can be tested against an in-memory device.
 public protocol MiioTransport: Sendable {
+    func sessionTransport(policy: MiioCommunicationPolicy.Socket) -> any MiioTransport
+    func closeSession(observe: @escaping @Sendable (MiioTransportObservation) -> Void) async
+    func exchangeValidated(_ packet: Data, host: String, port: UInt16, timeout: Duration, observe: @escaping @Sendable (MiioTransportObservation) -> Void, accept: @escaping @Sendable (Data) -> Bool) async throws -> Data
     /// Sends `packet` to `host:port` and returns the first datagram that comes back from that host.
     func exchange(_ packet: Data, host: String, port: UInt16, timeout: Duration) async throws -> Data
     /// Optional exact send boundary. Fallback transports do not claim that a packet was sent.
     func exchangeObserved(_ packet: Data, host: String, port: UInt16, timeout: Duration, onSent: @escaping @Sendable () -> Void) async throws -> Data
+    /// Optional non-sensitive socket boundaries. The fallback leaves socket/port unknown.
+    func exchangeDiagnosed(_ packet: Data, host: String, port: UInt16, timeout: Duration, observe: @escaping @Sendable (MiioTransportObservation) -> Void) async throws -> Data
     /// Sends `packet` to every IPv4 broadcast address (`rounds` times, spread over `duration`) and collects replies.
     func broadcast(_ packet: Data, port: UInt16, duration: Duration, rounds: Int) async throws -> [MiioDatagram]
     func broadcastObserved(_ packet: Data, port: UInt16, duration: Duration, rounds: Int, onSent: @escaping @Sendable () -> Void, onReply: @escaping @Sendable (String) -> Void) async throws -> [MiioDatagram]
 }
 
 extension MiioTransport {
+    public func sessionTransport(policy: MiioCommunicationPolicy.Socket) -> any MiioTransport { self }
+    public func closeSession(observe: @escaping @Sendable (MiioTransportObservation) -> Void) async {}
+    public func exchangeValidated(_ packet: Data, host: String, port: UInt16, timeout: Duration, observe: @escaping @Sendable (MiioTransportObservation) -> Void, accept: @escaping @Sendable (Data) -> Bool) async throws -> Data {
+        let reply = try await exchangeDiagnosed(packet, host: host, port: port, timeout: timeout, observe: observe)
+        guard accept(reply) else { throw MiioError.badResponse("Response identity mismatch") }
+        return reply
+    }
+    public func exchangeDiagnosed(_ packet: Data, host: String, port: UInt16, timeout: Duration, observe: @escaping @Sendable (MiioTransportObservation) -> Void) async throws -> Data {
+        try await exchangeObserved(packet, host: host, port: port, timeout: timeout, onSent: { observe(.init(.sent)) })
+    }
     public func broadcastObserved(_ packet: Data, port: UInt16, duration: Duration, rounds: Int, onSent: @escaping @Sendable () -> Void, onReply: @escaping @Sendable (String) -> Void) async throws -> [MiioDatagram] {
         let replies = try await broadcast(packet, port: port, duration: duration, rounds: rounds)
         for reply in replies { onReply(reply.host) }
@@ -43,22 +62,31 @@ public struct UDPMiioTransport: MiioTransport {
     private static let queue = DispatchQueue(label: "MijiaLAN.udp", qos: .userInitiated, attributes: .concurrent)
 
     public init() {}
+    public func sessionTransport(policy: MiioCommunicationPolicy.Socket) -> any MiioTransport {
+        policy == .stable ? StableMiioTransport() : self
+    }
+    public func exchangeValidated(_ packet: Data, host: String, port: UInt16, timeout: Duration, observe: @escaping @Sendable (MiioTransportObservation) -> Void, accept: @escaping @Sendable (Data) -> Bool) async throws -> Data {
+        let cancellation = SocketCancellation()
+        return try await withTaskCancellationHandler {
+            try await Self.run {
+                let socket = try UDPSocket(), id = UUID()
+                observe(.init(.opened, socket: id))
+                defer { socket.invalidate(); observe(.init(.closed, socket: id, reason: cancellation.cancelled ? .cancelled : .configuration)) }
+                return try SocketExchange.run(socket: socket, identity: id, session: nil, packet: packet, host: host, port: port, timeout: timeout, observe: observe, accept: accept, cancelled: { cancellation.cancelled })
+            }
+        } onCancel: { cancellation.cancel() }
+    }
 
     public func exchange(_ packet: Data, host: String, port: UInt16, timeout: Duration) async throws -> Data {
         try await exchangeObserved(packet, host: host, port: port, timeout: timeout, onSent: {})
     }
     public func exchangeObserved(_ packet: Data, host: String, port: UInt16, timeout: Duration, onSent: @escaping @Sendable () -> Void) async throws -> Data {
-        try await Self.run {
-            let socket = try UDPSocket()
-            try socket.send(packet, to: host, port: port)
-            onSent()
-            let deadline = Date().addingTimeInterval(timeout.timeInterval)
-            while true {
-                let remaining = deadline.timeIntervalSinceNow
-                guard remaining > 0, let datagram = try socket.receive(timeout: remaining) else { throw MiioError.timeout }
-                if datagram.host == host { return datagram.data }
-            }
+        try await exchangeDiagnosed(packet, host: host, port: port, timeout: timeout) { event in
+            if case .sent = event.boundary { onSent() }
         }
+    }
+    public func exchangeDiagnosed(_ packet: Data, host: String, port: UInt16, timeout: Duration, observe: @escaping @Sendable (MiioTransportObservation) -> Void) async throws -> Data {
+        try await exchangeValidated(packet, host: host, port: port, timeout: timeout, observe: observe, accept: { _ in true })
     }
 
     public func broadcast(_ packet: Data, port: UInt16, duration: Duration, rounds: Int) async throws -> [MiioDatagram] {
@@ -103,9 +131,14 @@ public struct UDPMiioTransport: MiioTransport {
             for pointer in sequence(first: first, next: { $0.pointee.ifa_next }) {
                 let entry = pointer.pointee
                 let flags = Int32(entry.ifa_flags)
-                guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0, flags & IFF_BROADCAST != 0,
-                      let address = entry.ifa_addr, address.pointee.sa_family == sa_family_t(AF_INET),
-                      let broadcast = entry.ifa_dstaddr, let text = UDPSocket.hostString(broadcast) else { continue }
+                guard flags & Int32(IFF_UP) != 0, flags & Int32(IFF_LOOPBACK) == 0, flags & Int32(IFF_BROADCAST) != 0,
+                      let address = entry.ifa_addr, address.pointee.sa_family == sa_family_t(AF_INET) else { continue }
+                #if canImport(Darwin)
+                let broadcast = entry.ifa_dstaddr
+                #else
+                let broadcast = entry.ifa_ifu.ifu_broadaddr
+                #endif
+                guard let broadcast, let text = UDPSocket.hostString(broadcast) else { continue }
                 if !result.contains(text) { result.append(text) }
             }
         }
@@ -124,31 +157,38 @@ public struct UDPMiioTransport: MiioTransport {
 
 /// A plain file descriptor; the calls it makes are safe from any thread.
 final class UDPSocket: @unchecked Sendable {
-    private let fd: Int32
+    private var fd: Int32
 
-    init(broadcast: Bool = false, bindHost: String? = nil, bindPort: UInt16 = 0) throws {
+    init(broadcast: Bool = false, bindHost: String? = nil, bindPort: UInt16 = 0, reuseAddress: Bool = true) throws {
+        #if canImport(Darwin)
         fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        #else
+        fd = socket(AF_INET, Int32(SOCK_DGRAM.rawValue), Int32(IPPROTO_UDP))
+        #endif
         guard fd >= 0 else { throw MiioError.socket(Self.errnoText()) }
         if broadcast {
             var on: Int32 = 1
             setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, socklen_t(MemoryLayout<Int32>.size))
         }
         if let bindHost {
-            var address = try Self.address(bindHost, port: bindPort)
+            var address: sockaddr_in
+            do { address = try Self.address(bindHost, port: bindPort) }
+            catch { close(fd); fd = -1; throw error }
             var reuse: Int32 = 1
-            setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+            if reuseAddress { setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size)) }
             let result = withUnsafePointer(to: &address) {
                 $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
             }
             guard result == 0 else {
                 let message = Self.errnoText()
-                close(fd)
+                close(fd); fd = -1
                 throw MiioError.socket(message)
             }
         }
     }
 
-    deinit { close(fd) }
+    deinit { if fd >= 0 { close(fd) } }
+    func invalidate() { if fd >= 0 { close(fd); fd = -1 } }
 
     /// The port this socket is bound to (tests bind port 0 and ask).
     var localPort: UInt16 {
@@ -200,7 +240,9 @@ final class UDPSocket: @unchecked Sendable {
 
     static func address(_ host: String, port: UInt16) throws -> sockaddr_in {
         var address = sockaddr_in()
+        #if canImport(Darwin)
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        #endif
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = port.bigEndian
         guard inet_pton(AF_INET, host, &address.sin_addr) == 1 else { throw MiioError.socket(L10n.tr("不是有效的 IPv4 地址：\(host)", "Invalid IPv4 address: \(host)")) }

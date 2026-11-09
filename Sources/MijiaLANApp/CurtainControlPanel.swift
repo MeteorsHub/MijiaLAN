@@ -11,15 +11,16 @@ struct CurtainControlPanel: View {
     @FocusState private var typing: Bool
     private var state: CurtainControlSession.State? { controller.states[device.did] }
     private var busy: Bool { controller.isWorking(device.did) }
+    private var enabled: Bool { controller.includes(device.did) }
     // A poll (including its failure) must never disable a native slider halfway through its gesture.
-    private var canMove: Bool { draft.dragging || (!busy && controller.pausedPolling[device.did] == nil) }
+    private var canMove: Bool { enabled && (draft.dragging || (!busy && controller.pausedPolling[device.did] == nil)) }
     private var target: Int? { draft.target }
     private var stageTitle: String {
         if controller.submissions[device.did]?.phase == .waiting { return L10n.tr("已提交，等待当前读取完成", "Submitted; waiting for the current read") }
         if !busy {
             if controller.pausedPolling[device.did] != nil { return L10n.tr("自动读取已暂停", "Auto reads paused") }
             if controller.submissions[device.did]?.phase == .succeeded { return L10n.tr("上次用户请求已完成", "Last user request completed") }
-            return L10n.tr("状态自动刷新", "State updates automatically")
+            return enabled ? L10n.tr("状态自动刷新", "State updates automatically") : L10n.tr("日常控制未启用；可手动读取一次", "Daily control is off; Read Once remains available")
         }
         if busy, state == nil || state?.stage == .idle { return L10n.tr("准备读取或控制", "Preparing Read or Control") }
         return switch state?.stage {
@@ -38,6 +39,9 @@ struct CurtainControlPanel: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Toggle(L10n.tr("启用此卷帘的日常控制", "Enable Daily Control for This Curtain"), isOn: Binding(
+                get: { enabled }, set: { controller.setEnabled(device, $0) }))
+                .toggleStyle(.switch).controlSize(.small)
             Group {
                 HStack {
                     Text(L10n.tr("上次读取位置", "Last Read Position"))
@@ -76,7 +80,7 @@ struct CurtainControlPanel: View {
                     Button(L10n.tr("全开", "Open")) { if controller.send(device.did, .open) { draft.discard() } }.disabled(!canMove)
                     Button(L10n.tr("全关", "Close")) { if controller.send(device.did, .close) { draft.discard() } }.disabled(!canMove)
                     Button(L10n.tr("停止", "Stop")) { if controller.send(device.did, .stop) { draft.discard() } }
-                        .disabled(controller.stopping.contains(device.did) || (busy && state?.canStop != true))
+                        .disabled(!enabled || controller.stopping.contains(device.did) || (busy && state?.canStop != true))
                         .keyboardShortcut(".", modifiers: [.command])
                     Spacer()
                 }
@@ -97,7 +101,7 @@ struct CurtainControlPanel: View {
                 if let message = state?.message { Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                 if let error = controller.errors[device.did] { Text(error).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             }
-            Text(L10n.tr("位置、全开、全关和停止可直接使用，发送前仍校验身份和状态。普通刷新不打断编辑；已在途读取结束后执行提交的请求，失败会明确提示。异常暂停自动读取，需手动恢复。写入仅一次并有限回读。0% 全遮住，100% 全拉开。HomeKit/Matter 卷帘控制未开放。", "Position, Open, Close and Stop are available directly, with identity and state validation. Polls do not interrupt editing. A submitted request waits for an in-flight read; failures are reported explicitly. Errors pause automatic reads until manual recovery. Writes are single-shot with bounded readback. 0% closed, 100% open. HomeKit/Matter curtain control is disabled."))
+            Text(L10n.tr("开启日常控制后才允许位置、全开、全关和停止，并加入统一自动读取。开关本身不发指令，也不解除已有暂停。发送前仍校验身份和状态。普通刷新不打断编辑；已在途读取结束后执行提交的请求，失败会明确提示。异常暂停自动读取，需手动恢复。写入仅一次并有限回读。0% 全遮住，100% 全拉开。HomeKit/Matter 卷帘控制未开放。", "Enabling daily control permits Position, Open, Close and Stop and joins shared polling. The switch sends no request and never clears an existing pause. Identity and state are validated before sending. Polls do not interrupt editing. A submitted request waits for an in-flight read; failures are reported explicitly. Errors pause automatic reads until manual recovery. Writes are single-shot with bounded readback. 0% closed, 100% open. HomeKit/Matter curtain control is disabled."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .onChange(of: typing) { _, value in

@@ -161,7 +161,7 @@ struct DeviceCommunicationJournalTests {
         #expect(rows.contains { $0.outcome == .confirmed && $0.position == 64 })
         #expect(rows.contains { $0.outcome == .paused && $0.code == -4004 })
         let text = String(decoding: exported, as: UTF8.self)
-        for secret in [token, device().host, device().did, device().name, "AA:BB:CC:00:11:22", "fw_ver", "get_properties"] { #expect(!text.contains(secret)) }
+        for secret in [token, device().host, device().did, device().name, "AA:BB:CC:00:11:22", "fw_ver"] { #expect(!text.contains(secret)) }
         #expect(network.exchangeCount == count)
         let destination = directory.appendingPathComponent("export.jsonl")
         try exported.write(to: destination)

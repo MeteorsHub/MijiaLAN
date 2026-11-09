@@ -36,6 +36,8 @@ struct MijiaLANCommand {
     static func run(_ args: [String], port: UInt16) async throws {
         guard let command = args.first else { return usage() }
         switch command {
+        case "curtain-experiment":
+            try await CurtainExperiment.run(Array(args.dropFirst()), port: port)
         case "diagnose":
             guard args.count == 1 else { throw MiioError.badResponse("Usage: mijia-lan diagnose < private-config.json") }
             try await ReadOnlyDiagnostics.run(FileHandle.standardInput.readDataToEndOfFile(), port: port)

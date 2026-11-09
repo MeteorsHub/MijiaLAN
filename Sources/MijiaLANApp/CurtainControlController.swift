@@ -33,15 +33,26 @@ final class CurtainControlController {
     private(set) var stopping: Set<String> = []
     private(set) var submissions: [String: Submission] = [:]
     private(set) var pausedPolling: [String: DeviceEventLog.Reason]
+    private(set) var enabledIDs: Set<String>
+    static let preferenceKey = "curtain.daily.enabled"
     static let pausedKey = "curtain.polling.paused"
 
     init(api: LANMiotAPI, defaults: UserDefaults, makeSession: (@Sendable (String) async throws -> CurtainControlSession)? = nil) {
         self.api = api; self.defaults = defaults; events = api.curtainEvents
         self.makeSession = makeSession ?? { try await api.beginCurtainControl(did: $0) }
-        // Legacy curtain.daily.enabled is deliberately ignored, including a saved empty/false choice.
+        enabledIDs = Set(defaults.stringArray(forKey: Self.preferenceKey) ?? [])
         pausedPolling = (defaults.dictionary(forKey: Self.pausedKey) as? [String: String] ?? [:]).compactMapValues(DeviceEventLog.Reason.init(rawValue:))
     }
     func isWorking(_ did: String) -> Bool { working.contains(did) }
+    func includes(_ did: String) -> Bool { enabledIDs.contains(did) }
+    func setEnabled(_ device: LocalDevice, _ enabled: Bool) {
+        if enabled { enabledIDs.insert(device.did) } else { enabledIDs.remove(device.did) }
+        defaults.set(enabledIDs.sorted(), forKey: Self.preferenceKey)
+        // The policy is also recorded by the actual client; preference entries retain the opt-in boundary.
+        events.record(device.did, source: .preference, stage: .idle, outcome: .noPacket, reason: .configuration, valueType: .boolean, booleanValue: enabled)
+        if !enabled { let last = states[device.did]; end(device.did); states[device.did] = last }
+        // No query/control here and no pause reset. Only the shared timer may later read an enabled device.
+    }
     func setEditing(_ did: String, editor: UUID, active: Bool) {
         if active { editors[did, default: []].insert(editor) }
         else { editors[did]?.remove(editor); if editors[did]?.isEmpty == true { editors[did] = nil } }
@@ -106,7 +117,7 @@ final class CurtainControlController {
         for device in devices.values.sorted(by: { $0.did < $1.did }) where device.model == CurtainValidationSession.model {
             guard !Task.isCancelled, !shuttingDown else { return }
             let did = device.did
-            guard pausedPolling[did] == nil, !isWorking(did), reads[did] == nil, editors[did]?.isEmpty != false else { continue }
+            guard includes(did), pausedPolling[did] == nil, !isWorking(did), reads[did] == nil, editors[did]?.isEmpty != false else { continue }
             let id = UUID()
             backgroundReading.insert(did)
             let task = Task {
@@ -145,6 +156,7 @@ final class CurtainControlController {
         case .untrustedReading: L10n.tr("不可信读数", "Untrusted readings")
         case .invalidReply: L10n.tr("应答缺值或校验失败", "Reply missing values or failed validation")
         case .propertyError: L10n.tr("设备属性返回错误", "Device property error")
+        case .clockDiscontinuity: L10n.tr("设备时钟偏差超限", "Device clock difference exceeds tolerance")
         default: L10n.tr("此前查询或操作未确认", "Previous query or operation unconfirmed")
         }
     }
@@ -159,6 +171,9 @@ final class CurtainControlController {
     private func request(_ did: String, _ command: CurtainControlSession.Command?) -> Bool {
         guard !shuttingDown, devices[did]?.model == CurtainValidationSession.model else {
             return reject(did, command, reason: .configuration, message: L10n.tr("请求未接收：设备不再可用。", "Request not accepted: device is unavailable."))
+        }
+        if command != nil, !includes(did) {
+            return reject(did, command, reason: .configuration, message: L10n.tr("指令未接收：请先开启此卷帘的日常控制。", "Command not accepted: enable daily control for this curtain first."))
         }
         if let target = command?.target, !(0...100).contains(target) {
             return reject(did, command, reason: .configuration, message: L10n.tr("请求未接收：目标位置必须为 0–100%。", "Request not accepted: target must be 0–100%."))

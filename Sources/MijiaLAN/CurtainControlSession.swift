@@ -35,6 +35,12 @@ public actor CurtainControlSession {
     }
     private let device: LocalDevice
     private let client: MiioClient
+    private let policy: MiioCommunicationPolicy
+    private let allowWrites: Bool
+    private var lastFullCheck: Duration?
+    private var compactRounds = 0
+    private var readRound: UInt64 = 0
+    private let fullCheckMaxAge = Duration.seconds(300)
     private let scheduler: CurtainRequestScheduler
     private let clock: CurtainValidationSession.Clock
     private let isCurrent: @Sendable () -> Bool
@@ -55,11 +61,22 @@ public actor CurtainControlSession {
 
     init(device: LocalDevice, client: MiioClient, scheduler: CurtainRequestScheduler,
          clock: CurtainValidationSession.Clock = .init(), isCurrent: @escaping @Sendable () -> Bool,
-         onInfo: @escaping @Sendable () async -> Void = {}, journal: CurtainEventLog = .init()) {
+         onInfo: @escaping @Sendable () async -> Void = {}, journal: CurtainEventLog = .init(), allowWrites: Bool = true) {
         self.device = device; self.client = client; self.scheduler = scheduler; self.clock = clock
+        self.policy = client.policy
+        self.allowWrites = allowWrites
         self.isCurrent = isCurrent; self.onInfo = onInfo; self.journal = journal
     }
     public func snapshot() -> State { state }
+    /// Constructs no socket until explicitly invoked; intended for one-device, read-only CLI experiments.
+    public static func experiment(device: LocalDevice, policy: MiioCommunicationPolicy, journal: DeviceEventLog,
+                                  transport: any MiioTransport = UDPMiioTransport(), port: UInt16 = MiioPacket.port) throws -> CurtainControlSession {
+        guard device.model == CurtainValidationSession.model, device.specType == CurtainValidationSession.specification,
+              let token = MiioToken.parse(device.token), let identity = UInt32(device.did) else { throw DeviceControlError.wrongDevice }
+        let client = MiioClient(host: device.host, token: token, port: port, transport: transport, retries: 0,
+            knownModel: device.model, events: journal, eventIdentifier: device.did, policy: policy, expectedDeviceID: identity)
+        return CurtainControlSession(device: device, client: client, scheduler: CurtainRequestScheduler(), isCurrent: { true }, journal: journal, allowWrites: false)
+    }
     public func updates() -> AsyncStream<State> {
         let id = UUID()
         return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
@@ -90,6 +107,7 @@ public actor CurtainControlSession {
         case .invalidReply: detail = L10n.tr("应答缺值或未通过校验", "Reply is missing values or failed validation")
         case .deadline: detail = L10n.tr("回读已达次数或时间上限", "Readback limit reached")
         case .busy: detail = L10n.tr("电机未停稳或已有操作", "Motor is moving or another operation is active")
+        case .clockDiscontinuity: detail = L10n.tr("设备时钟偏差超出验证容差", "Device clock differs beyond the validated tolerance")
         case .cancelled: detail = L10n.tr("请求已取消", "Request cancelled")
         default: detail = L10n.tr("读数或操作结果未确认", "Readings or operation unconfirmed")
         }
@@ -127,7 +145,7 @@ public actor CurtainControlSession {
                 journal.record(device.did, operation: id, source: requestSource, stage: state.stage,
                                outcome: error is CancellationError ? .cancelled : .paused,
                                reason: CurtainEventLog.reason(error), code: CurtainEventLog.code(error),
-                               writeAttempted: writeTrace.attempted, writeSent: writeTrace.sent, writeAcknowledged: writeTrace.acknowledged)
+                               position: state.lastKnownPosition, motorStatus: state.lastKnownMotorStatus, writeAttempted: writeTrace.attempted, writeSent: writeTrace.sent, writeAcknowledged: writeTrace.acknowledged)
                 if command != nil, !writeTrace.attempted {
                     journal.record(device.did, operation: id, source: requestSource, stage: .write, outcome: .noPacket,
                                    reason: CurtainEventLog.reason(error), target: command?.target,
@@ -150,21 +168,28 @@ public actor CurtainControlSession {
             throw error
         }
     }
-    private func packet(_ stage: CurtainEventLog.Stage, piid: Int? = nil, target: Int? = nil) -> @Sendable (CurtainWireEvent) -> Void {
-        let journal = journal, did = device.did, operation = traceID
+    private func packet(_ stage: CurtainEventLog.Stage, piid: Int? = nil, target: Int? = nil, capture: MiioPacketTrace? = nil) -> @Sendable (CurtainWireEvent) -> Void {
+        let journal = journal, did = device.did, operation = traceID, round = readRound
         let packetSource: CurtainEventLog.Source = stage == .confirmation ? .postWriteRead : source
         let value = stage == .write ? state.command?.write.value : nil
         let writeTrace = writeTrace
+        let queuedAt = clock.now(), clock = clock
         let timer = CurtainPacketTimer()
         return { event in
+            var diagnostic = event.packet; diagnostic.readRound = round
+            if case .attempt = event {
+                let wait = (clock.now() - queuedAt).components
+                diagnostic.schedulerWaitMilliseconds = wait.seconds * 1_000 + wait.attoseconds / 1_000_000_000_000_000
+            }
+            if case .checked = event { capture?.replace(diagnostic) }
+            if case .property(let row, _) = event {
+                journal.recordProperty(did, operation: operation, source: packetSource, stage: stage, row: row, packet: diagnostic)
+                return
+            }
             if case .attempt = event { timer.start() }
             if stage == .write { writeTrace.note(event) }
-            let outcome: CurtainEventLog.Outcome
-            switch event { case .attempt: outcome = .attempt; case .sent: outcome = .sent; case .received: outcome = .received; case .failed: outcome = .paused }
-            let reason: DeviceEventLog.Reason?, code: Int?
-            if case .failed(let failure, let status) = event { reason = failure; code = status } else { reason = nil; code = nil }
-            journal.record(did, operation: operation, source: packetSource, stage: stage, outcome: outcome, reason: reason, code: code,
-                           kind: stage == .hello ? .hello : (stage == .info ? .info : (stage == .write ? .write : .read)), siid: piid == nil ? nil : 2, piid: piid, value: value, target: target, elapsedMilliseconds: timer.elapsed)
+            journal.record(did, operation: operation, source: packetSource, stage: stage, outcome: event.outcome, reason: event.reason, code: event.code,
+                           kind: stage == .hello ? .hello : (stage == .info ? .info : (stage == .write ? .write : .read)), siid: piid == nil ? nil : 2, piid: piid, value: value, target: target, elapsedMilliseconds: timer.elapsed, packet: diagnostic)
         }
     }
     private func stage(_ value: CurtainEventLog.Stage) { state.stage = value; publish() }
@@ -193,6 +218,7 @@ public actor CurtainControlSession {
         let piid: Int?, target: Int?
         switch request {
         case .info: requestStage = .info; piid = nil; target = nil
+        case .selectedRead(_, _, let confirmation): requestStage = confirmation ? .confirmation : .preflight; piid = nil; target = nil
         case .read(_, let confirmation): requestStage = confirmation ? .confirmation : .preflight; piid = nil; target = nil
         case .position(_, let value): requestStage = .write; piid = 4; target = value
         case .motor: requestStage = .write; piid = 1; target = state.command?.target
@@ -200,35 +226,39 @@ public actor CurtainControlSession {
         stage(requestStage)
         try await gap(urgent: urgent)
         defer { lastCompletion = clock.now() }
-        let client = client, check = isCurrent, samplingClock = clock, wire = packet(requestStage, piid: piid, target: target)
+        let capture = MiioPacketTrace(.init())
+        let client = client, check = isCurrent, samplingClock = clock, wire = packet(requestStage, piid: piid, target: target, capture: capture)
         if let deadline, clock.now() >= deadline { throw CurtainReadbackLimit() }
         let result = try await scheduler.perform(priority: urgent ? .stop : .ordinary) {
             if let deadline, samplingClock.now() >= deadline { throw CurtainReadbackLimit() }
             return try await client.curtainRequest(request, isCurrent: check, wire: wire)
         }
         try current()
-        try recordCodes(result, stage: requestStage)
+        try recordCodes(result, stage: requestStage, diagnostic: capture.snapshot)
         return result
     }
-    private func recordCodes(_ result: JSONValue, stage: CurtainEventLog.Stage) throws {
+    private func recordCodes(_ result: JSONValue, stage: CurtainEventLog.Stage, diagnostic: MiioPacketDiagnostics? = nil) throws {
         guard case .array(let rows) = result else { return }
         var failure: Int?
         for row in rows {
             guard case .object(let fields) = row, case .number(let raw) = fields["code"], let code = Int(exactly: raw) else { continue }
             let piid: Int?
             if case .number(let number) = fields["piid"] { piid = Int(exactly: number) } else { piid = nil }
-            journal.record(device.did, operation: traceID, source: stage == .confirmation ? .postWriteRead : source,
-                           stage: stage, outcome: .responseCode, code: code, piid: piid)
+            if stage == .write {
+                journal.record(device.did, operation: traceID, source: source, stage: stage, outcome: .responseCode, code: code,
+                               siid: Self.exactInt(fields["siid"]), piid: piid, packet: diagnostic)
+            }
             if code != 0, failure == nil { failure = code }
         }
         if let failure { throw MiioError.deviceError(code: failure, message: MiotPropertyStatus.description(failure)) }
     }
     private func connect(force: Bool = false, urgent: Bool = false) async throws {
         let needsHandshake = await client.curtainNeedsHandshake()
+        let periodicOnly = await client.curtainPeriodicOnly()
         if force || needsHandshake {
             try await hello(urgent: urgent)
             // An already verified session may re-hello for Stop without waiting for metadata/position reads.
-            if !urgent || !verified {
+            if !verified || (!urgent && !periodicOnly) {
                 let info = try await rpc(.info, urgent: urgent)
                 guard case .object(let fields) = info,
                       fields["model"] == .string(CurtainValidationSession.model), fields["fw_ver"] == .string("1.1.3") else {
@@ -283,7 +313,7 @@ public actor CurtainControlSession {
         return try await run(nil) { try await self.readFull() }
     }
     /// One read-only turn in the App's unified poll. A paused session cannot reconnect itself.
-    public func poll(operationID: UUID = UUID()) async throws -> State {
+    public func poll(operationID: UUID = UUID(), source: DeviceEventLog.Source = .backgroundPoll) async throws -> State {
         try current()
         guard operation == nil, !stopping, state.failureReason == nil else { throw DeviceControlError.busy }
         guard device.model == CurtainValidationSession.model, device.specType == CurtainValidationSession.specification else {
@@ -291,28 +321,51 @@ public actor CurtainControlSession {
         }
         let cold = !started
         started = true
-        return try await run(nil, operationID: operationID, source: .backgroundPoll) {
+        return try await run(nil, operationID: operationID, source: source) {
             if cold {
                 await self.beginConnecting()
                 try await self.client.waitUntilIdle()
                 await self.markDrained()
                 try await self.connect(force: true)
             }
-            return try await self.readFull()
+            return try await self.readScheduled()
         }
     }
-    private func readFull() async throws -> State {
+    private func readScheduled() async throws -> State {
+        guard policy.layout == .adaptive, let lastFullCheck, compactRounds < 10,
+              clock.now() - lastFullCheck < fullCheckMaxAge else { return try await readFull() }
+        readRound &+= 1
         try await connect()
-        let raw = try await rpc(.read(did: device.did, confirmation: false))
-        observeSafetyValues(raw)
+        let raw = try await rpc(.selectedRead(did: device.did, ids: [2,3]))
+        let values = try Self.readValues(raw, expected: [2,3])
+        try sample(values); compactRounds += 1
+        state.phase = state.motorStatus == 1 ? .ready : .moving; state.message = nil; publish()
+        return state
+    }
+    private func readFull() async throws -> State {
+        readRound &+= 1
+        try await connect()
+        let raw = try await readLayout(ids: [2,3,4,5,9,10], confirmation: false)
         let reading = try Self.preflight(raw)
         try sample([2: .number(Double(reading.status)), 3: .number(Double(reading.position))])
         if state.confirmed, let goal = state.command?.target, state.position != goal {
             state.command = nil; state.confirmed = false; state.writeAccepted = false
         }
         state.phase = state.motorStatus == 1 ? .ready : .moving
+        lastFullCheck = clock.now(); compactRounds = 0
         state.message = nil; publish()
         return state
+    }
+    private func readLayout(ids: [Int], confirmation: Bool) async throws -> JSONValue {
+        guard policy.layout == .single else { return try await rpc(.selectedRead(did: device.did, ids: ids, confirmation: confirmation)) }
+        var rows: [JSONValue] = []
+        for id in ids {
+            try await connect()
+            let result = try await rpc(.selectedRead(did: device.did, ids: [id], confirmation: confirmation))
+            guard case .array(let returned) = result else { throw CurtainInvalidReading() }
+            rows += returned
+        }
+        return .array(rows)
     }
     /// Shared by the production preflight and offline batch/single-response evaluation.
     static func preflight(_ result: JSONValue) throws -> (position: Int, status: Int) {
@@ -321,23 +374,9 @@ public actor CurtainControlSession {
         guard values[9] == .number(0), case .bool = values[5], case .bool = values[10] else { throw CurtainInvalidReading() }
         return (try number(values[3], range: 0...100), try number(values[2], range: 0...4))
     }
-    private func observeSafetyValues(_ result: JSONValue) {
-        guard case .array(let rows) = result else { return }
-        for row in rows {
-            guard case .object(let fields) = row, fields["siid"] == .number(2),
-                  case .number(let raw) = fields["piid"], let piid = Int(exactly: raw), [2,3,4,5,9,10].contains(piid), let value = fields["value"] else { continue }
-            let numeric: Int?, type: DeviceEventLog.ValueType
-            switch value {
-            case .number(let n): numeric = Int(exactly: n); type = .number
-            case .bool: numeric = nil; type = .boolean
-            case .string: numeric = nil; type = .string
-            case .object: numeric = nil; type = .object
-            case .array: numeric = nil; type = .array
-            case .null: numeric = nil; type = .null
-            }
-            journal.record(device.did, operation: traceID, source: source, stage: state.stage, outcome: .observedValue,
-                           kind: .read, siid: 2, piid: piid, value: numeric, valueType: type)
-        }
+    private static func exactInt(_ value: JSONValue?) -> Int? {
+        if case .number(let raw) = value { return Int(exactly: raw) }
+        return nil
     }
     private static func readValues(_ result: JSONValue, expected: Set<Int>) throws -> [Int: JSONValue] {
         do { return try CurtainValidationSession.values(result, expected: expected) }
@@ -380,6 +419,7 @@ public actor CurtainControlSession {
         switch command { case .position: .manualPosition; case .open: .manualOpen; case .close: .manualClose; case .stop: .manualStop }
     }
     private func writeAndConfirm(_ command: Command) async throws -> State {
+        guard allowWrites else { throw DeviceControlError.unsupported("Read-only experiment session") }
         if command != .stop, state.motorStatus != 1 { throw DeviceControlError.busy }
         state.command = command; state.confirmed = false; state.writeAccepted = false
         state.phase = command == .stop ? .stopping : .moving
@@ -483,6 +523,7 @@ public actor CurtainControlSession {
         _ = await previous?.result
         state.phase = .disabled; state.canStop = false; state.position = nil; state.motorStatus = nil; publish()
         for observer in observers.values { observer.finish() }; observers = [:]
+        await client.close()
     }
 }
 

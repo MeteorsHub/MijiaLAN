@@ -143,7 +143,7 @@ public actor LANMiotAPI: MiCloudAPI {
         let previous = curtainSession
         curtainSession = nil
         previous?.lease.invalidate()
-        if let previous { await previous.session.end() }
+        if let previous { await previous.session.end(); clients[previous.device.did] = nil }
         // Cancel automatic metadata probes for all curtains before the selected session starts.
         // Keep them suspended for this API lifetime, including when validation pauses or is disabled.
         configuredDevices = nil
@@ -201,6 +201,7 @@ public actor LANMiotAPI: MiCloudAPI {
         guard let previous = dailyCurtains.removeValue(forKey: did) else { return }
         previous.lease.invalidate()
         await previous.session.end()
+        clients[did] = nil
     }
     private func dailyCurtainInfoReceived(_ device: LocalDevice) {
         guard !isShutdown, let active = dailyCurtains[device.did], active.lease.isValid,
@@ -213,7 +214,7 @@ public actor LANMiotAPI: MiCloudAPI {
         let previous = curtainSession
         curtainSession = nil
         previous?.lease.invalidate()
-        if let previous { await previous.session.end() }
+        if let previous { await previous.session.end(); clients[previous.device.did] = nil }
     }
 
     private func curtainInfoReceived(device: LocalDevice, generation: UUID) {
@@ -412,13 +413,14 @@ public actor LANMiotAPI: MiCloudAPI {
         if let existing = clients[device.did], ProbeScheduler.sameEndpoint(existing.device, device) {
             return existing.client
         }
-        if clients[device.did] != nil {
+        if let old = clients[device.did] {
+            Task { await old.client.close() }
             // New IP or token (re-import): judge it afresh.
             health[device.did] = nil
             consecutiveFailures[device.did] = 0
         }
         let client = MiioClient(host: device.host, token: MiioToken.parse(device.token) ?? Data(),
-                                port: port, transport: transport, timeout: commandTimeout, retries: 1, knownModel: device.model, events: curtainEvents, eventIdentifier: device.did)
+                                port: port, transport: transport, timeout: commandTimeout, retries: 1, knownModel: device.model, events: curtainEvents, eventIdentifier: device.did, expectedDeviceID: device.model == CurtainValidationSession.model ? UInt32(device.did) : nil)
         clients[device.did] = (device, client)
         return client
     }
@@ -518,6 +520,7 @@ public actor LANMiotAPI: MiCloudAPI {
         configuredDevices = devices
         let known = Set(devices.map(\.did))
         for (did, existing) in clients where !devices.contains(where: { ProbeScheduler.sameEndpoint($0, existing.device) }) {
+            Task { await existing.client.close() }
             clients[did] = nil; health[did] = nil; consecutiveFailures[did] = nil
             companions[did] = nil
         }
@@ -631,6 +634,7 @@ public actor LANMiotAPI: MiCloudAPI {
         for did in Array(probeWaiters.keys) { resumeProbeWaiters(did) }
         for continuation in healthContinuations.values { continuation.finish() }; healthContinuations = [:]
         probes = ProbeScheduler()
+        for entry in clients.values { Task { await entry.client.close() } }
         clients = [:]; latest = [:]; companions = [:]
     }
 

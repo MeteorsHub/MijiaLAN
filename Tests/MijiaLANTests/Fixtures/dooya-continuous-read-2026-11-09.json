@@ -1,0 +1,37 @@
+{
+  "source": "Local thread text/statistical summary, not the original JSONL or packet bytes",
+  "timeZone": "Asia/Shanghai",
+  "model": "dooya.motor.dc1545",
+  "baseline": "13934fe06f80b29d26c1ab745c68e8843b071628",
+  "run": "2493A25E-A8BB-4C07-A5D8-EE2777DB2F7A",
+  "firstEvent": "2026-11-09T22:15:28+08:00",
+  "devices": [
+    {"alias":1,"hello":1,"info":1,"reads":38,"writes":0,"successfulSamples":37,"firstFailure":"2026-11-09T22:30:29+08:00"},
+    {"alias":5,"hello":1,"info":1,"reads":38,"writes":0,"successfulSamples":37,"firstFailure":"2026-11-09T22:30:30+08:00"},
+    {"alias":6,"hello":1,"info":1,"reads":38,"writes":0,"successfulSamples":37,"firstFailure":"2026-11-09T22:30:30+08:00"},
+    {"alias":7,"hello":1,"info":1,"reads":38,"writes":0,"successfulSamples":37,"firstFailure":"2026-11-09T22:30:31+08:00"},
+    {"alias":4,"hello":1,"info":1,"reads":39,"writes":1,"successfulSamples":38,"firstFailure":"2026-11-09T22:30:59+08:00"},
+    {"alias":8,"hello":1,"info":1,"reads":38,"writes":1,"successfulSamples":37,"firstFailure":"2026-11-09T22:30:02+08:00"}
+  ],
+  "firstFailureCodes": [
+    {"piid":2,"code":0},{"piid":3,"code":0},{"piid":4,"code":0},{"piid":5,"code":0},
+    {"piid":9,"code":-4004},{"piid":10,"code":-4004}
+  ],
+  "followupRun":"AADBA76B-213D-4C39-AE48-DDED6D1D21F3",
+  "followupRead":"2026-11-09T22:59:25+08:00",
+  "followupCodes":[
+    {"piid":2,"code":0},{"piid":3,"code":-4004},{"piid":4,"code":-4004},
+    {"piid":5,"code":-4004},{"piid":9,"code":-4004},{"piid":10,"code":-4004}
+  ],
+  "window":{
+    "start":"2026-11-09T22:25:00+08:00","end":"2026-11-09T22:31:01+08:00",
+    "curtainSends":66,"completeBatches":60,"failedBatches":6,
+    "allHomeSends":175,"otherDeviceReads":108,"otherDeviceHellos":1,
+    "responseMilliseconds":{"minimum":59,"median":205.5,"maximum":428},
+    "failedResponseMilliseconds":{"minimum":162,"maximum":294},
+    "maxInFlight":1,"overlappingSends":0,"writes":0,"actions":0,"hellos":0,"infos":0,"broadcasts":0
+  },
+  "valuesAvailable":false,
+  "physicalControlCurrentlyWorking":false,
+  "cause":"unknown"
+}

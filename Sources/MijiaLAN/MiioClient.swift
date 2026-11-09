@@ -14,10 +14,23 @@ public actor MiioClient {
     private let retries: Int
     private let events: DeviceEventLog?
     private let eventIdentifier: String
+    public nonisolated let policy: MiioCommunicationPolicy
+    private let time: MiioTimeSource
+    private let expectedDeviceID: UInt32?
+    private var lastReplyAt: Duration?
+    private var queueWaitMilliseconds: Int64 = 0
+    private var ended = false
+    private var diagnosticModel: String?
 
     private var propertyRequestRestriction: String?
     private var deviceID: UInt32?
-    private var clock: (stamp: UInt32, at: ContinuousClock.Instant)?
+    private var clock: (stamp: UInt32, at: Duration)?
+    private var helloAnchor: (stamp: UInt32, at: Duration)?
+    private let diagnosticClientID = UUID()
+    private var diagnosticSequence: UInt64 = 0
+    private let sentCounters = MiioSentCounters()
+    private var lastHelloAt: Duration?
+    private var clockBasis: MiioPacketDiagnostics.ClockBasis?
     private var nextRequestID = Int.random(in: 1...9_000)
     private var calling = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -43,17 +56,23 @@ public actor MiioClient {
         timeout: Duration = .seconds(2),
         retries: Int = 2,
         knownModel: String? = nil,
-        events: DeviceEventLog? = nil, eventIdentifier: String? = nil
+        events: DeviceEventLog? = nil, eventIdentifier: String? = nil,
+        policy: MiioCommunicationPolicy? = nil, expectedDeviceID: UInt32? = nil, time: MiioTimeSource = .init()
     ) {
         self.host = host
         self.events = events
         self.eventIdentifier = eventIdentifier ?? events?.identifier(forHost: host) ?? UUID().uuidString
         self.port = port
         self.token = token
-        self.transport = transport
+        let selected = policy ?? (knownModel == CurtainValidationSession.model ? .revised : .legacy)
+        self.policy = selected; self.time = time; self.expectedDeviceID = expectedDeviceID
+        self.diagnosticModel = knownModel
+        self.transport = transport.sessionTransport(policy: selected.socket)
         self.timeout = timeout
         self.retries = max(0, retries)
         self.propertyRequestRestriction = knownModel.flatMap { DeviceLANPolicy.restriction(for: $0) }
+        var opening = MiioPacketDiagnostics(); opening.client = diagnosticClientID; opening.policy = selected
+        events?.record(self.eventIdentifier, source: .startup, stage: .idle, outcome: .noPacket, reason: .configuration, packet: opening)
     }
 
     /// The hello reply's header: device ID and clock. Does not prove the token is right.
@@ -68,12 +87,20 @@ public actor MiioClient {
         }
     }
     func observedHandshake(timeout: Duration? = nil, wire: (@Sendable (CurtainWireEvent) -> Void)? = nil) async throws -> MiioPacket.Header {
+        guard !ended else { throw CancellationError() }
         let wire = wire ?? events?.wire(eventIdentifier, operation: DeviceCommunicationContext.operation ?? UUID(),
             source: DeviceCommunicationContext.source ?? .legacyProbe, stage: .hello, kind: .hello)
-        let reply = try await exchangePacket(MiioPacket.hello, timeout: timeout ?? self.timeout, wire: wire)
-        let header = try MiioPacket.parseHeader(reply)
+        let exchange = try await exchangePacket(MiioPacket.hello, timeout: timeout ?? self.timeout, wire: wire)
+        let header = try MiioPacket.parseHeader(exchange.reply)
+        var diagnostic = exchange.diagnostic
+        diagnostic.responseStamp = header.stamp; diagnostic.authenticated = false
+        diagnostic.headerIdentityMatches = deviceID.map { $0 == header.deviceID }
+        diagnostic.clockUpdated = true
+        wire?(.checked(diagnostic))
         deviceID = header.deviceID
-        clock = (header.stamp, .now)
+        clock = (header.stamp, time.now())
+        helloAnchor = clock
+        lastHelloAt = time.now(); clockBasis = .hello
         return header
     }
 
@@ -141,10 +168,18 @@ public actor MiioClient {
     enum CurtainRequest: Sendable {
         case info
         case read(did: String, confirmation: Bool)
+        case selectedRead(did: String, ids: [Int], confirmation: Bool = false)
         case position(did: String, target: Int)
         case motor(did: String, value: Int)
     }
-    func curtainNeedsHandshake() -> Bool { needsHandshake }
+    func curtainNeedsHandshake() -> Bool {
+        if policy.hello == .periodic, let lastHelloAt, time.now() - lastHelloAt >= Self.clockMaxAge - .seconds(10) { return true }
+        return needsHandshake
+    }
+    func curtainPeriodicOnly() -> Bool {
+        guard policy.hello == .periodic, deviceID != nil, let lastHelloAt, let lastReplyAt else { return false }
+        return time.now() - lastHelloAt >= Self.clockMaxAge - .seconds(10) && time.now() - lastReplyAt <= Self.clockMaxAge
+    }
     func waitUntilIdle() async throws {
         await acquire()
         defer { release() }
@@ -159,6 +194,10 @@ public actor MiioClient {
             method = "get_properties"
             let ids = confirmation ? [3, 2] : [2, 3, 4, 5, 9, 10]
             params = .array(ids.map { .object(["did": .string(did), "siid": .number(2), "piid": .number(Double($0))]) })
+        case .selectedRead(let did, let ids, _):
+            guard !ids.isEmpty, ids.count <= 6, ids.allSatisfy({ [2,3,4,5,9,10].contains($0) }) else { throw DeviceControlError.unsupported("Read whitelist") }
+            method = "get_properties"
+            params = .array(ids.map { .object(["did": .string(did), "siid": .number(2), "piid": .number(Double($0))]) })
         case .position(let did, let target):
             guard (0...100).contains(target) else { throw DeviceControlError.invalidValue("position") }
             method = "set_properties"
@@ -172,8 +211,11 @@ public actor MiioClient {
     }
 
     private func performCall(_ method: String, params: JSONValue, timeout: Duration?, retryCount: Int?, validation: Bool, validationCheck: (@Sendable () -> Bool)? = nil, wire: (@Sendable (CurtainWireEvent) -> Void)? = nil) async throws -> JSONValue {
+        let enqueuedAt = time.now()
         await acquire()
         defer { release() }
+        queueWaitMilliseconds = Self.milliseconds(time.now() - enqueuedAt)
+        guard !ended else { throw CancellationError() }
         if validation, validationCheck?() != true { throw DeviceControlError.wrongDevice }
         if !validation, let reason = propertyRequestRestriction, method != "miIO.info" {
             throw DeviceControlError.unsupported(reason)
@@ -194,7 +236,7 @@ public actor MiioClient {
                 try Task.checkCancellation()
                 let result = try await send(method, params: params, timeout: timeout ?? self.timeout, strictResponse: validation, wire: wire)
                 if method == "miIO.info", let model = result["model"]?.stringValue,
-                   let reason = DeviceLANPolicy.restriction(for: model) { propertyRequestRestriction = reason }
+                   let reason = DeviceLANPolicy.restriction(for: model) { propertyRequestRestriction = reason; diagnosticModel = model }
                 return result
             } catch MiioError.timeout {
                 lastError = MiioError.timeout
@@ -210,44 +252,162 @@ public actor MiioClient {
 
     private var needsHandshake: Bool {
         guard deviceID != nil, let clock else { return true }
-        return ContinuousClock.now - clock.at > Self.clockMaxAge
+        let now = time.now()
+        if policy.hello == .periodic, let lastHelloAt, now - lastHelloAt >= Self.clockMaxAge { return true }
+        return now - (lastReplyAt ?? clock.at) > Self.clockMaxAge
     }
 
     private func send(_ method: String, params: JSONValue, timeout: Duration, strictResponse: Bool, wire: (@Sendable (CurtainWireEvent) -> Void)? = nil) async throws -> JSONValue {
         guard let deviceID, let clock else { throw MiioError.timeout }
         let id = takeRequestID()
         let body = JSONValue.object(["id": .number(Double(id)), "method": .string(method), "params": params])
-        let elapsed = UInt32(clamping: (ContinuousClock.now - clock.at).components.seconds)
-        let stamp = clock.stamp &+ elapsed &+ 1
+        let age = time.now() - clock.at
+        let stamp = policy.stamp == .helloAnchored ? Self.anchoredStamp(base: clock.stamp, elapsed: age) : Self.outgoingStamp(base: clock.stamp, elapsed: age)
+        var diagnostic = MiioPacketDiagnostics()
+        diagnostic.requestID = UInt16(id); diagnostic.requestStamp = stamp
+        diagnostic.method = MiioPacketDiagnostics.Method(rawValue: method) ?? (method.hasPrefix("set_") ? .legacyWrite : .other)
+        if case .array(let rows) = params {
+            diagnostic.addresses = rows.prefix(15).compactMap { row in
+                guard let siid = Self.address(row["siid"]), let piid = Self.address(row["piid"]) else { return nil }
+                return MiioPropertyAddress(siid: UInt16(siid), piid: UInt16(piid))
+            }
+        }
+        diagnostic.clockBaseStamp = clock.stamp; diagnostic.clockBaseAgeMilliseconds = Self.milliseconds(age)
+        diagnostic.clockBasis = clockBasis
+        if method == "get_properties", case .array(let rows) = params { diagnostic.propertyCount = UInt16(clamping: rows.count) }
         // NUL-terminated like python-miio, the implementation most firmware has been tested against.
         let request = Data(body.compactJSONString.utf8) + [0]
         let packet = try MiioPacket.encode(request, token: token, deviceID: deviceID, stamp: stamp)
 
-        let reply = try await exchangePacket(packet, timeout: timeout, wire: wire)
-        let (header, payload) = try MiioPacket.decode(reply, token: token)
-        guard let json = Self.parseJSON(payload) else { throw MiioError.badResponse(L10n.tr("无法解析 JSON", "Could not parse JSON.")) }
+        let exchange = try await exchangePacket(packet, timeout: timeout, wire: wire, diagnostic: diagnostic)
+        diagnostic = exchange.diagnostic
+        let header: MiioPacket.Header, payload: Data
+        do { (header, payload) = try MiioPacket.decode(exchange.reply, token: token) }
+        catch {
+            diagnostic.authenticated = false; diagnostic.clockUpdated = false
+            wire?(.checked(diagnostic)); throw error
+        }
+        diagnostic.authenticated = true; diagnostic.responseStamp = header.stamp
+        diagnostic.headerIdentityMatches = header.deviceID == deviceID
+        guard let json = Self.parseJSON(payload) else {
+            diagnostic.clockUpdated = false; diagnostic.rpcIDMatches = false; wire?(.checked(diagnostic))
+            throw MiioError.badResponse(L10n.tr("无法解析 JSON", "Could not parse JSON."))
+        }
+        if case .number(let raw) = json["id"], let value = UInt16(exactly: raw), (1...9_999).contains(value) { diagnostic.responseID = value }
+        diagnostic.rpcIDMatches = json["id"] == .number(Double(id))
+        diagnostic.clockUpdated = !strictResponse || (diagnostic.headerIdentityMatches == true && diagnostic.rpcIDMatches == true)
+        if let anchor = helloAnchor {
+            let expected = Self.anchoredStamp(base: anchor.stamp, elapsed: time.now() - anchor.at)
+            let delta = Int64(Int32(bitPattern: header.stamp &- expected))
+            diagnostic.estimatedClockSkewSeconds = delta
+            if policy.stamp == .helloAnchored {
+                diagnostic.clockAccepted = abs(delta) <= 5
+                diagnostic.clockUpdated = false // The anchor changes only after hello.
+            }
+        }
+        wire?(.checked(diagnostic))
+        if diagnosticModel == CurtainValidationSession.model, method == "get_properties" { logSafeRows(json["result"], diagnostic: diagnostic, wire: wire) }
         if strictResponse {
             guard header.deviceID == deviceID, json["id"] == .number(Double(id)) else {
                 throw MiioError.badResponse("Response identity mismatch")
             }
         }
-        self.clock = (header.stamp, .now)
+        lastReplyAt = time.now()
+        if policy.stamp == .helloAnchored {
+            guard diagnostic.clockAccepted != false else { self.deviceID = nil; throw MiioClockDiscontinuity() }
+        } else { self.clock = (header.stamp, time.now()); clockBasis = .reply }
         if let error = json["error"] {
             throw MiioError.deviceError(code: error["code"]?.intValue ?? 0, message: error["message"]?.stringValue ?? "")
         }
         return json["result"] ?? .null
     }
 
-    private func exchangePacket(_ packet: Data, timeout: Duration, wire: (@Sendable (CurtainWireEvent) -> Void)?) async throws -> Data {
-        wire?(.attempt)
+    private func exchangePacket(_ packet: Data, timeout: Duration, wire: (@Sendable (CurtainWireEvent) -> Void)?, diagnostic original: MiioPacketDiagnostics = .init()) async throws -> (reply: Data, diagnostic: MiioPacketDiagnostics) {
+        var diagnostic = original
+        diagnosticSequence &+= 1
+        diagnostic.remotePort = port; diagnostic.policy = policy; diagnostic.queueWaitMilliseconds = queueWaitMilliseconds
+        if packet == MiioPacket.hello { diagnostic.method = .hello }
+        if packet == MiioPacket.hello {
+            if lastHelloAt == nil { diagnostic.helloReason = .initial }
+            else if deviceID == nil { diagnostic.helloReason = .recovery }
+            else if time.now() - (lastReplyAt ?? .zero) > Self.clockMaxAge { diagnostic.helloReason = .silence }
+            else if policy.hello == .periodic { diagnostic.helloReason = .periodic }
+            else { diagnostic.helloReason = .explicit }
+        }
+        if let lastReplyAt { diagnostic.lastReplyAgeMilliseconds = Self.milliseconds(time.now() - lastReplyAt) }
+        diagnostic.client = diagnosticClientID; diagnostic.clientSequence = diagnosticSequence
+        if let lastHelloAt { diagnostic.helloAgeMilliseconds = Self.milliseconds(time.now() - lastHelloAt) }
+        sentCounters.apply(to: &diagnostic, sent: false)
+        let trace = MiioPacketTrace(diagnostic)
+        let counts = sentCounters
+        wire?(.attempt(diagnostic))
         do {
-            let reply = try await transport.exchangeObserved(packet, host: host, port: port, timeout: timeout, onSent: { wire?(.sent) })
-            wire?(.received)
-            return reply
+            let token = token, expectedID = deviceID ?? expectedDeviceID, rpcID = diagnostic.requestID
+            let reply = try await transport.exchangeValidated(packet, host: host, port: port, timeout: timeout, observe: { event in
+                trace.observe(event)
+                switch event.boundary {
+                case .sent: trace.didSend(counts); wire?(.sent(trace.snapshot))
+                case .discarded: wire?(.discarded(event.reason ?? .unexpectedPeer, trace.snapshot))
+                case .closed: wire?(.closed(event.reason ?? .configuration, trace.snapshot))
+                default: break
+                }
+            }, accept: { data in
+                var diagnostic = trace.snapshot
+                do {
+                    if packet == MiioPacket.hello {
+                        let header = try MiioPacket.parseHeader(data)
+                        let accepted = data.count == MiioPacket.headerLength && (expectedID == nil || expectedID == header.deviceID)
+                        if !accepted {
+                            diagnostic.authenticated = false; diagnostic.responseStamp = header.stamp
+                            diagnostic.headerIdentityMatches = expectedID.map { $0 == header.deviceID }; diagnostic.clockUpdated = false
+                            wire?(.checked(diagnostic))
+                        }
+                        return accepted
+                    }
+                    let (header, body) = try MiioPacket.decode(data, token: token)
+                    diagnostic.authenticated = true; diagnostic.responseStamp = header.stamp
+                    let json = Self.parseJSON(body)
+                    if case .number(let raw) = json?["id"], let id = UInt16(exactly: raw), (1...9_999).contains(id) { diagnostic.responseID = id }
+                    diagnostic.headerIdentityMatches = expectedID == header.deviceID
+                    diagnostic.rpcIDMatches = json?["id"] == rpcID.map { .number(Double($0)) }
+                    if diagnostic.headerIdentityMatches == true, diagnostic.rpcIDMatches == true { return true }
+                    diagnostic.clockUpdated = false; wire?(.checked(diagnostic)); return false
+                } catch { diagnostic.authenticated = false; diagnostic.clockUpdated = false; wire?(.checked(diagnostic)); return false }
+            })
+            wire?(.received(trace.snapshot))
+            return (reply, trace.snapshot)
         } catch {
-            wire?(.failed(DeviceEventLog.reason(error), DeviceEventLog.code(error)))
+            wire?(.failed(DeviceEventLog.reason(error), DeviceEventLog.code(error), trace.snapshot))
             throw error
         }
+    }
+
+    public func close() async {
+        ended = true; deviceID = nil; clock = nil
+        let wire = events?.wire(eventIdentifier, operation: UUID(), source: .lifecycle, stage: .finished, kind: .other)
+        var diagnostic = MiioPacketDiagnostics(); diagnostic.client = diagnosticClientID; diagnostic.policy = policy
+        let trace = MiioPacketTrace(diagnostic)
+        await transport.closeSession { event in trace.observe(event); wire?(.closed(event.reason ?? .configuration, trace.snapshot)) }
+    }
+    static func anchoredStamp(base: UInt32, elapsed: Duration) -> UInt32 { base &+ UInt32(clamping: elapsed.components.seconds) }
+    private func logSafeRows(_ result: JSONValue?, diagnostic: MiioPacketDiagnostics, wire: (@Sendable (CurtainWireEvent) -> Void)?) {
+        guard case .array(let rows) = result else { return }
+        for row in rows.prefix(15) {
+            guard let siid = Self.address(row["siid"]), let piid = Self.address(row["piid"]), siid == 2, [2,3,4,5,9,10].contains(piid) else { continue }
+            let code: Int?
+            if case .number(let n) = row["code"] { code = Int(exactly: n) } else { code = nil }
+            let value = row["value"]
+            let number: Int?
+            if case .number(let n) = value { number = Int(exactly: n).flatMap { (0...100).contains($0) ? $0 : nil } } else { number = nil }
+            wire?(.property(.init(siid: siid, piid: piid, code: code, type: Self.valueType(value), number: number, boolean: value?.boolValue, hasValue: value != nil), diagnostic))
+        }
+    }
+    /// Existing clock policy, extracted unchanged for deterministic offline drift/wrap checks.
+    static func outgoingStamp(base: UInt32, elapsed: Duration) -> UInt32 {
+        base &+ UInt32(clamping: elapsed.components.seconds) &+ 1
+    }
+    private static func milliseconds(_ duration: Duration) -> Int64 {
+        duration.components.seconds * 1_000 + duration.components.attoseconds / 1_000_000_000_000_000
     }
 
     private func takeRequestID() -> Int {

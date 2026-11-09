@@ -41,6 +41,8 @@ struct SettingsDiagnostics: View {
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Text(L10n.tr("记录包括操作来源、同一操作编号、发送尝试/系统已发送/收到数据/校验结果、返回码、耗时、最后有效位置及暂停原因。received 仅代表收到数据，acknowledged 不代表运动完成。日志不含设备标识、地址、凭据、配对资料或报文原文。", "Events link each operation, source, transport attempt/sent/received/validation, codes, timing, last valid sample and pause reason. Received is not validation; acknowledged is not motion complete. No device identifiers, addresses, credentials, pairing data or raw packets."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(L10n.tr("收发诊断增加临时 socket 代号、本地源端口、RPC 编号、收发 stamp 与校时年龄；packetChecked 区分校验标志，失败批次仍保留白名单标量和类型。它们用于后续对照，不代表已确定卷帘故障原因。", "Transport diagnostics include ephemeral socket IDs, local source ports, RPC IDs, stamps and clock ages. packetChecked carries validation flags; failed batches retain whitelisted scalars/types. These support comparison, not a confirmed curtain failure diagnosis."))
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
         .onAppear { reload() }

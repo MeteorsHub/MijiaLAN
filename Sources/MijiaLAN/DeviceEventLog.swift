@@ -8,16 +8,16 @@ public final class DeviceEventLog: @unchecked Sendable {
     public enum Source: String, Codable, Sendable {
         case preference, startup, manualRead, manualPosition, manualOpen, manualClose, manualStop
         case postWriteRead, idleBackground, legacyProbe, discovery, lifecycle
-        case backgroundPoll, userControl, homeKit, matter, manualAdd, other
+        case backgroundPoll, userControl, homeKit, matter, manualAdd, experiment, other
     }
     public enum Stage: String, Codable, Sendable { case idle, requested, waiting, hello, info, preflight, write, confirmation, finished }
-    public enum Outcome: String, Codable, Sendable { case noPacket, queued, attempt, sent, received, responseCode, observedValue, validated, sample, acknowledged, confirmed, paused, cancelled }
+    public enum Outcome: String, Codable, Sendable { case noPacket, queued, attempt, sent, received, packetChecked, discarded, closed, responseCode, observedValue, validated, sample, acknowledged, confirmed, paused, cancelled }
     public enum Reason: String, Codable, Sendable {
-        case manualOnly, timeout, propertyError, invalidReply, identity, firmware, cancelled, unconfirmed, deadline, busy, configuration, transport, deduplicated, untrustedReading
+        case manualOnly, timeout, propertyError, invalidReply, identity, firmware, cancelled, unconfirmed, deadline, busy, configuration, transport, deduplicated, untrustedReading, unexpectedPeer, clockDiscontinuity
     }
     public enum Kind: String, Codable, Sendable { case hello, info, read, write, action, legacyRead, legacyWrite, broadcast, other }
     public enum ValueType: String, Codable, Sendable { case number, boolean, string, object, array, null }
-    public enum Scope: String, Codable, Sendable { case app, simulation, offlineTest }
+    public enum Scope: String, Codable, Sendable { case app, simulation, offlineTest, experiment }
     public struct Event: Codable, Equatable, Sendable {
         public let run: UUID
         public let sequence: Int
@@ -36,6 +36,7 @@ public final class DeviceEventLog: @unchecked Sendable {
         public let piid: Int?
         public let value: Int?
         public let valueType: ValueType?
+        public let booleanValue: Bool?
         public let target: Int?
         public let position: Int?
         public let motorStatus: Int?
@@ -43,6 +44,7 @@ public final class DeviceEventLog: @unchecked Sendable {
         public let writeAttempted: Bool?
         public let writeSent: Bool?
         public let writeAcknowledged: Bool?
+        public let packet: MiioPacketDiagnostics?
         public let scope: Scope
     }
     public static var defaultURL: URL {
@@ -66,6 +68,7 @@ public final class DeviceEventLog: @unchecked Sendable {
     private var lastBackgroundArchive: [String: Int64] = [:]
     private var failedStorage = false
     public var storageFailed: Bool { lock.withLock { failedStorage } }
+    public var isOfflineTest: Bool { scope == .offlineTest }
 
     public init(fileURL: URL? = nil, maxEvents: Int = 2_048, scope: Scope = .app, fileLimit: Int = DeviceEventLog.defaultFileLimit) {
         self.fileURL = fileURL; self.maxEvents = min(2_048, max(1, maxEvents)); self.scope = scope
@@ -103,8 +106,8 @@ public final class DeviceEventLog: @unchecked Sendable {
         return duration.seconds * 1_000 + duration.attoseconds / 1_000_000_000_000_000
     }
     public func record(_ identifier: String, operation: UUID? = nil, source: Source, stage: Stage, outcome: Outcome,
-                       reason: Reason? = nil, code: Int? = nil, kind: Kind? = nil, siid: Int? = nil, aiid: Int? = nil, piid: Int? = nil, value: Int? = nil, valueType: ValueType? = nil, target: Int? = nil,
-                       position: Int? = nil, motorStatus: Int? = nil, elapsedMilliseconds: Int64? = nil, writeAttempted: Bool? = nil, writeSent: Bool? = nil, writeAcknowledged: Bool? = nil) {
+                       reason: Reason? = nil, code: Int? = nil, kind: Kind? = nil, siid: Int? = nil, aiid: Int? = nil, piid: Int? = nil, value: Int? = nil, valueType: ValueType? = nil, booleanValue: Bool? = nil, target: Int? = nil,
+                       position: Int? = nil, motorStatus: Int? = nil, elapsedMilliseconds: Int64? = nil, writeAttempted: Bool? = nil, writeSent: Bool? = nil, writeAcknowledged: Bool? = nil, packet: MiioPacketDiagnostics? = nil) {
         let device = alias(for: identifier)
         lock.withLock {
             sequence += 1
@@ -114,9 +117,9 @@ public final class DeviceEventLog: @unchecked Sendable {
                 kind: kind, siid: siid.flatMap { (1...65_535).contains($0) ? $0 : nil },
                 aiid: aiid.flatMap { (1...65_535).contains($0) ? $0 : nil },
                 piid: piid.flatMap { (1...65_535).contains($0) ? $0 : nil },
-                value: value.flatMap { (0...100).contains($0) ? $0 : nil }, valueType: valueType, target: target.flatMap { (0...100).contains($0) ? $0 : nil },
+                value: value.flatMap { (0...100).contains($0) ? $0 : nil }, valueType: valueType, booleanValue: booleanValue, target: target.flatMap { (0...100).contains($0) ? $0 : nil },
                 position: position.flatMap { (0...100).contains($0) ? $0 : nil }, motorStatus: motorStatus.flatMap { (0...4).contains($0) ? $0 : nil },
-                elapsedMilliseconds: elapsedMilliseconds, writeAttempted: writeAttempted, writeSent: writeSent, writeAcknowledged: writeAcknowledged, scope: scope)
+                elapsedMilliseconds: elapsedMilliseconds, writeAttempted: writeAttempted, writeSent: writeSent, writeAcknowledged: writeAcknowledged, packet: packet, scope: scope)
             events.append(event)
             if events.count > maxEvents { events.removeFirst(events.count - maxEvents) }
             var keep = Self.isImportant(event)
@@ -235,7 +238,7 @@ public final class DeviceEventLog: @unchecked Sendable {
     public func exportText() -> String { String(decoding: exportData(), as: UTF8.self) }
     public func flush() { queue.sync {} }
     private static func isImportant(_ event: Event) -> Bool {
-        let manual: Set<Source> = [.manualRead, .manualPosition, .manualOpen, .manualClose, .manualStop, .postWriteRead, .userControl, .homeKit, .matter, .manualAdd]
+        let manual: Set<Source> = [.preference, .startup, .experiment, .manualRead, .manualPosition, .manualOpen, .manualClose, .manualStop, .postWriteRead, .userControl, .homeKit, .matter, .manualAdd]
         return manual.contains(event.source) || (event.code != nil && event.code != 0) || event.outcome == .paused || event.outcome == .cancelled || event.kind == .write || event.kind == .legacyWrite || event.kind == .action
     }
     private static func encode(_ events: [Event]) -> Data {
@@ -296,11 +299,20 @@ public final class DeviceEventLog: @unchecked Sendable {
         let timer = DevicePacketTimer()
         return { event in
             if case .attempt = event { timer.start() }
-            let outcome: Outcome
-            switch event { case .attempt: outcome = .attempt; case .sent: outcome = .sent; case .received: outcome = .received; case .failed: outcome = .paused }
-            let reason: Reason?, code: Int?
-            if case .failed(let failure, let status) = event { reason = failure; code = status } else { reason = nil; code = nil }
-            self.record(identifier, operation: operation, source: source, stage: stage, outcome: outcome, reason: reason, code: code, kind: kind, elapsedMilliseconds: timer.elapsed)
+            if case .property(let row, let packet) = event {
+                self.recordProperty(identifier, operation: operation, source: source, stage: stage, row: row, packet: packet)
+                return
+            }
+            self.record(identifier, operation: operation, source: source, stage: stage, outcome: event.outcome,
+                        reason: event.reason, code: event.code, kind: kind, elapsedMilliseconds: timer.elapsed, packet: event.packet)
+        }
+    }
+    func recordProperty(_ identifier: String, operation: UUID, source: Source, stage: Stage, row: SafeMiioProperty, packet: MiioPacketDiagnostics) {
+        record(identifier, operation: operation, source: source, stage: stage, outcome: .responseCode, code: row.code,
+               kind: .read, siid: row.siid, piid: row.piid, packet: packet)
+        if row.hasValue {
+            record(identifier, operation: operation, source: source, stage: stage, outcome: .observedValue, code: row.code,
+                   kind: .read, siid: row.siid, piid: row.piid, value: row.number, valueType: row.type, booleanValue: row.boolean, packet: packet)
         }
     }
     public static func reason(_ error: any Error) -> Reason {
@@ -313,6 +325,7 @@ public final class DeviceEventLog: @unchecked Sendable {
         case DeviceControlError.wrongDevice: return .identity
         case DeviceControlError.unsupported: return .firmware
         case DeviceControlError.busy: return .busy
+        case is MiioClockDiscontinuity: return .clockDiscontinuity
         case is CurtainReadbackLimit: return .deadline
         case DeviceControlError.notConfirmed: return .unconfirmed
         default: return .transport
@@ -322,7 +335,25 @@ public final class DeviceEventLog: @unchecked Sendable {
 }
 
 // A client reports attempt and received; a transport that knows its send boundary reports sent.
-enum CurtainWireEvent: Sendable { case attempt, sent, received, failed(DeviceEventLog.Reason, Int?) }
+enum CurtainWireEvent: Sendable {
+    case attempt(MiioPacketDiagnostics), sent(MiioPacketDiagnostics), received(MiioPacketDiagnostics)
+    case checked(MiioPacketDiagnostics), discarded(DeviceEventLog.Reason, MiioPacketDiagnostics)
+    case failed(DeviceEventLog.Reason, Int?, MiioPacketDiagnostics)
+    case closed(DeviceEventLog.Reason, MiioPacketDiagnostics)
+    case property(SafeMiioProperty, MiioPacketDiagnostics)
+    var packet: MiioPacketDiagnostics {
+        switch self {
+        case .attempt(let p), .sent(let p), .received(let p), .checked(let p), .discarded(_, let p), .failed(_, _, let p), .closed(_, let p), .property(_, let p): p
+        }
+    }
+    var outcome: DeviceEventLog.Outcome {
+        switch self { case .attempt: .attempt; case .sent: .sent; case .received: .received; case .checked: .packetChecked; case .discarded: .discarded; case .failed: .paused; case .closed: .closed; case .property: .observedValue }
+    }
+    var reason: DeviceEventLog.Reason? {
+        switch self { case .failed(let reason, _, _), .closed(let reason, _): reason; case .discarded(let reason, _): reason; default: nil }
+    }
+    var code: Int? { if case .failed(_, let code, _) = self { code } else { nil } }
+}
 
 struct CurtainReadbackLimit: Error {}
 

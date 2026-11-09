@@ -94,6 +94,7 @@ public actor CurtainValidationSession {
         _ = await task?.result
         state.phase = .disabled
         state.position = nil; state.motorStatus = nil
+        await client.close()
     }
 
     private func run(target: Int?, body: @escaping @Sendable () async throws -> State) async throws -> State {

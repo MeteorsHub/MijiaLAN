@@ -95,7 +95,8 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         let method = request["method"]?.stringValue ?? ""
         let params = request["params"] ?? .null
         device.receivedMethods.append(method)
-        device.stamp += 1
+        // Time is supplied by the fixture/clock model, not advanced once per RPC.
+        // Incrementing on every call fabricates an echo-like clock jump in fast offline tests.
 
         var reply: [String: JSONValue] = ["id": request["id"] ?? .null]
         if var legacy = device.legacyProps, method != "miIO.info" {

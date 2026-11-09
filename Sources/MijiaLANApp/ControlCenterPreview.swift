@@ -27,6 +27,10 @@ enum ControlCenterPreview {
 
 actor ControlCenterPreviewTransport: MiioTransport {
     private let token = Data(repeating: 0, count: 16)
+    private let clockOrigin = ContinuousClock.now
+    private var deviceStamp: UInt32 {
+        5000 &+ UInt32(clamping: clockOrigin.duration(to: .now).components.seconds)
+    }
     private let latency: Duration
     private let failReadback: Bool
     private var curtainWritten = false
@@ -47,7 +51,9 @@ actor ControlCenterPreviewTransport: MiioTransport {
         guard values[host] != nil else { throw MiioError.hostUnreachable }
         if packet == MiioPacket.hello {
             var hello: [UInt8] = [0x21, 0x31, 0, 32, 0, 0, 0, 0]
-            hello += [0, 0, 0, 123, 0, 0, 0x13, 0x88]
+            let stamp = deviceStamp
+            hello += [0, 0, 0, 123, UInt8(truncatingIfNeeded: stamp >> 24), UInt8(truncatingIfNeeded: stamp >> 16),
+                      UInt8(truncatingIfNeeded: stamp >> 8), UInt8(truncatingIfNeeded: stamp)]
             return Data(hello + [UInt8](repeating: 255, count: 16))
         }
         let (_, payload) = try MiioPacket.decode(packet, token: token)
@@ -88,7 +94,7 @@ actor ControlCenterPreviewTransport: MiioTransport {
             result = .array([.string("ok")])
         } else { throw MiioError.unsupportedByLegacyDevice }
         let reply = JSONValue.object(["id": request["id"] ?? .number(0), "result": result])
-        return try MiioPacket.encode(Data(reply.compactJSONString.utf8) + [0], token: token, deviceID: 123, stamp: 5000)
+        return try MiioPacket.encode(Data(reply.compactJSONString.utf8) + [0], token: token, deviceID: 123, stamp: deviceStamp)
     }
 
     func broadcast(_ packet: Data, port: UInt16, duration: Duration, rounds: Int) async throws -> [MiioDatagram] { [] }
