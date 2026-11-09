@@ -14,7 +14,7 @@ struct CurtainControlPanel: View {
     private var canMove: Bool { enabled && !busy && (state == nil || state?.phase == .ready) }
     private var target: Int? { draft.target }
     private var stageTitle: String {
-        if busy, state == nil || state?.stage == .idle { return L10n.tr("准备本次手动请求", "Preparing This Manual Request") }
+        if busy, state == nil || state?.stage == .idle { return L10n.tr("准备读取或控制", "Preparing Read or Control") }
         return switch state?.stage {
         case .requested, .waiting: L10n.tr("准备发送", "Preparing request")
         case .hello: L10n.tr("阶段：握手", "Stage: Handshake")
@@ -22,8 +22,8 @@ struct CurtainControlPanel: View {
         case .preflight: L10n.tr("阶段：读取 / 写前检查", "Stage: Reading / preflight")
         case .write: L10n.tr("阶段：单次写入", "Stage: Single write")
         case .confirmation: L10n.tr("阶段：操作后有限回读", "Stage: Bounded post-write readback")
-        case .finished: L10n.tr("本次请求结束；空闲不自动更新", "Request finished; no idle updates")
-        default: L10n.tr("等待手动操作；未发包", "Awaiting manual action; no packets")
+        case .finished: L10n.tr("本次请求结束；随统一轮询更新", "Request finished; follows device polling")
+        default: L10n.tr("等待统一轮询或手动操作", "Awaiting device polling or a manual action")
         }
     }
     private func commit(_ value: Int) {
@@ -36,7 +36,7 @@ struct CurtainControlPanel: View {
             Toggle(L10n.tr("启用此卷帘的日常控制", "Enable Daily Control for This Curtain"), isOn: Binding(
                 get: { enabled }, set: { controller.setEnabled(device, $0) }))
                 .toggleStyle(.switch).controlSize(.small)
-            if enabled {
+            Group {
                 HStack {
                     Text(L10n.tr("上次读取位置", "Last Read Position"))
                     Text("C\(controller.events.alias(for: device.did))").font(.caption).foregroundStyle(.secondary)
@@ -72,7 +72,7 @@ struct CurtainControlPanel: View {
                     Button(L10n.tr("全开", "Open")) { draft.discard(); controller.send(device.did, .open) }.disabled(!canMove)
                     Button(L10n.tr("全关", "Close")) { draft.discard(); controller.send(device.did, .close) }.disabled(!canMove)
                     Button(L10n.tr("停止", "Stop")) { draft.discard(); controller.send(device.did, .stop) }
-                        .disabled(controller.stopping.contains(device.did) || (busy && state?.canStop != true))
+                        .disabled(!enabled || controller.stopping.contains(device.did) || (busy && state?.canStop != true))
                         .keyboardShortcut(".", modifiers: [.command])
                     Spacer()
                 }
@@ -81,13 +81,16 @@ struct CurtainControlPanel: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
-                    Button(L10n.tr("手动读取一次", "Read Once")) { controller.read(device.did) }
+                    Button(controller.pausedPolling[device.did] == nil ? L10n.tr("手动读取一次", "Read Once") : L10n.tr("手动读取并恢复自动刷新", "Read and Resume Auto Refresh")) { controller.read(device.did) }
                         .disabled(busy)
+                }
+                if let reason = controller.pollingPauseDescription(device.did) {
+                    Text(L10n.tr("自动读取已暂停（\(reason)，重启后仍暂停）；请手动读取通过校验后恢复。", "Auto reads paused (\(reason)), including across restarts. A successful validated manual read resumes polling.")).font(.caption).foregroundStyle(.orange)
                 }
                 if let message = state?.message { Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                 if let error = controller.errors[device.did] { Text(error).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             }
-            Text(L10n.tr("选择仅保存偏好，启动和空闲不通信。点击读取或控制才执行一次有限请求；没有自动重试或重连。0% 全遮住，100% 全拉开。HomeKit/Matter 卷帘控制未开放。", "Selection saves a preference only. Startup and idle are silent. Read or control explicitly to run one bounded operation; no automatic retry/reconnect. 0% closed, 100% open. HomeKit/Matter curtain control is disabled."))
+            Text(L10n.tr("状态默认随前台/后台统一轮询，无需启用控制。每轮只读并校验身份、白名单属性；异常会暂停该台自动读取，需手动恢复。控制需单独启用，写入仅一次并有限回读。0% 全遮住，100% 全拉开。HomeKit/Matter 卷帘控制未开放。", "State follows foreground/background device polling by default, even with controls off. Each turn only reads and validates identity and whitelisted properties. Errors pause that curtain until manual recovery. Controls require opt-in, write once and read back within limits. 0% closed, 100% open. HomeKit/Matter curtain control is disabled."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .onChange(of: typing) { _, value in draft.focus(value) }

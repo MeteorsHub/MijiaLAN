@@ -169,7 +169,7 @@ struct DeviceCommunicationJournalTests {
         #expect(network.exchangeCount == count)
     }
     @Test("Rolling traffic files are bounded and do not erase separately retained control/error history")
-    func boundedRollingHistory() throws {
+    func boundedRollingHistory() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("events.jsonl")
@@ -190,6 +190,11 @@ struct DeviceCommunicationJournalTests {
         #expect(journal.snapshot().count == 8)
         let reopened = DeviceEventLog(fileURL: file, maxEvents: 8, scope: .offlineTest, fileLimit: 2_048)
         #expect(try decode(reopened.exportData()).contains { $0.source == .manualPosition && $0.target == 64 && $0.timestamp < Date().addingTimeInterval(-86_400) })
+        let coverage = await reopened.history()
+        #expect(coverage.important.oldest == ISO8601DateFormatter().date(from: "2020-01-01T00:00:00Z"))
+        let trafficStart = try #require(coverage.traffic.oldest)
+        let importantStart = try #require(coverage.important.oldest)
+        #expect(trafficStart > importantStart)
         let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
         #expect(files.count <= 8)
         for url in files {
@@ -204,20 +209,98 @@ struct DeviceCommunicationJournalTests {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("events.jsonl")
-        let journal = DeviceEventLog(fileURL: file, scope: .offlineTest)
+        let journal = DeviceEventLog(fileURL: file, scope: .offlineTest, fileLimit: 2_048)
         // Background traffic does not create a separate important file for this load-bound test.
         journal.record("private-key", source: .backgroundPoll, stage: .preflight, outcome: .received)
         journal.flush()
         let initialSize = try #require(file.resourceValues(forKeys: [.fileSizeKey]).fileSize)
-        #expect(initialSize < 4_195_329)
+        #expect(initialSize < 2_049)
         let handle = try FileHandle(forWritingTo: file)
-        try handle.truncate(atOffset: 4_195_329)
+        try handle.truncate(atOffset: 2_049)
         try handle.close()
         let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
-        #expect((attributes[.size] as? NSNumber)?.uint64Value == 4_195_329)
-        let reopened = DeviceEventLog(fileURL: file, scope: .offlineTest)
+        #expect((attributes[.size] as? NSNumber)?.uint64Value == 2_049)
+        let reopened = DeviceEventLog(fileURL: file, scope: .offlineTest, fileLimit: 2_048)
         #expect(reopened.snapshot().isEmpty)
         #expect(reopened.exportData().isEmpty)
+    }
+
+    @Test("Unified automatic curtain turns are read-only and a poisoned reply stops subsequent automatic requests")
+    func automaticReadPause() async throws {
+        let journal = DeviceEventLog(scope: .offlineTest)
+        let (network, fake, session, _) = try setup(journal)
+        let first = try await session.poll()
+        #expect(first.position == 29 && first.motorStatus == 1)
+        #expect(fake.receivedMethods == ["miIO.info", "get_properties"])
+        #expect(fake.receivedWrites.isEmpty)
+        fake.props["2.3"] = .number(44)
+        #expect(try await session.poll().position == 44)
+        for piid in [2,3,4,5,9,10] { fake.props["2.\(piid)"] = .number(14) }
+        await #expect(throws: (any Error).self) { try await session.poll() }
+        let before = network.exchangeCount
+        for _ in 0..<3 { await #expect(throws: (any Error).self) { try await session.poll() } }
+        #expect(network.exchangeCount == before && fake.receivedWrites.isEmpty)
+        #expect(await session.snapshot().position == nil)
+        #expect(journal.snapshot().contains { $0.source == .backgroundPoll && $0.reason == .untrustedReading })
+        fake.props = ["2.2": .number(1), "2.3": .number(44), "2.4": .number(44), "2.5": .bool(false), "2.9": .number(0), "2.10": .bool(false)]
+        #expect(try await session.manual().position == 44)
+        #expect(try await session.poll().position == 44)
+    }
+    @Test("Automatic timeout, identity-response mismatch and unverified firmware pause without reconnecting or writing", arguments: ["timeout", "response", "firmware"])
+    func automaticFailures(_ failure: String) async throws {
+        let journal = DeviceEventLog(scope: .offlineTest)
+        let (network, fake, session, _) = try setup(journal)
+        if failure == "timeout" { fake.offline = true }
+        if failure == "response" { fake.wrongResponseID = true }
+        if failure == "firmware" { fake.firmware = "9.9" }
+        await #expect(throws: (any Error).self) { try await session.poll() }
+        let before = network.exchangeCount
+        for _ in 0..<3 { await #expect(throws: (any Error).self) { try await session.poll() } }
+        #expect(network.exchangeCount == before && fake.receivedWrites.isEmpty)
+        #expect(await session.snapshot().failureReason != nil)
+        #expect(journal.snapshot().contains { $0.source == .backgroundPoll && $0.outcome == .paused })
+    }
+
+    @Test("64 MiB default capacity keeps old archives readable; reopening and viewing stay bounded while streaming export includes older traffic")
+    func largeHistoryStreaming() async throws {
+        #expect(DeviceEventLog.defaultTrafficCapacity == 64 * 1_024 * 1_024)
+        #expect(DeviceEventLog.importantCapacity == 4 * 1_024 * 1_024)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("events.jsonl")
+        let journal = DeviceEventLog(fileURL: file, maxEvents: 8, scope: .offlineTest)
+        journal.record("not-exported-device-id", source: .backgroundPoll, stage: .preflight, outcome: .received)
+        journal.flush()
+        let template = try #require(decode(Data(contentsOf: file)).first)
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        var row = try #require(JSONSerialization.jsonObject(with: encoder.encode(template)) as? [String: Any])
+        // Prior-format rows in a legacy-sized archive (over 4 MiB); unique sequence values.
+        let archive = file.appendingPathExtension("1")
+        #expect(FileManager.default.createFile(atPath: archive.path, contents: nil))
+        let writer = try FileHandle(forWritingTo: archive)
+        for index in 1...20_000 {
+            row["sequence"] = index
+            row["timestamp"] = "2020-01-01T00:00:00Z"
+            var line = try JSONSerialization.data(withJSONObject: row); line.append(10)
+            try writer.write(contentsOf: line)
+        }
+        try writer.close()
+        let actual = try FileManager.default.attributesOfItem(atPath: archive.path)
+        #expect((actual[.size] as? NSNumber)?.uint64Value ?? 0 > 4_194_304)
+        let reopened = DeviceEventLog(fileURL: file, maxEvents: 8, scope: .offlineTest)
+        #expect(reopened.snapshot().count == 8)
+        #expect(reopened.recentText().split(separator: "\n").count == 8)
+        let history = await reopened.history()
+        #expect(history.traffic.oldest == ISO8601DateFormatter().date(from: "2020-01-01T00:00:00Z"))
+        #expect(history.traffic.newest == template.timestamp)
+        #expect(history.important.oldest == nil)
+        let destination = directory.appendingPathComponent("export.jsonl")
+        try Data("existing output".utf8).write(to: destination)
+        try await reopened.export(to: destination)
+        let exported = try decode(Data(contentsOf: destination))
+        #expect(exported.count == 20_001)
+        #expect(exported.first?.sequence == 1 && exported[19_999].sequence == 20_000)
+        #expect(!String(decoding: try Data(contentsOf: destination), as: UTF8.self).contains("not-exported-device-id"))
     }
 
     @Test("A background failure retains its request/sent context in the critical archive after ordinary traffic rotates")

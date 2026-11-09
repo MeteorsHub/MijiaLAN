@@ -2,6 +2,9 @@ import Foundation
 
 /// Bounded, typed local journal. No arbitrary strings, identifiers, addresses, credentials or payloads.
 public final class DeviceEventLog: @unchecked Sendable {
+    public static let defaultFileLimit = 16 * 1_024 * 1_024
+    public static let defaultTrafficCapacity = 4 * defaultFileLimit
+    public static let importantCapacity = 4 * 1_024 * 1_024
     public enum Source: String, Codable, Sendable {
         case preference, startup, manualRead, manualPosition, manualOpen, manualClose, manualStop
         case postWriteRead, idleBackground, legacyProbe, discovery, lifecycle
@@ -64,12 +67,12 @@ public final class DeviceEventLog: @unchecked Sendable {
     private var failedStorage = false
     public var storageFailed: Bool { lock.withLock { failedStorage } }
 
-    public init(fileURL: URL? = nil, maxEvents: Int = 2_048, scope: Scope = .app, fileLimit: Int = 4_194_304) {
+    public init(fileURL: URL? = nil, maxEvents: Int = 2_048, scope: Scope = .app, fileLimit: Int = DeviceEventLog.defaultFileLimit) {
         self.fileURL = fileURL; self.maxEvents = min(2_048, max(1, maxEvents)); self.scope = scope
-        self.fileLimit = min(4_194_304, max(1_024, fileLimit))
+        self.fileLimit = min(Self.defaultFileLimit, max(1_024, fileLimit))
         if let fileURL {
-            events = Array(Self.load(fileURL).suffix(self.maxEvents))
-            important = Array(Self.files(fileURL.appendingPathExtension("important")).flatMap(Self.load).suffix(self.maxEvents))
+            events = Self.loadRecent(Self.files(fileURL), count: self.maxEvents, limit: self.fileLimit)
+            important = Self.loadRecent(Self.files(fileURL.appendingPathExtension("important")), count: self.maxEvents, limit: min(self.fileLimit, 1_048_576))
         }
     }
     public func registerDevices(_ devices: [LocalDevice]) {
@@ -154,17 +157,80 @@ public final class DeviceEventLog: @unchecked Sendable {
         let copy = lock.withLock { importantOnly ? important : events }
         return String(decoding: Self.encode(Array(copy.suffix(200))), as: UTF8.self)
     }
+    /// Bounded in-memory convenience. Full on-disk history uses streaming export(to:).
     public func exportData() -> Data {
-        flush()
-        var copy = lock.withLock { events + important }
-        if let fileURL {
-            copy += Self.files(fileURL).flatMap(Self.load)
-            copy += Self.files(fileURL.appendingPathExtension("important")).flatMap(Self.load)
-        }
+        let copy = lock.withLock { events + important }
         var seen: Set<String> = []
-        copy = copy.filter { seen.insert($0.run.uuidString + ":" + String($0.sequence)).inserted }
-        copy.sort { a, b in a.timestamp == b.timestamp ? (a.run == b.run ? a.sequence < b.sequence : a.run.uuidString < b.run.uuidString) : a.timestamp < b.timestamp }
-        return Self.encode(copy)
+        return Self.encode(copy.filter { seen.insert($0.run.uuidString + ":" + String($0.sequence)).inserted }
+            .sorted { $0.timestamp == $1.timestamp ? $0.sequence < $1.sequence : $0.timestamp < $1.timestamp })
+    }
+
+    public struct Coverage: Sendable {
+        public let oldest: Date?
+        public let newest: Date?
+        public let bytes: UInt64
+    }
+    public struct History: Sendable {
+        public let traffic: Coverage
+        public let important: Coverage
+    }
+    /// Metadata and edge records only; never decodes the full archive to show its time bounds.
+    public func history() async -> History {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                func coverage(_ url: URL?, memory: [Event], limit: Int) -> Coverage {
+                    guard let url else { return Coverage(oldest: memory.first?.timestamp, newest: memory.last?.timestamp, bytes: 0) }
+                    var oldest: Date?, newest: Date?, bytes: UInt64 = 0
+                    for path in Self.files(url) {
+                        guard let reader = try? DeviceLogHistoryReader(path, limit: limit) else { continue }
+                        bytes += reader.length
+                        let first = try? reader.next()
+                        let last = Self.loadRecent([path], count: 1, limit: limit).last
+                        if let time = first?.timestamp { oldest = min(oldest ?? time, time) }
+                        if let time = last?.timestamp { newest = max(newest ?? time, time) }
+                    }
+                    return Coverage(oldest: oldest, newest: newest, bytes: bytes)
+                }
+                let memory = self.lock.withLock { (self.events, self.important) }
+                continuation.resume(returning: History(
+                    traffic: coverage(self.fileURL, memory: memory.0, limit: self.fileLimit),
+                    important: coverage(self.fileURL?.appendingPathExtension("important"), memory: memory.1, limit: min(self.fileLimit, 1_048_576))))
+            }
+        }
+    }
+    /// File handles and lengths are captured before rotation can change paths. Decode/encode one row at a
+    /// time off the main actor; open descriptors survive concurrent rotation without blocking log writes.
+    /// Traffic and the separately retained important archive are both included. Their overlap may repeat
+    /// (run, sequence); export preserves history without an unbounded in-memory deduplication index.
+    public func export(to destination: URL) async throws {
+        try await Task.detached(priority: .utility) { try self.writeHistory(to: destination) }.value
+    }
+    private func writeHistory(to destination: URL) throws {
+        let captured: ([DeviceLogHistoryReader], [Event]) = try queue.sync {
+            var readers: [DeviceLogHistoryReader] = []
+            if let fileURL {
+                let paths = Self.files(fileURL) + Self.files(fileURL.appendingPathExtension("important"))
+                guard !paths.contains(where: { $0.standardizedFileURL == destination.standardizedFileURL }) else { throw CocoaError(.fileWriteInvalidFileName) }
+                for path in paths where FileManager.default.fileExists(atPath: path.path) {
+                    let limit = path.lastPathComponent.contains("important") ? min(fileLimit, 1_048_576) : fileLimit
+                    readers.append(try DeviceLogHistoryReader(path, limit: limit))
+                }
+            }
+            return (readers, lock.withLock { events + important })
+        }
+        let temporary = destination.deletingLastPathComponent().appendingPathComponent(".MijiaLAN-export-" + UUID().uuidString)
+        guard FileManager.default.createFile(atPath: temporary.path, contents: nil, attributes: [.posixPermissions: 0o600]) else { throw CocoaError(.fileWriteUnknown) }
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let output = try FileHandle(forWritingTo: temporary)
+        do {
+            for reader in captured.0 {
+                while let event = try reader.next() { try output.write(contentsOf: Self.encode([event])) }
+            }
+            // Also preserve current memory records when disk storage failed or is disabled (bounded).
+            if captured.0.isEmpty || storageFailed { try output.write(contentsOf: Self.encode(captured.1)) }
+            try output.close()
+        } catch { try? output.close(); throw error }
+        try DeviceLogHistoryReader.replace(temporary, destination)
     }
     public func exportText() -> String { String(decoding: exportData(), as: UTF8.self) }
     public func flush() { queue.sync {} }
@@ -179,14 +245,28 @@ public final class DeviceEventLog: @unchecked Sendable {
     private static func files(_ url: URL) -> [URL] {
         (1...3).reversed().map { url.appendingPathExtension(String($0)) } + [url]
     }
-    private static func load(_ url: URL) -> [Event] {
-        guard let size = try? freshFileSize(url), size <= 4_195_328,
-              let file = try? FileHandle(forReadingFrom: url) else { return [] }
-        defer { try? file.close() }
-        // Bound the read as well: the file may grow after the fresh size check.
-        guard let data = try? file.read(upToCount: 4_195_329), data.count <= 4_195_328 else { return [] }
+    private static func loadRecent(_ paths: [URL], count: Int, limit: Int) -> [Event] {
+        var result: [Event] = []
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
-        return data.split(separator: 10).compactMap { try? decoder.decode(Event.self, from: Data($0)) }
+        // At most 2 MiB per file, newest files first. The UI retains at most 2,048 decoded events.
+        for path in paths.reversed() where result.count < count {
+            guard let size = try? freshFileSize(path), size <= UInt64(limit),
+                  let file = try? FileHandle(forReadingFrom: path) else { continue }
+            defer { try? file.close() }
+            let start = size > 2_097_152 ? size - 2_097_152 : 0
+            guard (try? file.seek(toOffset: start)) != nil,
+                  let data = try? file.read(upToCount: Int(size - start)) else { continue }
+            let lines = data.split(separator: 10)
+            let complete = start == 0 ? lines[...] : lines.dropFirst()
+            var rows: [Event] = []
+            for line in complete.reversed() {
+                if line.count <= DeviceLogHistoryReader.maximumLineBytes,
+                   let event = try? decoder.decode(Event.self, from: Data(line)) { rows.append(event) }
+                if rows.count == count - result.count { break }
+            }
+            result = rows.reversed() + result
+        }
+        return Array(result.suffix(count))
     }
     /// URL resource values can cache the pre-append size on macOS, including across rotation.
     private static func freshFileSize(_ url: URL) throws -> UInt64 {
@@ -195,6 +275,7 @@ public final class DeviceEventLog: @unchecked Sendable {
         return size.uint64Value
     }
     private static func append(_ data: Data, to url: URL, limit: Int) throws {
+        guard data.count <= limit else { throw CocoaError(.fileWriteOutOfSpace) }
         let fm = FileManager.default
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let size = fm.fileExists(atPath: url.path) ? try freshFileSize(url) : 0

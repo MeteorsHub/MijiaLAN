@@ -165,7 +165,7 @@ public actor LANMiotAPI: MiCloudAPI {
         return session
     }
 
-    /// Persistent opt-in is owned by the App; each runtime session still checks identity/spec/firmware.
+    /// App controls are opt-in; unified read-only polling uses this same verified per-device session.
     public func beginCurtainControl(did: String) async throws -> CurtainControlSession {
         try await beginCurtainControl(did: did, scheduler: curtainScheduler, clock: .init())
     }

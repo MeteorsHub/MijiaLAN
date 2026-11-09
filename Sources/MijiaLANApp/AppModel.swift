@@ -102,7 +102,7 @@ final class AppModel {
         #endif
         self.api = api
         curtains = CurtainControlController(api: api, defaults: bridgeDefaults)
-        let controller = DeviceController(api: api, config: { box.value })
+        let controller = DeviceController(api: api, config: { box.value }, pollingDefaults: bridgeDefaults)
         devices = controller
         let provider = CapabilityHomeProvider(controller: controller)
         store = HomeStore(provider: provider, defaultsSuiteName: defaultsSuite)
@@ -122,11 +122,21 @@ final class AppModel {
             while self.isRediscovering || self.isAddingManually { try await Task.sleep(for: .milliseconds(100)) }
         }
         curtains.reconcile(config.devices)
+        controller.refreshCurtains = { [weak curtains = self.curtains] in await curtains?.pollConfigured() }
         attachBridgeIfNeeded()
         if !preview && !discoverySuspendedForCurtains { startRediscoveryLoop() }
     }
 
     // MARK: Devices
+
+    var foregroundPollingSeconds: Int {
+        get { devices.pollingIntervals.foregroundSeconds }
+        set { devices.setPollingIntervals(.init(foregroundSeconds: newValue, backgroundSeconds: backgroundPollingSeconds)) }
+    }
+    var backgroundPollingSeconds: Int {
+        get { devices.pollingIntervals.backgroundSeconds }
+        set { devices.setPollingIntervals(.init(foregroundSeconds: foregroundPollingSeconds, backgroundSeconds: newValue)) }
+    }
 
     var onlineCount: Int { config.devices.filter { health[$0.did]?.state == .online }.count }
 
@@ -148,7 +158,7 @@ final class AppModel {
         let pending = Set(ids).subtracting(retryingDeviceIDs)
         retryingDeviceIDs.formUnion(pending)
         for did in pending {
-            if curtains.includes(did), let device = config.devices.first(where: { $0.did == did && $0.model == CurtainValidationSession.model }) {
+            if let device = config.devices.first(where: { $0.did == did && $0.model == CurtainValidationSession.model }) {
                 curtains.reconnect(device)
                 retryingDeviceIDs.remove(did)
                 continue

@@ -8,6 +8,24 @@ import MijiaCore
 
 @MainActor
 struct IncrementalSyncTests {
+    @Test("HomeKit reads use saved bridge state without LAN queries, while a changed control still writes and reads back immediately")
+    func cachedReadsAndImmediateWrite() async throws {
+        let fixture = try await Fixture.make()
+        let iid = try #require(await fixture.hap.accessoryDatabase().first { $0.aid == 2 }?.services.flatMap(\.characteristics).first { $0.type == .rotationSpeed }?.iid)
+        await fixture.settle()
+        let before = await fixture.transport.methods
+        for _ in 0..<20 {
+            #expect(await fixture.hap.readCharacteristic(aid: 2, iid: iid) == .float(50))
+            #expect(await fixture.hap.readStatus(aid: 2, iid: iid) == .success)
+        }
+        #expect(await fixture.transport.methods == before)
+        try await fixture.hap.writeCharacteristic(aid: 2, iid: iid, value: .float(70))
+        await fixture.settle()
+        let commands = Array(await fixture.transport.methods.dropFirst(before.count))
+        #expect(commands.contains("set_properties") && commands.contains("get_properties"))
+        #expect(await fixture.hap.readCharacteristic(aid: 2, iid: iid) == .float(70))
+        await fixture.stop()
+    }
     @Test("Unchanged polls do not rebuild HomeKit plans, write defaults, or push characteristic actors")
     func unchangedPolls() async throws {
         let fixture = try await Fixture.make()
@@ -166,6 +184,7 @@ private actor SyncTestTransport: MiioTransport {
     private let token = Data(repeating: 0, count: 16)
     private var offline = false
     private var values: [String: JSONValue] = ["2.1": .bool(true), "8.1": .number(50)]
+    private(set) var methods: [String] = []
     func set(_ key: String, _ value: JSONValue) { values[key] = value }
     func setOffline(_ value: Bool) { offline = value }
     func exchange(_ packet: Data, host: String, port: UInt16, timeout: Duration) async throws -> Data {
@@ -176,6 +195,7 @@ private actor SyncTestTransport: MiioTransport {
         let (_, payload) = try MiioPacket.decode(packet, token: token)
         let request = try JSONDecoder().decode(JSONValue.self, from: payload.prefix { $0 != 0 })
         let method = request["method"]?.stringValue ?? ""
+        methods.append(method)
         let args = request["params"]?.arrayValue ?? []
         let result: JSONValue
         switch method {

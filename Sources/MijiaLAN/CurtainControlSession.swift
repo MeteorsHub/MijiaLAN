@@ -95,7 +95,7 @@ public actor CurtainControlSession {
         state.message = detail + L10n.tr("；已停止后续请求，不会自动重发或重连。", "; further requests stopped. No automatic retry or reconnect.")
         publish()
     }
-    private func run(_ command: Command?, operationID: UUID? = nil, body: @escaping @Sendable () async throws -> State) async throws -> State {
+    private func run(_ command: Command?, operationID: UUID? = nil, source override: CurtainEventLog.Source? = nil, body: @escaping @Sendable () async throws -> State) async throws -> State {
         try current()
         guard operation == nil else { throw DeviceControlError.busy }
         let id = operationID ?? UUID()
@@ -107,6 +107,10 @@ public actor CurtainControlSession {
         case .stop: requestSource = .manualStop
         case nil: requestSource = .manualRead
         }
+        let effectiveSource = override ?? requestSource
+        return try await runOperation(command, id: id, requestSource: effectiveSource, body: body)
+    }
+    private func runOperation(_ command: Command?, id: UUID, requestSource: CurtainEventLog.Source, body: @escaping @Sendable () async throws -> State) async throws -> State {
         traceID = id; source = requestSource
         let writeTrace = CurtainWriteTrace(); self.writeTrace = writeTrace
         state.writeAttempted = false; state.writeSent = false
@@ -133,7 +137,7 @@ public actor CurtainControlSession {
         do {
             let result = try await task.value
             if operation?.id == id { state.stage = .finished; publish() }
-            journal.record(device.did, operation: id, source: requestSource, stage: .finished, outcome: result.confirmed ? .confirmed : .validated,
+            journal.record(device.did, operation: id, source: requestSource, stage: .finished, outcome: command != nil && result.confirmed ? .confirmed : .validated,
                            position: result.position, motorStatus: result.motorStatus, writeAttempted: writeTrace.attempted,
                            writeSent: writeTrace.sent, writeAcknowledged: command == nil ? nil : writeTrace.acknowledged)
             return result
@@ -273,6 +277,25 @@ public actor CurtainControlSession {
         try current()
         guard verified, !stopping, operation == nil, state.phase == .ready || state.phase == .moving else { throw DeviceControlError.busy }
         return try await run(nil) { try await self.readFull() }
+    }
+    /// One read-only turn in the App's unified poll. A paused session cannot reconnect itself.
+    public func poll(operationID: UUID = UUID()) async throws -> State {
+        try current()
+        guard operation == nil, !stopping, state.failureReason == nil else { throw DeviceControlError.busy }
+        guard device.model == CurtainValidationSession.model, device.specType == CurtainValidationSession.specification else {
+            throw DeviceControlError.unsupported("Curtain model/specification")
+        }
+        let cold = !started
+        started = true
+        return try await run(nil, operationID: operationID, source: .backgroundPoll) {
+            if cold {
+                await self.beginConnecting()
+                try await self.client.waitUntilIdle()
+                await self.markDrained()
+                try await self.connect(force: true)
+            }
+            return try await self.readFull()
+        }
     }
     private func readFull() async throws -> State {
         try await connect()

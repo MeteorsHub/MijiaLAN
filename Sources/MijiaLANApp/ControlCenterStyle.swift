@@ -47,7 +47,7 @@ enum DevicePresentation {
 
     static func summary(_ snapshot: DeviceSnapshot?) -> String {
         guard let s = snapshot else { return L10n.tr("等待设备信息", "Waiting for Device Information") }
-        guard s.isOnline else { return ConnectionIssue(health: s.health, manualOnly: s.device.model == CurtainValidationSession.model).title }
+        guard s.isOnline else { return ConnectionIssue(health: s.health).title }
         if s.lanReadingsRestriction != nil { return DeviceLANPolicy.unverifiedReadingsTitle }
         let on = s.primaryPower.flatMap { s.value($0.id)?.boolValue }
         if on == false {
@@ -78,11 +78,11 @@ struct ConnectionIssue {
     let message: String
     let needsAttention: Bool
 
-    init(health: LANDeviceHealth, manualOnly: Bool = false) {
-        if manualOnly, health.state == .unknown {
-            needsAttention = false
-            title = L10n.tr("尚未读取", "Not Read Yet")
-            message = L10n.tr("卷帘在启动和空闲时保持静默。请打开详情，启用控制偏好后点击手动读取。", "Curtains stay silent during startup and idle. Open details, enable the control preference and read manually.")
+    init(health: LANDeviceHealth, pollingPaused: Bool = false) {
+        if pollingPaused {
+            needsAttention = true
+            title = L10n.tr("自动读取已暂停", "Auto Reads Paused")
+            message = L10n.tr("上次查询未通过验证，已暂停该台自动读取。请打开详情查看原因，手动读取通过后恢复，无需启用控制。", "The last query failed validation; auto reads are paused for this device. Open details for the reason. A successful manual read resumes polling; controls can remain off.")
             return
         }
         needsAttention = [.tokenRejected, .unsupported].contains(health.state)

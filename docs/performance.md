@@ -1,6 +1,6 @@
 # Performance and background operation
 
-Online readings retain the existing three-second visible-panel and five-second hidden-panel cadence. Slow properties are read once a minute. Device controls, verified readback, the 240 ms panel/page animations, pairing identity and the user's Keep Mac Awake preference retain their existing behavior.
+Online readings target a configurable five-second visible-panel and thirty-second hidden-panel start-to-start cadence by default. Settings apply immediately and persist. A single loop subtracts round duration from its next wait, wakes on visibility changes, and drops missed periods without overlapping rounds. Slow devices may extend the actual cadence. Slow properties retain their sixty-second eligibility gate. Verified curtains join the same read-only round, pausing per device on errors across restarts until explicit manual recovery; generic curtain probes remain blocked. See [polling and log history](device-polling-and-log-history.md). Device controls, verified readback, the 240 ms panel/page animations, pairing identity and the user's Keep Mac Awake preference retain their existing behavior.
 
 ## Offline probes
 
@@ -16,7 +16,7 @@ delay seconds = clamp(nominal × random(0.9 ... 1.1), 20, 86,400)
 
 UDP retransmissions inside a round do not increment the failure count. Any authenticated success clears it. Backoff stays in memory; restarting the app probes every device again. Opening a panel or reading HomeKit state does not reset it.
 
-The five-minute LAN discovery still runs. Each known offline responder can receive one early authenticated verification per discovery round. A failed early verification advances the existing failure count; a broadcast response alone cannot establish an authenticated connection. Changing IP, token or model creates a new generation, cancels obsolete work and rejects late results. An already-sent UDP datagram cannot be recalled.
+The five-minute LAN discovery runs only when configuration contains no protected curtain. Configured curtains keep the legacy broadcast/probe paths blocked. Each known offline responder can receive one early authenticated verification per discovery round. A failed early verification advances the existing failure count; a broadcast response alone cannot establish an authenticated connection. Changing IP, token or model creates a new generation, cancels obsolete work and rejects late results. An already-sent UDP datagram cannot be recalled.
 
 ## Publication and HomeKit
 

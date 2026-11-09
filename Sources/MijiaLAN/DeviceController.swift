@@ -35,7 +35,11 @@ public final class DeviceController {
     public private(set) var retryStates: [String: ProbeRetryState] = [:]
     @ObservationIgnored private let api: LANMiotAPI
     @ObservationIgnored private let config: @Sendable () -> LocalHomeConfig
-    @ObservationIgnored private var pollTask: Task<Void, Never>?
+    public private(set) var pollingIntervals: DevicePollingIntervals
+    @ObservationIgnored private let pollingDefaults: UserDefaults?
+    @ObservationIgnored private let pollingLoop: DevicePollingLoop
+    /// The App's verified curtain reader joins this round, never its own timer or generic probes.
+    @ObservationIgnored public var refreshCurtains: @MainActor @Sendable () async -> Void = {}
     @ObservationIgnored private var context = PollingContext()
     @ObservationIgnored private var healthTask: Task<Void, Never>?
     @ObservationIgnored private var startedProbing = false
@@ -63,13 +67,19 @@ public final class DeviceController {
     }
     @ObservationIgnored private var coalesced: [String: Pending] = [:]
 
-    public init(api: LANMiotAPI, config: @escaping @Sendable () -> LocalHomeConfig) {
+    public convenience init(api: LANMiotAPI, config: @escaping @Sendable () -> LocalHomeConfig, pollingDefaults: UserDefaults? = nil) {
+        self.init(api: api, config: config, pollingDefaults: pollingDefaults, pollingClock: .init())
+    }
+    init(api: LANMiotAPI, config: @escaping @Sendable () -> LocalHomeConfig, pollingDefaults: UserDefaults?, pollingClock: DevicePollingLoop.Clock) {
         self.api = api; self.config = config
+        self.pollingDefaults = pollingDefaults
+        let intervals = pollingDefaults.map(DevicePollingIntervals.load(from:)) ?? DevicePollingIntervals()
+        pollingIntervals = intervals
+        pollingLoop = DevicePollingLoop(interval: intervals.interval(panelVisible: false), clock: pollingClock)
         reconcileConfiguration()
     }
 
     deinit {
-        pollTask?.cancel()
         healthTask?.cancel()
         for read in readTasks.values { read.task.cancel() }
     }
@@ -147,24 +157,23 @@ public final class DeviceController {
             continuation.yield(.statusChanged(.connected))
             continuation.yield(.snapshotUpdated(synthesizedHome()))
             continuation.onTermination = { [weak self] _ in Task { @MainActor in self?.continuations[id] = nil } }
-            if pollTask == nil {
-                pollTask = Task { [weak self] in
-                    while !Task.isCancelled {
-                        await self?.refreshNow()
-                        guard let seconds = self.map({ $0.context.panelVisible ? 3 : 5 }) else { return }
-                        try? await Task.sleep(for: .seconds(seconds))
-                    }
-                }
-            }
+            pollingLoop.start { [weak self] in await self?.refreshNow() }
         }
     }
     public func setPollingContext(_ context: PollingContext) {
         let becomingVisible = context.panelVisible && !self.context.panelVisible
         self.context = context
+        pollingLoop.setInterval(pollingIntervals.interval(panelVisible: context.panelVisible))
         if becomingVisible { withMutation(keyPath: \.snapshots) {} }
     }
+    public func setPollingIntervals(_ intervals: DevicePollingIntervals) {
+        guard pollingIntervals != intervals else { return }
+        pollingIntervals = intervals
+        if let pollingDefaults { intervals.save(to: pollingDefaults) }
+        pollingLoop.setInterval(intervals.interval(panelVisible: context.panelVisible))
+    }
     public func shutdown() {
-        pollTask?.cancel(); pollTask = nil
+        pollingLoop.stop()
         healthTask?.cancel(); healthTask = nil
         for read in readTasks.values { read.task.cancel() }; readTasks = [:]
         for c in continuations.values { c.finish() }; continuations = [:]
@@ -210,6 +219,7 @@ public final class DeviceController {
                 group.addTask { await self.refresh(did: did, capabilities: caps, joinExisting: true) }
             }
         }
+        if !Task.isCancelled { await refreshCurtains() }
     }
 
     private func observeHealthIfNeeded() {
