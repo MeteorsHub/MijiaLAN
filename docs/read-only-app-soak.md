@@ -71,3 +71,11 @@ bbfe803 的初始入口曾跳过 `MenuBarPanelController`，只覆盖真实 App 
 ## PanelMemory 原生测试 fixture 等待修正
 
 本地在锁屏状态下定向复测仍复现旧 `PanelMemoryTests.exitCompletion` 的两个断言失败。该测试此前用两段固定 200 ms sleep 假定 120 ms AppKit 动画已结束；此次仅修改测试 fixture：以实际 `.open` / `.closed`、didClose 次数及窗口隐藏为完成条件，短步泵送默认 AppKit run loop 并让出主 actor，单阶段最多等待 5 秒；defer 清理窗口，不用清理动作提前满足断言。生产 `PanelPresentation`、窗口关闭和通信逻辑没有改动。云端只能执行语法检查，锁屏下真实 AppKit 完成行为仍待本地原生复测，未据此宣称 UI 已验证修复。
+
+## 44958fa 本地全量原生复测
+
+来源为家庭 Mac 本地线程反馈，代码提交 `44958fa18a3282fea2e891d312e1a3975b9a380e`。原生测试分组 13 + 161 + 47 全部通过，App 38 项中 37 项通过；合计 **258/259**，不是全套通过。只读入口 **6/6** 均通过，lifetime 的固定等待竞态未再出现。
+
+唯一剩余失败为锁屏下旧 `PanelMemoryTests.exitCompletion` 的 reopened 断言（line 123）：等待 5 秒仍未进入 `.open`。生产窗口逻辑未改；本轮不继续围绕该锁屏动画反复调整 fixture，也不将它归为已修复。日志由本地保存在 `/tmp/mijialan-44958fa-tests.out`，云端未打开该文件。
+
+本地下一步计划为真实 App 进程级回环，验证正常后台 30 秒、deadline 退出及 -4004 故障停止；这些进程级结果在本次反馈时尚未提供。完成后才进入已授权客厅透明卷帘单台四小时只读。N 组实机 48 轮成功沿用前述证据，与 App 长测分开记录。没有新增代码修正。
