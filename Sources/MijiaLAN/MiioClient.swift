@@ -78,6 +78,11 @@ public actor MiioClient {
     /// The hello reply's header: device ID and clock. Does not prove the token is right.
     @discardableResult
     public func handshake(timeout: Duration? = nil) async throws -> MiioPacket.Header {
+        let queuedAt = time.now()
+        await acquire()
+        defer { release() }
+        try Task.checkCancellation()
+        queueWaitMilliseconds = Self.milliseconds(time.now() - queuedAt)
         let operation = DeviceCommunicationContext.operation ?? UUID()
         do { return try await DeviceCommunicationContext.$operation.withValue(operation) { try await observedHandshake(timeout: timeout) } }
         catch {
@@ -230,7 +235,7 @@ public actor MiioClient {
                 if needsHandshake {
                     // Validation handshakes are separately scheduled; never hide a second packet here.
                     if validation { throw DeviceControlError.unavailable("Handshake expired") }
-                    try await handshake(timeout: timeout)
+                    _ = try await observedHandshake(timeout: timeout)
                     helloAnswered = true
                 }
                 try Task.checkCancellation()
@@ -254,7 +259,9 @@ public actor MiioClient {
         guard deviceID != nil, let clock else { return true }
         let now = time.now()
         if policy.hello == .periodic, let lastHelloAt, now - lastHelloAt >= Self.clockMaxAge { return true }
-        return now - (lastReplyAt ?? clock.at) > Self.clockMaxAge
+        // A fresh hello is a new clock/contact anchor even when the preceding RPC was hours ago.
+        // Keep lastReplyAt untouched for diagnostics; it must not expire the newly established clock.
+        return now - max(lastReplyAt ?? clock.at, clock.at) > Self.clockMaxAge
     }
 
     private func send(_ method: String, params: JSONValue, timeout: Duration, strictResponse: Bool, wire: (@Sendable (CurtainWireEvent) -> Void)? = nil) async throws -> JSONValue {

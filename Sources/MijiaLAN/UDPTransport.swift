@@ -55,8 +55,8 @@ extension MiioTransport {
     }
 }
 
-/// BSD sockets rather than Network.framework: broadcast discovery needs `SO_BROADCAST`, and a fresh socket per
-/// exchange means a late reply to an earlier request can never be taken for the current one.
+/// BSD sockets support broadcast discovery and observable, bound per-device sessions. The legacy
+/// per-exchange transport remains selectable for explicit comparison; every path checks peer and RPC.
 /// Blocking calls run on a dispatch queue so they never hold a Swift concurrency thread.
 public struct UDPMiioTransport: MiioTransport {
     private static let queue = DispatchQueue(label: "MijiaLAN.udp", qos: .userInitiated, attributes: .concurrent)

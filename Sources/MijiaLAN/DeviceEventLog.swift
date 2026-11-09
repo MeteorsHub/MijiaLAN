@@ -68,7 +68,6 @@ public final class DeviceEventLog: @unchecked Sendable {
     private var lastBackgroundArchive: [String: Int64] = [:]
     private var failedStorage = false
     public var storageFailed: Bool { lock.withLock { failedStorage } }
-    public var isOfflineTest: Bool { scope == .offlineTest }
 
     public init(fileURL: URL? = nil, maxEvents: Int = 2_048, scope: Scope = .app, fileLimit: Int = DeviceEventLog.defaultFileLimit) {
         self.fileURL = fileURL; self.maxEvents = min(2_048, max(1, maxEvents)); self.scope = scope

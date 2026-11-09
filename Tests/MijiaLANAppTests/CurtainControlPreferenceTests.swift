@@ -47,6 +47,8 @@ private actor CountedPreview: MiioTransport {
         defaults.set([String](), forKey: "curtain.daily.enabled")
         let network = CountedPreview(), (curtains, devices, api) = make(defaults, transport: network)
         #expect(!curtains.includes(device().did))
+        for _ in 0..<12 { await devices.refreshNow() }
+        #expect(await network.count == 0) // Repeated rounds/panel wakes do not bypass the switch.
         #expect(!curtains.send(device().did, .position(64)))
         curtains.setEnabled(device(), true)
         #expect(await network.count == 0)
@@ -88,6 +90,10 @@ private actor CountedPreview: MiioTransport {
         curtains.shutdown(); devices.shutdown(); await api.shutdown()
         let next = CountedPreview(), (restored, restoredDevices, restoredAPI) = make(defaults, transport: next)
         #expect(restored.pausedPolling[device().did] == .propertyError)
+        restored.setEnabled(device(), false)
+        restored.setEnabled(device(), true)
+        #expect(restored.pausedPolling[device().did] == .propertyError)
+        #expect(await next.count == 0) // Toggling cannot recover a failed device implicitly.
         await restoredDevices.refreshNow()
         #expect(await next.count == 0)
         restored.read(device().did)
@@ -97,5 +103,26 @@ private actor CountedPreview: MiioTransport {
         await restoredDevices.refreshNow()
         #expect(await next.count == afterManual + 1)
         restored.shutdown(); restoredDevices.shutdown(); await restoredAPI.shutdown()
+    }
+    @Test("Missing legacy preference defaults off; a read while disabled does not opt into polling or writes")
+    func missingPreferenceAndManualRead() async throws {
+        let suite = "curtain-default-off-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let network = CountedPreview(), (curtains, devices, api) = make(defaults, transport: network)
+        #expect(!curtains.includes(device().did))
+        await devices.refreshNow()
+        #expect(await network.count == 0)
+        #expect(curtains.read(device().did))
+        let deadline = Date().addingTimeInterval(3)
+        while curtains.isWorking(device().did), Date() < deadline { try await Task.sleep(for: .milliseconds(1)) }
+        #expect(curtains.states[device().did]?.position == 29)
+        let count = await network.count
+        for _ in 0..<12 { await devices.refreshNow() }
+        #expect(await network.count == count)
+        #expect(!curtains.send(device().did, .open))
+        #expect(await network.count == count)
+        #expect(defaults.stringArray(forKey: "curtain.daily.enabled") == nil)
+        curtains.shutdown(); devices.shutdown(); await api.shutdown()
     }
 }

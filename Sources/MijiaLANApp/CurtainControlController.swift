@@ -238,7 +238,9 @@ final class CurtainControlController {
         guard devices[did]?.model == CurtainValidationSession.model else { return nil }
         if isWorking(did) { return submissions[did]?.phase == .waiting ? L10n.tr("已提交 · 等待当前读取", "Submitted · Waiting for Read") : L10n.tr("用户请求进行中", "User Request Running") }
         if pausedPolling[did] != nil { return L10n.tr("自动读取已暂停 · 请手动恢复", "Auto Reads Paused · Resume Manually") }
-        guard let position = states[did]?.position else { return L10n.tr("等待统一轮询", "Awaiting Device Poll") }
+        guard let position = states[did]?.position else {
+            return includes(did) ? L10n.tr("等待统一轮询", "Awaiting Device Poll") : L10n.tr("日常控制未启用 · 可手动读取", "Daily Control Off · Read Once Available")
+        }
         return L10n.tr("上次 \(position)%", "Last read \(position)%")
     }
     func shutdown() {

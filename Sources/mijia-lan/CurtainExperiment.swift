@@ -45,6 +45,7 @@ enum CurtainExperiment {
                        baselineNormal: flags.contains("--baseline-normal"), logDirectory: values["--log-directory"])
     }
     static func invalid() -> MiioError { .badResponse("curtain-experiment requires explicit --socket fresh|stable --layout full|adaptive|single --hello silence|periodic --stamp replyPlusOne|helloAnchored --slot N --reads 1...48 --interval 5...300; real reads also require --execute --baseline-normal --log-directory NEW_DIRECTORY. No writes are supported.") }
+    private enum Finish: String, Sendable { case complete, failed, cancelled, discarded }
     static func run(_ args: [String], port: UInt16) async throws {
         let options = try parse(args)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
@@ -61,33 +62,37 @@ enum CurtainExperiment {
         let journal = DeviceEventLog(fileURL: destination.appendingPathComponent("traffic.jsonl"), scope: .experiment)
         journal.register([device.did])
         let session = try CurtainControlSession.experiment(device: device, policy: options.policy, journal: journal, port: port)
-        let worker = Task { () -> Int in
+        let worker = Task { () -> (Int, Finish) in
             var completed = 0
             var lastStart: ContinuousClock.Instant?
-        for _ in 0..<options.reads {
-            do {
-                if let lastStart { try await Task.sleep(until: lastStart.advanced(by: .seconds(options.interval)), clock: .continuous) }
-                try Task.checkCancellation()
-                lastStart = .now
-                _ = try await session.poll(source: .experiment)
-                completed += 1
-                // Do not continue a hardware experiment after even a rejected/late datagram.
-                if journal.snapshot().contains(where: { $0.outcome == .discarded }) { break }
-            } catch {
-                journal.record(device.did, source: .experiment, stage: .finished, outcome: .paused,
-                    reason: DeviceEventLog.reason(error), code: DeviceEventLog.code(error))
-                break
+            for _ in 0..<options.reads {
+                do {
+                    if let lastStart { try await Task.sleep(until: lastStart.advanced(by: .seconds(options.interval)), clock: .continuous) }
+                    try Task.checkCancellation()
+                    lastStart = .now
+                    _ = try await session.poll(source: .experiment)
+                    completed += 1
+                    // Even a rejected/late datagram ends this deliberately controlled experiment.
+                    if journal.snapshot().contains(where: { $0.outcome == .discarded }) {
+                        journal.record(device.did, source: .experiment, stage: .finished, outcome: .paused, reason: .invalidReply)
+                        return (completed, .discarded)
+                    }
+                } catch {
+                    journal.record(device.did, source: .experiment, stage: .finished, outcome: .paused,
+                        reason: DeviceEventLog.reason(error), code: DeviceEventLog.code(error))
+                    return (completed, error is CancellationError ? .cancelled : .failed)
+                }
             }
-        }
-            return completed
+            return (completed, .complete)
         }
         let interrupt = DispatchSource.makeSignalSource(signal: SIGINT, queue: .global())
         let previous = signal(SIGINT, SIG_IGN)
         interrupt.setEventHandler { worker.cancel(); Task { await session.end() } }
         interrupt.activate()
         defer { interrupt.cancel(); _ = signal(SIGINT, previous) }
-        let completed = await worker.value
+        let (completed, finish) = await worker.value
         await session.end(); journal.flush()
-        print("experiment_finished completed_rounds=\(completed) writes=0; retained logs are in the explicitly selected directory")
+        print("experiment_finished outcome=\(finish.rawValue) completed_rounds=\(completed) writes=0; retained logs are in the explicitly selected directory")
+        guard finish == .complete else { throw MiioError.badResponse("Read-only experiment stopped; inspect the sanitized journal. No automatic recovery or retry was attempted.") }
     }
 }

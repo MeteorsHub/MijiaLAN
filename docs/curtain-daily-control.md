@@ -1,6 +1,6 @@
 # 杜亚卷帘日常控制与分阶段验收
 
-**当前以 [2026-11-08 静默模式与设备日志](device-diagnostics-and-curtain-silence.md) 为准：启动/空闲不发卷帘请求，本轮只做构建和模拟；以下自动轮询及实机验收步骤为历史阶段记录。**
+**当前候选以[卷帘通信策略与对照入口](curtain-communication-experiments.md)及[统一轮询说明](device-polling-and-log-history.md)为准：恢复按台日常控制开关，开启后使用修订策略轮询，既有失败暂停保留。本轮先做原生编译、离线与 loopback；下方较早阶段的行为和验收步骤保留为历史记录，不能视为新版本实机通过。**
 
 本轮在 `f34c94e` 的保护逻辑上增加 App 内日常控制。适用于 `dooya.motor.dc1545`、固件 `1.1.3`、URN `urn:miot-spec-v2:device:motor-controller:0000A01D:dooya-dc1545:1`。设备详情可保存每台的启用选择；允许 0–100% 任意目标、全开、全关和运动中停止。原先“单次最多 5 个百分点”“每次重启重新启用”的限制不适用于日常入口。
 

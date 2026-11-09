@@ -173,3 +173,75 @@ extension UDPDiagnosticsTests {
         await client.close()
     }
 }
+
+private final class LoopbackProtocolClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Duration = .zero
+    var now: Duration { lock.withLock { value } }
+    func advance() { lock.withLock { value += .seconds(30) } }
+}
+extension UDPDiagnosticsTests {
+    @Test("One real UDP session crosses 18 simulated hello periods with correlated ports, RPCs and bounded clock stamps")
+    func stableClientAcrossHelloPeriods() async throws {
+        let server = try UDPSocket(bindHost: "127.0.0.1"), time = LoopbackProtocolClock()
+        let token = Data(repeating: 0, count: 16)
+        let responder = loopbackResponder { () throws -> ([UInt16], Int) in
+            let fake = FakeMiioNetwork.Device(host: "127.0.0.1", token: token, deviceID: 123)
+            var infos = 0, hellos = 0, ports: [UInt16] = []
+            while infos < 72 {
+                guard let request = try server.receive(timeout: 3) else { throw MiioError.timeout }
+                ports.append(request.port)
+                fake.stamp = 5_000 + UInt32(time.now.components.seconds)
+                let response: Data
+                if request.data == MiioPacket.hello {
+                    hellos += 1; response = FakeMiioNetwork.helloReply(fake)
+                } else {
+                    let (_, payload) = try MiioPacket.decode(request.data, token: token)
+                    let json = try JSONDecoder().decode(JSONValue.self, from: payload.prefix { $0 != 0 })
+                    let body = JSONValue.object(["id": json["id"] ?? .null, "result": .object(["model": .string("loopback")])])
+                    response = try MiioPacket.encode(Data(body.compactJSONString.utf8) + [0], token: token, deviceID: 123, stamp: fake.stamp)
+                    infos += 1
+                }
+                try server.send(response, to: "127.0.0.1", port: request.port)
+            }
+            return (ports, hellos)
+        }
+        let journal = DeviceEventLog(maxEvents: 2_048, scope: .offlineTest)
+        let client = MiioClient(host: "127.0.0.1", token: token, port: server.localPort, retries: 0,
+            events: journal, policy: .revised, expectedDeviceID: 123, time: .init(now: { time.now }))
+        for _ in 0..<72 { time.advance(); #expect(try await client.info().model == "loopback") }
+        let (ports, hellos) = try await responder.value
+        #expect(hellos == 18 && Set(ports).count == 1)
+        let sent = journal.snapshot().filter { $0.outcome == .sent }
+        #expect(sent.count == 90)
+        #expect(Set(sent.compactMap { $0.packet?.socket }).count == 1)
+        let checked = journal.snapshot().filter { $0.outcome == .packetChecked && $0.kind == .info }
+        #expect(checked.count == 72 && checked.allSatisfy { $0.packet?.clockAccepted == true && $0.packet?.rpcIDMatches == true })
+        #expect(checked.last?.packet?.helloSent == 18 && checked.last?.packet?.infoSent == 72)
+        #expect(!journal.snapshot().contains { $0.outcome == .discarded || $0.outcome == .paused })
+        await client.close()
+    }
+    @Test("A late duplicate queued before the next stable exchange is drained rather than mistaken for its reply")
+    func stableDrainsQueuedDuplicate() async throws {
+        let server = try UDPSocket(bindHost: "127.0.0.1"), log = SocketObservations()
+        let transport = UDPMiioTransport().sessionTransport(policy: .stable)
+        let first = loopbackResponder {
+            guard let request = try server.receive(timeout: 3) else { throw MiioError.timeout }
+            try server.send(Data([1]), to: "127.0.0.1", port: request.port)
+            try server.send(Data([99]), to: "127.0.0.1", port: request.port)
+        }
+        _ = try await transport.exchangeValidated(Data([1]), host: "127.0.0.1", port: server.localPort,
+            timeout: .seconds(2), observe: log.append, accept: { $0 == Data([1]) })
+        try await first.value // The duplicate is already queued before the second request begins.
+        let second = loopbackResponder {
+            guard let request = try server.receive(timeout: 3) else { throw MiioError.timeout }
+            try server.send(Data([2]), to: "127.0.0.1", port: request.port)
+        }
+        #expect(try await transport.exchangeValidated(Data([2]), host: "127.0.0.1", port: server.localPort,
+            timeout: .seconds(2), observe: log.append, accept: { $0 == Data([2]) }) == Data([2]))
+        try await second.value
+        #expect(log.snapshot.filter { if case .discarded = $0.boundary { true } else { false } }.count == 1)
+        #expect(log.snapshot.filter { if case .sent = $0.boundary { true } else { false } }.count == 2)
+        await transport.closeSession(observe: log.append)
+    }
+}

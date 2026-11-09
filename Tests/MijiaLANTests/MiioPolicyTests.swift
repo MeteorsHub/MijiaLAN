@@ -49,6 +49,8 @@ private actor ClockReplyTransport: MiioTransport {
         }
         return try await network.exchange(packet, host: host, port: port, timeout: timeout)
     }
+    func injectFault() { fake.propertyErrors["2.9"] = -4004; fake.propertyErrors["2.10"] = -4004 }
+    func writeCount() -> Int { fake.receivedWrites.count }
     func broadcast(_ packet: Data, port: UInt16, duration: Duration, rounds: Int) async throws -> [MiioDatagram] { [] }
 }
 struct MiioPolicyTests {
@@ -103,6 +105,50 @@ struct MiioPolicyTests {
             #expect(result.confirmed && result.position == 64)
             await session.end()
         }
+    }
+    @Test("Compact reads never authorize a write without a fresh full check, and periodic full checks retain fault errors")
+    func fullCheckFailure() async throws {
+        for attemptControl in [false, true] {
+            let (session, transport, time, journal) = make(.real)
+            _ = try await session.poll()
+            for _ in 0..<3 { time.advance(.seconds(10)); _ = try await session.poll() }
+            await transport.injectFault()
+            // A compact query can remain valid, but must not make a subsequent control bypass fault checks.
+            time.advance(.seconds(10)); _ = try await session.poll()
+            if attemptControl {
+                await #expect(throws: (any Error).self) { try await session.manual(.position(64)) }
+            } else {
+                time.advance(.seconds(300))
+                await #expect(throws: (any Error).self) { try await session.poll() }
+            }
+            let failure = await session.snapshot()
+            #expect(await transport.layouts.last == [2,3,4,5,9,10], "control=\(attemptControl) reason=\(String(describing: failure.failureReason))")
+            #expect(await transport.writeCount() == 0)
+            #expect(journal.snapshot().contains { $0.outcome == .responseCode && $0.piid == 9 && $0.code == -4004 })
+            #expect(journal.snapshot().contains { $0.outcome == .observedValue && $0.piid == 3 && $0.value == 29 })
+            let before = await transport.calls
+            await #expect(throws: (any Error).self) { try await session.poll() }
+            #expect(await transport.calls == before)
+            await session.end()
+        }
+    }
+    @Test("Read-only experiment sessions cannot issue a motor or position write through public control methods")
+    func readOnlySession() async throws {
+        let time = PolicyTime(), transport = ClockReplyTransport(time: time, model: .real)
+        let device = LocalDevice(did: "123", name: "Synthetic", model: CurtainValidationSession.model,
+            host: "192.0.2.12", token: String(repeating: "0", count: 32), specType: CurtainValidationSession.specification)
+        let journal = DeviceEventLog(scope: .offlineTest)
+        let client = MiioClient(host: device.host, token: Data(repeating: 0, count: 16), transport: transport,
+            knownModel: device.model, policy: .revised, expectedDeviceID: 123, time: .init(now: { time.now }))
+        let session = CurtainControlSession(device: device, client: client,
+            scheduler: CurtainRequestScheduler(clock: time.sessionClock), clock: time.sessionClock,
+            isCurrent: { true }, journal: journal, allowWrites: false)
+        _ = try await session.poll()
+        await #expect(throws: (any Error).self) { try await session.manual(.position(64)) }
+        await #expect(throws: (any Error).self) { try await session.stop() }
+        #expect(await transport.writeCount() == 0)
+        #expect(!journal.snapshot().contains { $0.kind == .write && $0.outcome == .sent })
+        await session.end()
     }
     @Test("The legacy hello axis can be selected independently without changing the anchored stamp axis")
     func legacyHelloAxis() async throws {

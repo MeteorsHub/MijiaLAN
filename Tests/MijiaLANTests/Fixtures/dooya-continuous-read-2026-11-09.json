@@ -6,32 +6,175 @@
   "run": "2493A25E-A8BB-4C07-A5D8-EE2777DB2F7A",
   "firstEvent": "2026-11-09T22:15:28+08:00",
   "devices": [
-    {"alias":1,"hello":1,"info":1,"reads":38,"writes":0,"successfulSamples":37,"firstFailure":"2026-11-09T22:30:29+08:00"},
-    {"alias":5,"hello":1,"info":1,"reads":38,"writes":0,"successfulSamples":37,"firstFailure":"2026-11-09T22:30:30+08:00"},
-    {"alias":6,"hello":1,"info":1,"reads":38,"writes":0,"successfulSamples":37,"firstFailure":"2026-11-09T22:30:30+08:00"},
-    {"alias":7,"hello":1,"info":1,"reads":38,"writes":0,"successfulSamples":37,"firstFailure":"2026-11-09T22:30:31+08:00"},
-    {"alias":4,"hello":1,"info":1,"reads":39,"writes":1,"successfulSamples":38,"firstFailure":"2026-11-09T22:30:59+08:00"},
-    {"alias":8,"hello":1,"info":1,"reads":38,"writes":1,"successfulSamples":37,"firstFailure":"2026-11-09T22:30:02+08:00"}
+    {
+      "alias": 1,
+      "hello": 1,
+      "info": 1,
+      "reads": 38,
+      "writes": 0,
+      "successfulSamples": 37,
+      "firstFailure": "2026-11-09T22:30:29+08:00"
+    },
+    {
+      "alias": 5,
+      "hello": 1,
+      "info": 1,
+      "reads": 38,
+      "writes": 0,
+      "successfulSamples": 37,
+      "firstFailure": "2026-11-09T22:30:30+08:00"
+    },
+    {
+      "alias": 6,
+      "hello": 1,
+      "info": 1,
+      "reads": 38,
+      "writes": 0,
+      "successfulSamples": 37,
+      "firstFailure": "2026-11-09T22:30:30+08:00"
+    },
+    {
+      "alias": 7,
+      "hello": 1,
+      "info": 1,
+      "reads": 38,
+      "writes": 0,
+      "successfulSamples": 37,
+      "firstFailure": "2026-11-09T22:30:31+08:00"
+    },
+    {
+      "alias": 4,
+      "hello": 1,
+      "info": 1,
+      "reads": 39,
+      "writes": 1,
+      "successfulSamples": 38,
+      "firstFailure": "2026-11-09T22:30:59+08:00"
+    },
+    {
+      "alias": 8,
+      "hello": 1,
+      "info": 1,
+      "reads": 38,
+      "writes": 1,
+      "successfulSamples": 37,
+      "firstFailure": "2026-11-09T22:30:02+08:00"
+    }
   ],
   "firstFailureCodes": [
-    {"piid":2,"code":0},{"piid":3,"code":0},{"piid":4,"code":0},{"piid":5,"code":0},
-    {"piid":9,"code":-4004},{"piid":10,"code":-4004}
+    {
+      "piid": 2,
+      "code": 0
+    },
+    {
+      "piid": 3,
+      "code": 0
+    },
+    {
+      "piid": 4,
+      "code": 0
+    },
+    {
+      "piid": 5,
+      "code": 0
+    },
+    {
+      "piid": 9,
+      "code": -4004
+    },
+    {
+      "piid": 10,
+      "code": -4004
+    }
   ],
-  "followupRun":"AADBA76B-213D-4C39-AE48-DDED6D1D21F3",
-  "followupRead":"2026-11-09T22:59:25+08:00",
-  "followupCodes":[
-    {"piid":2,"code":0},{"piid":3,"code":-4004},{"piid":4,"code":-4004},
-    {"piid":5,"code":-4004},{"piid":9,"code":-4004},{"piid":10,"code":-4004}
+  "followupRun": "AADBA76B-213D-4C39-AE48-DDED6D1D21F3",
+  "followupRead": "2026-11-09T22:59:25+08:00",
+  "followupCodes": [
+    {
+      "piid": 2,
+      "code": 0
+    },
+    {
+      "piid": 3,
+      "code": -4004
+    },
+    {
+      "piid": 4,
+      "code": -4004
+    },
+    {
+      "piid": 5,
+      "code": -4004
+    },
+    {
+      "piid": 9,
+      "code": -4004
+    },
+    {
+      "piid": 10,
+      "code": -4004
+    }
   ],
-  "window":{
-    "start":"2026-11-09T22:25:00+08:00","end":"2026-11-09T22:31:01+08:00",
-    "curtainSends":66,"completeBatches":60,"failedBatches":6,
-    "allHomeSends":175,"otherDeviceReads":108,"otherDeviceHellos":1,
-    "responseMilliseconds":{"minimum":59,"median":205.5,"maximum":428},
-    "failedResponseMilliseconds":{"minimum":162,"maximum":294},
-    "maxInFlight":1,"overlappingSends":0,"writes":0,"actions":0,"hellos":0,"infos":0,"broadcasts":0
+  "window": {
+    "start": "2026-11-09T22:25:00+08:00",
+    "end": "2026-11-09T22:31:01+08:00",
+    "curtainSends": 66,
+    "completeBatches": 60,
+    "failedBatches": 6,
+    "allHomeSends": 175,
+    "otherDeviceReads": 108,
+    "otherDeviceHellos": 1,
+    "responseMilliseconds": {
+      "minimum": 59,
+      "median": 205.5,
+      "maximum": 428
+    },
+    "failedResponseMilliseconds": {
+      "minimum": 162,
+      "maximum": 294
+    },
+    "maxInFlight": 1,
+    "overlappingSends": 0,
+    "writes": 0,
+    "actions": 0,
+    "hellos": 0,
+    "infos": 0,
+    "broadcasts": 0,
+    "beforeFirstFailurePrefixPacket": 60,
+    "oneLaterC4Success": true
   },
-  "valuesAvailable":false,
-  "physicalControlCurrentlyWorking":false,
-  "cause":"unknown"
+  "valuesAvailable": false,
+  "physicalControlCurrentlyWorking": false,
+  "cause": "unknown",
+  "normalDurationMilliseconds": 851718,
+  "firstPropertyRead": "2026-11-09T22:15:50+08:00",
+  "beforeGlobalFirstFailure": {
+    "successfulSent": 236,
+    "hello": 6,
+    "info": 6,
+    "read": 222,
+    "write": 2,
+    "firstFailurePacket": 237,
+    "includesInitializationBeforeFirstPropertyRead": true
+  },
+  "afterUserConfirmation": {
+    "confirmedElapsedMilliseconds": 255947,
+    "firstFailureElapsedMilliseconds": 873622,
+    "durationMilliseconds": 617675,
+    "successfulSent": 125,
+    "allBackgroundRead": true,
+    "firstFailurePacket": 126,
+    "C8SuccessfulReads": 20,
+    "C8FirstFailedRead": 21,
+    "normalPositions": {
+      "C1": 0,
+      "C4": 100,
+      "C5": 100,
+      "C6": 100,
+      "C7": 0,
+      "C8": 21
+    },
+    "normalMotorStatus": 1,
+    "failureItemValuesAvailable": false
+  }
 }
