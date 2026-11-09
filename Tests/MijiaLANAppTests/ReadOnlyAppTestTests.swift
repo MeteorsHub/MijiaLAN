@@ -72,7 +72,8 @@ private actor ReadOnlyPreview: MiioTransport {
         for (key, value) in [(ReadOnlyAppTest.flag, "0"), ("MIJIALAN_EPHEMERAL", "0"),
                              (ReadOnlyAppTest.durationKey, "0"), (ReadOnlyAppTest.durationKey, "43201"),
                              (ReadOnlyAppTest.portKey, "0"), (ReadOnlyAppTest.portKey, "65536"),
-                             ("MIJIALAN_UI_PREVIEW", "1"), ("MIJIALAN_SNAPSHOT", "/not-read")] {
+                             ("MIJIALAN_UI_PREVIEW", "1"), ("MIJIALAN_SNAPSHOT", "/not-read"),
+                             ("MIJIALAN_PANEL_OPEN_ON_LAUNCH", "1")] {
             var env = f.environment; env[key] = value
             #expect(throws: ReadOnlyAppTest.Rejected.self) { try ReadOnlyAppTest.prepare(env) }
         }
@@ -173,8 +174,12 @@ private actor ReadOnlyPreview: MiioTransport {
     @Test("A bounded deadline completes once; failure from the real unified poll closes and retains the paused log")
     func lifetimeAndFailure() async throws {
         var reasons: [DeviceEventLog.Reason] = []
-        let deadline = ReadOnlyAppTestLifetime(seconds: 1) { reasons.append($0) }
-        try await Task.sleep(for: .milliseconds(1_100))
+        let completion = AsyncStream<DeviceEventLog.Reason>.makeStream()
+        let deadline = ReadOnlyAppTestLifetime(seconds: 1) {
+            reasons.append($0); completion.continuation.yield($0); completion.continuation.finish()
+        }
+        var completed = completion.stream.makeAsyncIterator()
+        #expect(await completed.next() == .deadline)
         await deadline.stop(.propertyError)
         #expect(reasons == [.deadline] && deadline.finished)
         let f = try ReadOnlyLaunchFixture(); defer { f.remove() }

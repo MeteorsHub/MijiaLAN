@@ -46,8 +46,8 @@ final class MijiaLANApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         lifetime.start()
         if let model {
+            menuBar = MenuBarPanelController(model: model)
             if model.isReadOnlyAppTest { model.startReadOnlyAppTest { NSApp.terminate(nil) } }
-            else { menuBar = MenuBarPanelController(model: model) }
         }
     }
 
@@ -61,7 +61,7 @@ final class MijiaLANApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        menuBar?.show()
+        if model?.isReadOnlyAppTest != true { menuBar?.show() }
         return false
     }
 }

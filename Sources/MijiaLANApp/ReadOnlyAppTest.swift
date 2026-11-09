@@ -32,6 +32,7 @@ struct ReadOnlyAppTest {
         #if DEBUG
         guard environment[flag] == "1", environment["MIJIALAN_EPHEMERAL"] == "1",
               environment["MIJIALAN_UI_PREVIEW"] != "1", environment["MIJIALAN_SNAPSHOT"] == nil,
+              environment["MIJIALAN_PANEL_OPEN_ON_LAUNCH"] != "1",
               let seed = environment["MIJIALAN_SEED_CONFIG"], seed.hasPrefix("/"),
               let path = environment[directoryKey], path.hasPrefix("/"),
               let seconds = environment[durationKey].flatMap(Int.init), (1...43_200).contains(seconds),
@@ -109,8 +110,9 @@ final class ReadOnlyAppTestLifetime {
     private let finish: @MainActor (DeviceEventLog.Reason) async -> Void
     init(seconds: Int, finish: @escaping @MainActor (DeviceEventLog.Reason) async -> Void) {
         self.finish = finish
+        let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
         timer = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(seconds)); await self?.stop(.deadline) } catch { }
+            do { try await Task.sleep(until: deadline, clock: .continuous); await self?.stop(.deadline) } catch { }
         }
     }
     func stop(_ reason: DeviceEventLog.Reason) async {

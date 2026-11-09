@@ -62,7 +62,7 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
             name: NSApplication.willTerminateNotification, object: nil)
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(activeApplicationChanged),
             name: NSWorkspace.didActivateApplicationNotification, object: nil)
-        if ProcessInfo.processInfo.environment["MIJIALAN_PANEL_OPEN_ON_LAUNCH"] == "1" {
+        if !model.isReadOnlyAppTest, ProcessInfo.processInfo.environment["MIJIALAN_PANEL_OPEN_ON_LAUNCH"] == "1" {
             DispatchQueue.main.async { [weak self] in self?.show() }
         }
     }
@@ -99,6 +99,9 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
     }
 
     func show() {
+        // Retain the ordinary status item, hidden window and workspace lifecycle during a soak.
+        // Any presentation request stays hidden so it cannot switch the unified loop to foreground.
+        guard !model.isReadOnlyAppTest else { return }
         guard !presentation.isPresented, pendingShow == nil else { return }
         guard let icon = positionedIconFrame, icon == settledIconFrame else {
             // The status-item window initially has a placeholder frame, even

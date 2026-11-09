@@ -12,7 +12,7 @@
 - seed 必须恰好一台 `dooya.motor.dc1545`、正确 v1 URN、有效十进制 DID、32 位十六进制 token、IPv4 地址，无 skipped 条目。
 - `MIJIALAN_READ_ONLY_APP_TEST_LOG_DIRECTORY`：**尚不存在**的新目录，父目录必须已存在；入口原子创建 0700 目录，不重用或修改旧目录。
 - `MIJIALAN_READ_ONLY_APP_TEST_SECONDS`：整数 1…43200，实际本轮设 **14400（4 小时）**。
-- 不允许同时启用 UI preview / snapshot；不运行 DevSnapshot，也不创建菜单栏面板。后台固定 30 秒，前台设置保留 10 秒，仍由原统一调度减去轮次耗时。
+- 不允许同时启用 UI preview / snapshot 或 `MIJIALAN_PANEL_OPEN_ON_LAUNCH=1`；不运行 DevSnapshot。创建普通 `MenuBarPanelController`，保留状态项、隐藏面板窗口、NSWorkspace 通知及正常后台生命周期。面板保持隐藏，测试模式的 reopen/展示请求不打开面板。后台固定 30 秒，前台设置保留 10 秒，仍由原统一调度减去轮次耗时。
 
 仅残留测试选项、没有正确完整标志时也会拒绝。Release 收到测试选项时拒绝启动该模式。没有这些测试选项时普通 App 行为保持原样；旧的普通 `MIJIALAN_EPHEMERAL` seed 行为不改。
 
@@ -45,7 +45,7 @@ build/MijiaLAN.app/Contents/MacOS/MijiaLAN
 
 ## 只读、日志和结束
 
-- 只将隔离 suite 的唯一卷帘设为 opt-in。HomeKit/Matter 不附加、不启用，不发发现广播；不显示测试面板，不自动控制。
+- 只将隔离 suite 的唯一卷帘设为 opt-in。HomeKit/Matter 不附加、不启用，不发发现广播；普通菜单栏控制器存在但面板保持后台隐藏，不自动控制。
 - `CurtainControlController` 的实际请求入口拒绝 position/open/close/stop；`LANMiotAPI` 拒绝写入与 action，创建的专用 session 也设置 `allowWrites=false`。不是依赖不点击按钮实现只读。
 - 详细日志 `traffic.jsonl` 的 scope 为 **experiment**，完整收发滚动 64 MiB，关键历史另留 4 MiB；保持原有脱敏字段及流式导出格式。`plan.json` 仅含时长、策略、端口和设备数等安全元数据，不含 seed。
 - App 在该有界测试期间持有临时 userInitiated 活动，避免空闲睡眠/App Nap影响轮询；结束释放，不改变系统电源偏好或锁屏。
@@ -56,3 +56,13 @@ build/MijiaLAN.app/Contents/MacOS/MijiaLAN
 ## 云端验证边界
 
 新增 **6 项回归通过**，隔离完整 Swift **132 项通过**，**115 个 Swift 文件语法检查通过**。新增回归验证门控与默认无效、无效/多台/不安全 seed、0700 新目录、FIFO 成功及无 writer 超时、实际控制器/接口拒绝写入与 action、统一 DeviceController 成功只读、故障停止、日志重开和有界 deadline。Linux harness 的编解码为替身，AppModel/AppKit 生命周期只做语法检查；完整原生构建及进程级回环需家庭 Mac 补齐后再使用真实目标。没有修改 e57 通信算法，没有在云端发实机包。
+
+
+## 菜单栏生命周期修正
+
+bbfe803 的初始入口曾跳过 `MenuBarPanelController`，只覆盖真实 App 后端和调度。后续最小修正是在相同的 App 启动回调中先创建普通菜单栏控制器，再启动只读 lifetime；保留窗口、状态项和 NSWorkspace 生命周期，并通过门控及展示入口禁止切到前台。普通用户模式不变。此修正不改变四项通信策略；后台生命周期的进程级回环与正式四小时长测需基于修正后的提交进行，先前六项原生回归成绩仍对应 bbfe803。
+
+
+有界时长从 `ReadOnlyAppTestLifetime.init` 捕获的绝对 ContinuousClock 截止点计算，任务调度延迟不会延后其计时起点。期限回归等待明确完成事件后检查停止幂等，移除固定 sleep 1100 ms 的调度假设。bbfe803 在本地全量并行测试中暴露的 lifetime 断言竞态由此修正；旧 PanelMemory 的独立复测仍由本地分类，本提交不据此改动窗口关闭逻辑。
+
+本次菜单栏/绝对期限后续修正：云端入口定向 **6/6** 通过（包括 open-on-launch 参数拒绝），115 个 Swift 文件语法检查通过。菜单栏窗口与 NSWorkspace 通知的真实进程验收、全量原生测试继续由本地执行；未向实机发包。
