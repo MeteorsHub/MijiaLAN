@@ -13,7 +13,7 @@ public enum DeviceLANPolicy {
 
     public static func restriction(for model: String) -> String? {
         guard !allowsPropertyRequests(for: model) else { return nil }
-        return L10n.tr("通用读写及桥接控制暂停；App 使用专用校验与调度读取状态，可在设备详情启用日常控制", "Generic reads/writes and bridge control are paused. The App reads through its verified curtain scheduler; daily controls can be enabled in device details.")
+        return L10n.tr("通用读写及桥接控制暂停；App 设备详情通过专用校验与调度提供状态和控制", "Generic reads/writes and bridge control are paused. App device details provide readings and controls through the verified curtain scheduler.")
     }
 
     public static var unverifiedReadingsTitle: String {

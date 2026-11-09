@@ -106,8 +106,7 @@ struct CapabilityNumberInput: View {
     private var text: Binding<String> {
         Binding(get: { edit.text }, set: {
             edit.text = $0
-            edit.isEditing = Double($0.trimmingCharacters(in: .whitespaces)) != value?.doubleValue
-                || (!$0.isEmpty && Double($0.trimmingCharacters(in: .whitespaces)) == nil)
+            edit.isEditing = true
             edit.validationError = nil
         })
     }
@@ -146,10 +145,7 @@ struct CapabilityNumberInput: View {
         }
         .controlSize(.small)
         .onChange(of: value, initial: true) {
-            if !edit.isEditing || Double(edit.text) == value?.doubleValue {
-                edit.text = currentText
-                edit.isEditing = false
-            }
+            edit.receive(currentText, focused: isFocused)
         }
         .onChange(of: working) {
             if !working { edit.text = currentText; edit.isEditing = false }

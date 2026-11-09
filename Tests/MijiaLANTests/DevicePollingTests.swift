@@ -37,13 +37,13 @@ private final class PollTime: @unchecked Sendable {
         for _ in 0..<2_000 { if condition() { return }; await Task.yield() }
         #expect(condition())
     }
-    @Test("Defaults are 5 seconds visible and 30 hidden, persist independently, and reject invalid stored intervals")
+    @Test("Defaults are 10 seconds visible and 30 hidden, persist independently, and reject invalid stored intervals")
     func defaultsAndPersistence() throws {
         let name = "polling-" + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         #expect(DevicePollingIntervals.load(from: defaults) == .init())
-        #expect(DevicePollingIntervals().interval(panelVisible: true) == .seconds(5))
+        #expect(DevicePollingIntervals().interval(panelVisible: true) == .seconds(10))
         #expect(DevicePollingIntervals().interval(panelVisible: false) == .seconds(30))
         DevicePollingIntervals(foregroundSeconds: 7, backgroundSeconds: 81).save(to: defaults)
         let reopened = try #require(UserDefaults(suiteName: name))
@@ -51,6 +51,13 @@ private final class PollTime: @unchecked Sendable {
         reopened.set(0, forKey: DevicePollingIntervals.foregroundKey)
         reopened.set(3_601, forKey: DevicePollingIntervals.backgroundKey)
         #expect(DevicePollingIntervals.load(from: reopened) == .init())
+        reopened.removeObject(forKey: DevicePollingIntervals.foregroundKey)
+        reopened.set(45, forKey: DevicePollingIntervals.backgroundKey)
+        #expect(DevicePollingIntervals.load(from: reopened) == .init(foregroundSeconds: 10, backgroundSeconds: 45))
+        reopened.set(5, forKey: DevicePollingIntervals.foregroundKey)
+        #expect(DevicePollingIntervals.load(from: reopened) == .init(foregroundSeconds: 5, backgroundSeconds: 45))
+        DevicePollingIntervals(foregroundSeconds: 17, backgroundSeconds: 52).save(to: reopened)
+        #expect(DevicePollingIntervals.load(from: defaults) == .init(foregroundSeconds: 17, backgroundSeconds: 52))
         #expect(DevicePollingIntervals(foregroundSeconds: -1, backgroundSeconds: 9_000) == .init(foregroundSeconds: 1, backgroundSeconds: 3_600))
     }
     @Test("Round duration counts toward start-to-start cadence, and repeated starts create only one loop")
@@ -77,16 +84,16 @@ private final class PollTime: @unchecked Sendable {
         var starts: [Duration] = []
         loop.start { starts.append(time.now) }
         await settle { time.deadlines == [.seconds(30)] }
-        time.advance(.seconds(6))
+        time.advance(.seconds(12))
         loop.setInterval(intervals.interval(panelVisible: true))
-        await settle { starts == [.zero, .seconds(6)] && time.deadlines == [.seconds(11)] }
+        await settle { starts == [.zero, .seconds(12)] && time.deadlines == [.seconds(22)] }
         time.advance(.seconds(1)); loop.setInterval(intervals.interval(panelVisible: false))
-        await settle { time.deadlines == [.seconds(36)] }
+        await settle { time.deadlines == [.seconds(42)] }
         time.advance(.seconds(2)); loop.setInterval(.seconds(4))
-        await settle { time.deadlines == [.seconds(10)] }
+        await settle { time.deadlines == [.seconds(16)] }
         time.advance(.seconds(1))
-        await settle { starts.count == 3 && time.deadlines == [.seconds(14)] }
-        #expect(starts.last == .seconds(10))
+        await settle { starts.count == 3 && time.deadlines == [.seconds(20)] }
+        #expect(starts.last == .seconds(16))
     }
     @Test("Capability provider drives DeviceController's single configurable round, including the verified curtain hook")
     func controllerWiring() async throws {
@@ -104,17 +111,17 @@ private final class PollTime: @unchecked Sendable {
         let subscriber = Task { for await _ in stream {} }
         defer { subscriber.cancel() }
         await settle { starts == [.zero] && time.deadlines == [.seconds(30)] }
-        time.advance(.seconds(8))
+        time.advance(.seconds(12))
         await provider.setPollingContext(.init(panelVisible: true))
-        await settle { starts == [.zero, .seconds(8)] && time.deadlines == [.seconds(13)] }
+        await settle { starts == [.zero, .seconds(12)] && time.deadlines == [.seconds(22)] }
         controller.setPollingIntervals(.init(foregroundSeconds: 9, backgroundSeconds: 60))
-        await settle { time.deadlines == [.seconds(17)] }
+        await settle { time.deadlines == [.seconds(21)] }
         #expect(DevicePollingIntervals.load(from: defaults) == .init(foregroundSeconds: 9, backgroundSeconds: 60))
         await provider.setPollingContext(.init(panelVisible: false))
-        await settle { time.deadlines == [.seconds(68)] }
+        await settle { time.deadlines == [.seconds(72)] }
         await provider.refreshNow() // Explicit refresh remains independent of the periodic wait.
-        #expect(starts == [.zero, .seconds(8), .seconds(8)])
-        #expect(time.deadlines == [.seconds(68)])
+        #expect(starts == [.zero, .seconds(12), .seconds(12)])
+        #expect(time.deadlines == [.seconds(72)])
         await api.shutdown()
     }
     @Test("A slow round is never cancelled or overlapped on edits; missed periods produce no catch-up burst")

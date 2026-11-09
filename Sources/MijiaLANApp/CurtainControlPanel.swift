@@ -7,13 +7,20 @@ struct CurtainControlPanel: View {
     let controller: CurtainControlController
     let device: LocalDevice
     @State private var draft = CurtainPositionDraft()
+    @State private var editorID = UUID()
     @FocusState private var typing: Bool
     private var state: CurtainControlSession.State? { controller.states[device.did] }
-    private var enabled: Bool { controller.includes(device.did) }
     private var busy: Bool { controller.isWorking(device.did) }
-    private var canMove: Bool { enabled && !busy && (state == nil || state?.phase == .ready) }
+    // A poll (including its failure) must never disable a native slider halfway through its gesture.
+    private var canMove: Bool { draft.dragging || (!busy && controller.pausedPolling[device.did] == nil) }
     private var target: Int? { draft.target }
     private var stageTitle: String {
+        if controller.submissions[device.did]?.phase == .waiting { return L10n.tr("已提交，等待当前读取完成", "Submitted; waiting for the current read") }
+        if !busy {
+            if controller.pausedPolling[device.did] != nil { return L10n.tr("自动读取已暂停", "Auto reads paused") }
+            if controller.submissions[device.did]?.phase == .succeeded { return L10n.tr("上次用户请求已完成", "Last user request completed") }
+            return L10n.tr("状态自动刷新", "State updates automatically")
+        }
         if busy, state == nil || state?.stage == .idle { return L10n.tr("准备读取或控制", "Preparing Read or Control") }
         return switch state?.stage {
         case .requested, .waiting: L10n.tr("准备发送", "Preparing request")
@@ -27,15 +34,10 @@ struct CurtainControlPanel: View {
         }
     }
     private func commit(_ value: Int) {
-        guard canMove, (0...100).contains(value) else { return }
-        draft.submitted()
-        controller.send(device.did, .position(value))
+        if controller.send(device.did, .position(value)) { draft.submitted(value) }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle(L10n.tr("启用此卷帘的日常控制", "Enable Daily Control for This Curtain"), isOn: Binding(
-                get: { enabled }, set: { controller.setEnabled(device, $0) }))
-                .toggleStyle(.switch).controlSize(.small)
             Group {
                 HStack {
                     Text(L10n.tr("上次读取位置", "Last Read Position"))
@@ -57,8 +59,10 @@ struct CurtainControlPanel: View {
                 Slider(value: Binding(get: { draft.slider }, set: { draft.drag($0) }), in: 0...100, step: 1,
                        onEditingChanged: { editing in
                     let value = Int(draft.slider.rounded())
+                    let wasDragging = draft.dragging
                     draft.setDragging(editing)
-                    if !editing { commit(value) }
+                    if !editing, wasDragging { commit(value) }
+                    controller.setEditing(device.did, editor: editorID, active: editing)
                 })
                 .disabled(!canMove)
                 .accessibilityLabel(L10n.tr("卷帘目标位置，松手发送", "Curtain target position; release to send"))
@@ -69,14 +73,17 @@ struct CurtainControlPanel: View {
                         .disabled(!canMove || target == nil || !(0...100).contains(target ?? -1))
                 }
                 HStack {
-                    Button(L10n.tr("全开", "Open")) { draft.discard(); controller.send(device.did, .open) }.disabled(!canMove)
-                    Button(L10n.tr("全关", "Close")) { draft.discard(); controller.send(device.did, .close) }.disabled(!canMove)
-                    Button(L10n.tr("停止", "Stop")) { draft.discard(); controller.send(device.did, .stop) }
-                        .disabled(!enabled || controller.stopping.contains(device.did) || (busy && state?.canStop != true))
+                    Button(L10n.tr("全开", "Open")) { if controller.send(device.did, .open) { draft.discard() } }.disabled(!canMove)
+                    Button(L10n.tr("全关", "Close")) { if controller.send(device.did, .close) { draft.discard() } }.disabled(!canMove)
+                    Button(L10n.tr("停止", "Stop")) { if controller.send(device.did, .stop) { draft.discard() } }
+                        .disabled(controller.stopping.contains(device.did) || (busy && state?.canStop != true))
                         .keyboardShortcut(".", modifiers: [.command])
                     Spacer()
                 }
-                if let command = state?.command, !((state?.confirmed) ?? false), let goal = command.target {
+                if busy, let goal = controller.submissions[device.did]?.command?.target {
+                    Text(L10n.tr("已提交目标 \(goal)%", "Submitted target \(goal)%"))
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if let command = state?.command, !((state?.confirmed) ?? false), let goal = command.target {
                     Text(busy ? L10n.tr("目标 \(goal)% · 本次请求正在确认", "Target \(goal)% · Confirming this request") : L10n.tr("上次目标 \(goal)% · 结果未确认，无自动请求", "Previous target \(goal)% · Unconfirmed; no automatic requests"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -90,17 +97,25 @@ struct CurtainControlPanel: View {
                 if let message = state?.message { Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                 if let error = controller.errors[device.did] { Text(error).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
             }
-            Text(L10n.tr("状态默认随前台/后台统一轮询，无需启用控制。每轮只读并校验身份、白名单属性；异常会暂停该台自动读取，需手动恢复。控制需单独启用，写入仅一次并有限回读。0% 全遮住，100% 全拉开。HomeKit/Matter 卷帘控制未开放。", "State follows foreground/background device polling by default, even with controls off. Each turn only reads and validates identity and whitelisted properties. Errors pause that curtain until manual recovery. Controls require opt-in, write once and read back within limits. 0% closed, 100% open. HomeKit/Matter curtain control is disabled."))
+            Text(L10n.tr("位置、全开、全关和停止可直接使用，发送前仍校验身份和状态。普通刷新不打断编辑；已在途读取结束后执行提交的请求，失败会明确提示。异常暂停自动读取，需手动恢复。写入仅一次并有限回读。0% 全遮住，100% 全拉开。HomeKit/Matter 卷帘控制未开放。", "Position, Open, Close and Stop are available directly, with identity and state validation. Polls do not interrupt editing. A submitted request waits for an in-flight read; failures are reported explicitly. Errors pause automatic reads until manual recovery. Writes are single-shot with bounded readback. 0% closed, 100% open. HomeKit/Matter curtain control is disabled."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        .onChange(of: typing) { _, value in draft.focus(value) }
-        .onChange(of: device.did) { _, _ in
+        .onChange(of: typing) { _, value in
+            draft.focus(value)
+        }
+        .onDisappear { controller.setEditing(device.did, editor: editorID, active: false) }
+        .onChange(of: device.did) { old, _ in
+            controller.setEditing(old, editor: editorID, active: false)
             typing = false
             draft = CurtainPositionDraft()
             draft.receive(state?.position)
         }
         .onChange(of: state?.position, initial: true) { _, position in
             draft.receive(position)
+        }
+        .onChange(of: controller.submissions[device.did], initial: true) { _, submission in
+            if submission?.phase == .succeeded { draft.finishedSubmission(succeeded: true) }
+            else if submission?.phase == .failed { draft.finishedSubmission(succeeded: false) }
         }
     }
 }

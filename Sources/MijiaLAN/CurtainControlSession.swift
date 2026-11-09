@@ -1,7 +1,7 @@
 import Foundation
 import MijiaCore
 
-/// Opt-in daily App control. Generic capabilities and HomeKit/Matter remain protected.
+/// Verified daily App control. Generic capabilities and HomeKit/Matter remain protected.
 public actor CurtainControlSession {
     public enum Command: Equatable, Sendable {
         case position(Int), open, close, stop
@@ -23,6 +23,8 @@ public actor CurtainControlSession {
         public var writeSent: Bool? = false
         public var confirmed = false
         public var canStop = false
+        public var source: CurtainEventLog.Source = .manualRead
+        public var operationID: UUID?
         public var stage: CurtainEventLog.Stage = .idle
         public var failureReason: CurtainEventLog.Reason?
         public var lastKnownPosition: Int?
@@ -91,7 +93,9 @@ public actor CurtainControlSession {
         case .cancelled: detail = L10n.tr("请求已取消", "Request cancelled")
         default: detail = L10n.tr("读数或操作结果未确认", "Readings or operation unconfirmed")
         }
-        if source != .manualRead, state.command != nil, !writeTrace.attempted { detail += L10n.tr("；写入未发", "; write was not attempted") }
+        if [.manualPosition, .manualOpen, .manualClose, .manualStop].contains(source), state.command != nil, !writeTrace.attempted {
+            detail += L10n.tr("；写入未发", "; write was not attempted")
+        }
         state.message = detail + L10n.tr("；已停止后续请求，不会自动重发或重连。", "; further requests stopped. No automatic retry or reconnect.")
         publish()
     }
@@ -111,7 +115,7 @@ public actor CurtainControlSession {
         return try await runOperation(command, id: id, requestSource: effectiveSource, body: body)
     }
     private func runOperation(_ command: Command?, id: UUID, requestSource: CurtainEventLog.Source, body: @escaping @Sendable () async throws -> State) async throws -> State {
-        traceID = id; source = requestSource
+        traceID = id; source = requestSource; state.source = requestSource; state.operationID = id
         let writeTrace = CurtainWriteTrace(); self.writeTrace = writeTrace
         state.writeAttempted = false; state.writeSent = false
         if let command { state.command = command; state.confirmed = false; state.writeAccepted = false }

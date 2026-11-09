@@ -92,6 +92,10 @@ final class PanelNumberDraft {
     var text = ""
     var isEditing = false
     var validationError: String?
+    func receive(_ formatted: String, focused: Bool) {
+        guard !focused, !isEditing else { return }
+        text = formatted
+    }
 }
 
 struct PanelPageLayout: Equatable {

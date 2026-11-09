@@ -8,6 +8,7 @@ struct CurtainPositionDraft {
     private(set) var dragging = false
     private(set) var typing = false
     private var unsubmittedText = false
+    private(set) var pendingTarget: Int?
     var target: Int? { Int(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
 
     mutating func receive(_ position: Int?) {
@@ -26,22 +27,31 @@ struct CurtainPositionDraft {
     mutating func drag(_ value: Double) {
         slider = value
         text = String(Int(value.rounded()))
+        unsubmittedText = true
     }
     mutating func setDragging(_ value: Bool) {
         dragging = value
-        if !value { unsubmittedText = false }
     }
     /// Explicit submission consumes the edit, even if macOS keeps the TextField focused.
-    mutating func submitted() {
-        unsubmittedText = false
+    mutating func submitted(_ value: Int? = nil) {
+        let submittedTarget = value ?? target
+        if target == submittedTarget { unsubmittedText = false }
+        pendingTarget = submittedTarget
+    }
+    mutating func finishedSubmission(succeeded: Bool) {
+        guard pendingTarget != nil else { return }
+        pendingTarget = nil
+        if succeeded { synchronize() }
+        else { unsubmittedText = true }
     }
     /// Open/Close/Stop supersede any draft; future readings must update both controls.
     mutating func discard() {
+        pendingTarget = nil
         unsubmittedText = false
         synchronize()
     }
     private mutating func synchronize() {
-        guard !dragging, let actual else { return }
+        guard !dragging, pendingTarget == nil, let actual else { return }
         slider = Double(actual)
         if !unsubmittedText { text = String(actual) }
     }

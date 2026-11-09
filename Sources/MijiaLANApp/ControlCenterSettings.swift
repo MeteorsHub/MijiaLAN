@@ -85,6 +85,8 @@ struct ControlCenterSettings: View {
                     SettingsDivider()
                     pollingRow(L10n.tr("后台间隔", "Background Interval"), seconds: $model.backgroundPollingSeconds)
                 }
+                Text(L10n.tr("默认前台 10 秒、后台 30 秒；已保存的自定义间隔保持不变。", "Defaults: foreground 10 s, background 30 s. Saved intervals are preserved."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text(L10n.tr("单位为秒（1–3600）。前台指菜单栏设备面板显示，后台指面板收起。设置立即生效并保存。间隔从每轮开始计时；慢设备可能拉长实际间隔，不会重叠或补发轮次。", "Seconds (1–3600). Foreground means the menu bar device panel is visible; background means it is closed. Changes apply immediately and are saved. Intervals run from each round’s start; slow devices can extend them. Rounds never overlap or queue up."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text(L10n.tr("HomeKit 与 Matter 共用设备状态；读取、配对或启用桥接不会额外轮询。米家、遥控器或设备本地的变化需等下一轮刷新；Matter 约每 5 秒同步缓存。桥接控制仍立即执行并回读。支持的卷帘也参与统一只读轮询，异常后暂停该台并需手动恢复；低频属性和普通设备离线退避保持原策略。", "HomeKit and Matter share device state. Reads, pairing and enabling bridges add no device polls. Changes from Mi Home, remotes or the device appear after the next refresh; Matter syncs the cache about every 5 seconds. Bridge controls still execute and read back immediately. Supported curtains join the same read-only polls and pause on errors until manual recovery; low-frequency properties and ordinary device offline backoff keep their existing policy."))
