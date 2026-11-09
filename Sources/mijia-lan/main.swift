@@ -36,6 +36,8 @@ struct MijiaLANCommand {
     static func run(_ args: [String], port: UInt16) async throws {
         guard let command = args.first else { return usage() }
         switch command {
+        case "curtain-attributes":
+            try await CurtainAttributes.run(Array(args.dropFirst()), port: port)
         case "curtain-experiment":
             try await CurtainExperiment.run(Array(args.dropFirst()), port: port)
         case "diagnose":
@@ -174,6 +176,7 @@ struct MijiaLANCommand {
           mijia-lan spec <型号>
           mijia-lan diagnose < local-home.json
           mijia-lan diagnose-followup < local-home.json
+          mijia-lan curtain-attributes --properties 2.5 --packet-layout single --phase probe --slot 1 --rounds 48 --interval 30
           mijia-lan matter-rpc <local-home.json>
           mijia-lan status < 设备清单.json
           可加 --port N
@@ -187,6 +190,7 @@ struct MijiaLANCommand {
           mijia-lan spec <model>
           mijia-lan diagnose < local-home.json
           mijia-lan diagnose-followup < local-home.json
+          mijia-lan curtain-attributes --properties 2.5 --packet-layout single --phase probe --slot 1 --rounds 48 --interval 30
           mijia-lan matter-rpc <local-home.json>
           mijia-lan status < devices.json
           Optional: --port N

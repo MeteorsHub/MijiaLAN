@@ -105,4 +105,23 @@ struct MiioDiagnosticsTests {
             #expect(fake.receivedMethods.filter { $0 == "get_properties" }.count == 38)
         }
     }
+    @Test("Overnight bad full batch retains code-zero numeric motor-reverse and rejects it without normalizing")
+    func overnightBadType() throws {
+        let url = try #require(Bundle.module.url(forResource: "dooya-overnight-2026-11-10", withExtension: "json"))
+        let json = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))
+        let failure = try #require(json["failure"])
+        let rows = try #require(failure.arrayValue)
+        let reverse = rows.first { $0["piid"] == .number(5) }
+        #expect(reverse?["value"] == .number(2))
+        #expect(throws: (any Error).self) { try CurtainControlSession.preflight(failure) }
+        // Even if the two negative codes are removed synthetically, the independently wrong type must fail.
+        let typeOnly = JSONValue.array((failure.arrayValue ?? []).map { row in
+            guard case .object(var fields) = row else { return row }
+            if fields["piid"] == .number(9) { fields["code"] = .number(0); fields["value"] = .number(0) }
+            if fields["piid"] == .number(10) { fields["code"] = .number(0); fields["value"] = .bool(false) }
+            return .object(fields)
+        })
+        #expect(throws: (any Error).self) { try CurtainControlSession.preflight(typeOnly) }
+    }
+
 }

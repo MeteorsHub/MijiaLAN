@@ -1,5 +1,7 @@
 # DEBUG 真实 App 单台只读长测
 
+**最新状态：44958fa 的 N App 单台长测约2小时49分时在完整查询复现-4004及2.5类型损坏，四小时验收提前失败。App/CLI均已停止，后续轴对照取消；见[现场证据与属性隔离工具](curtain-attribute-isolation.md)。此页保留入口行为与阶段验收记录。**
+
 此入口使用真实 `AppModel → HomeStore → CapabilityHomeProvider → DeviceController → CurtainControlController` 统一后台轮询。配置来源改为受控私有 seed，凭据存内存 vault，默认值使用全新随机 suite；不读取正式钥匙串、不修改正式配置、六台暂停或配对。四项通信策略保持 e57af3c 的 N 组。它是隔离配置来源的真实 App 测试，不作为正常钥匙串加载验收。
 
 ## 启动契约

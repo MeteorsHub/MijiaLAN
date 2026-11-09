@@ -1,0 +1,29 @@
+{
+  "source": "Local thread 01a1b156-dd7f-7873-88dc-943821f74830 text audit; not original wire bytes or JSONL opened by cloud",
+  "model": "dooya.motor.dc1545",
+  "timeZone": "Asia/Shanghai",
+  "firstObservedFailure": "2026-11-10T04:06:14+08:00",
+  "appCode": "44958fa18a3282fea2e891d312e1a3975b9a380e",
+  "appElapsedApproximate": "2h49m",
+  "countScope": "Audited Mac CLI and isolated App only; excludes phone baseline controls and other phone/cloud traffic after restart",
+  "cli": {"reads":48,"full":5,"compact":43,"fullSuccess":5},
+  "app": {"reads":321,"full":33,"compact":288,"fullSuccess":32,"firstFailedFull":33},
+  "combined": {"hello":93,"info":2,"read":369,"full":38,"compact":331,"sent":464,"write":0,"action":0},
+  "extendedReadExposures": {"2.4":38,"2.5":38,"2.9":38,"2.10":38},
+  "coreReadExposures": {"2.2":369,"2.3":369},
+  "failure": [
+    {"siid":2,"piid":2,"code":0,"value":1},
+    {"siid":2,"piid":3,"code":0,"value":0},
+    {"siid":2,"piid":4,"code":0,"value":0},
+    {"siid":2,"piid":5,"code":0,"value":2},
+    {"siid":2,"piid":9,"code":-4004},
+    {"siid":2,"piid":10,"code":-4004}
+  ],
+  "previousFullProperty5": {"observations":37,"type":"boolean","booleanValue":false},
+  "transport": {"localPort":52201,"clients":1,"sockets":1,"requestID":6629,"responseID":6629,"requestStamp":16856,"responseStamp":16857,"helloStamp":16851,"helloAgeApproxMilliseconds":5300,"clockAccepted":true,"skew":1,"authenticated":true,"headerIdentityMatches":true,"rpcIDMatches":true,"peerEndpointMatches":true},
+  "oldPureReadDevices": {"C1":38,"C5":38,"C6":38,"C7":38},
+  "oldC4": {"failedFullOrdinal":38,"additionalCompactReadback":1,"motorWrites":1},
+  "oldC8": {"failedFullOrdinal":37,"additionalCompactReadback":1,"targetPositionWrites":1},
+  "causality": "Repeated association with extended read exposure, not a proven absolute threshold or proof that the observation packet caused corruption; individual getter versus batch/combination unresolved",
+  "afterFailure": "All App/CLI stopped, remaining axis runs cancelled; no more hardware requests or resets authorized tonight"
+}

@@ -207,3 +207,12 @@ MIJIALAN_UI_PREVIEW=1 MIJIALAN_EPHEMERAL=1 build/MijiaLAN.app/Contents/MacOS/Mij
 旧传输每次请求创建未固定绑定的新 UDP socket，旧 hello 判断由持续应答更新的 clock.at 决定，旧 stamp 使用最近回复 + floor(elapsed) +1，正常轮询反复查六项。这些是源码行为；原现场日志缺少源端口、RPC ID、stamp，**不能据此认定**固件端口资源耗尽、时钟偏差或某个属性触发了故障。没有固件模型的离线/loopback 也不能证明设备失控根因。
 
 用户最新要求覆盖了此前「仅停止自动查询」建议：本轮实现四项候选修正、恢复日常控制开关、详细有界日志及独立策略实验，不将静默查询作为最终交付。见[策略、最小矩阵与停止条件](curtain-communication-experiments.md)。当前故障实机不继续探测、不自动解暂停，不重置配网或升级固件。实机对照需要先由用户恢复正常基线并能观察；本次云端仅进行离线/loopback。四项一起成功亦不能称作唯一根因已找到。
+
+
+## 2026-11-10 N 长测再次失败
+
+本地报告北京时间04:06:14，44958fa N App约2h49m、readRound321的full批次中，2.2/3/4分别code0/number1、0、0；**2.5为code0/number2（应bool）**，9/10=-4004。此前N CLI5次full和App32次full的2.5均bool false。所有App/CLI已停止，后续轴测试取消，无新硬件请求、复位或写入，正式配置哈希及原六台暂停未变。
+
+审计Mac来源计数为CLI48read（5full/43compact）＋App321read（33full/288compact），合计38full/331compact；hello93/info2/read369共464包。范围不含手机基线/云端等其他通信。旧无控制设备和C4在full38首次失败，C8为full37且另有一次2.4写入，不能概括成所有设备固定38。故障包身份/RPC/auth/peer校验及新时钟容差均通过，稳定socket/新校时策略未消除本次故障。
+
+云端未打开本地 `diagnostics/curtain-overnight-2026-11-10/report.json`；以上为文字证据。新fixture保留坏值和错误码，独立只读属性工具不使用poll或任何隐含full，用于离线及回环准备。完整计数边界、时间/包头字段和未来对照限制见[累计属性排因](curtain-attribute-isolation.md)。
