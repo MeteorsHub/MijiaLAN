@@ -13,10 +13,16 @@ struct MijiaLANApp: App {
         LANLocalization.configure()
         // Before anything creates a hap-swift logger.
         LoggingSystem.bootstrap(UnifiedLogHandler.init)
-        let model = AppModel()
+        let test: ReadOnlyAppTest?
+        do { test = try ReadOnlyAppTest.prepare(ProcessInfo.processInfo.environment) }
+        catch {
+            FileHandle.standardError.write(Data("Read-only App test rejected before initialization. Check explicit flags, private single-device seed and new log directory.\n".utf8))
+            exit(2)
+        }
+        let model = AppModel(readOnlyAppTest: test)
         _model = State(initialValue: model)
         delegate.model = model
-        DevSnapshot.scheduleIfRequested(model: model)
+        if test == nil { DevSnapshot.scheduleIfRequested(model: model) }
     }
 
     var body: some Scene {
@@ -39,7 +45,10 @@ final class MijiaLANApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         lifetime.start()
-        if let model { menuBar = MenuBarPanelController(model: model) }
+        if let model {
+            if model.isReadOnlyAppTest { model.startReadOnlyAppTest { NSApp.terminate(nil) } }
+            else { menuBar = MenuBarPanelController(model: model) }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

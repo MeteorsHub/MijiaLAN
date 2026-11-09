@@ -57,28 +57,40 @@ final class AppModel {
     @ObservationIgnored private var rediscoveryTask: Task<Void, Never>?
     @ObservationIgnored private var bridgeAttached = false
     @ObservationIgnored private let usesPreviewDevices: Bool
+    @ObservationIgnored private let readOnlyAppTest: ReadOnlyAppTest?
+    @ObservationIgnored private var readOnlyTestLifetime: ReadOnlyAppTestLifetime?
+    @ObservationIgnored private var readOnlyTestActivity: NSObjectProtocol?
+    var isReadOnlyAppTest: Bool { readOnlyAppTest != nil }
     @ObservationIgnored private let logger = Logger(subsystem: "com.mijialan.MijiaLAN", category: "App")
 
     /// `MIJIALAN_EPHEMERAL=1` (development): secrets in memory and separate defaults, so a test run never touches
     /// the Keychain item or the real pairing. `MIJIALAN_SEED_CONFIG=<file>` then supplies the device config as JSON.
-    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+    init(environment: [String: String] = ProcessInfo.processInfo.environment, readOnlyAppTest: ReadOnlyAppTest? = nil) {
+        precondition(readOnlyAppTest != nil || !ReadOnlyAppTest.isRequested(environment), "Read-only test options must be validated before AppModel initialization")
+        self.readOnlyAppTest = readOnlyAppTest
         #if DEBUG
-        let preview = environment["MIJIALAN_UI_PREVIEW"] == "1"
+        let preview = readOnlyAppTest == nil && environment["MIJIALAN_UI_PREVIEW"] == "1"
         #else
         let preview = false
         #endif
         usesPreviewDevices = preview
-        let ephemeral = preview || environment["MIJIALAN_EPHEMERAL"] == "1"
+        let ephemeral = readOnlyAppTest != nil || preview || environment["MIJIALAN_EPHEMERAL"] == "1"
         let vault = SecretVault(storage: ephemeral ? .memory() : .keychain(service: Self.keychainService, account: "secrets"))
-        if ephemeral, let seed = environment["MIJIALAN_SEED_CONFIG"], let data = FileManager.default.contents(atPath: seed) {
+        if let readOnlyAppTest, let data = readOnlyAppTest.config.encoded() { vault.set(data, for: Self.configAccount) }
+        if readOnlyAppTest == nil, ephemeral, let seed = environment["MIJIALAN_SEED_CONFIG"], let data = FileManager.default.contents(atPath: seed) {
             vault.set(data, for: Self.configAccount)
         }
         #if DEBUG
         if preview, let seed = ControlCenterPreview.config.encoded() { vault.set(seed, for: Self.configAccount) }
         #endif
-        let defaultsSuite = ephemeral ? "com.mijialan.MijiaLAN.dev" : "com.mijialan.MijiaLAN.home"
+        let defaultsSuite = readOnlyAppTest?.defaultsSuite ?? (ephemeral ? "com.mijialan.MijiaLAN.dev" : "com.mijialan.MijiaLAN.home")
         if ephemeral { UserDefaults.standard.removePersistentDomain(forName: defaultsSuite) }
-        let bridgeDefaults = ephemeral ? (UserDefaults(suiteName: defaultsSuite) ?? .standard) : .standard
+        let bridgeDefaults: UserDefaults
+        if readOnlyAppTest != nil {
+            guard let isolated = UserDefaults(suiteName: defaultsSuite) else { preconditionFailure("Could not create isolated test defaults") }
+            bridgeDefaults = isolated
+            readOnlyAppTest?.configure(isolated)
+        } else { bridgeDefaults = ephemeral ? (UserDefaults(suiteName: defaultsSuite) ?? .standard) : .standard }
         self.vault = vault
         var loaded = LocalHomeConfig()
         var unavailable = false
@@ -93,15 +105,15 @@ final class AppModel {
         configBox = box
         let api: LANMiotAPI
         let previewLog = FileManager.default.temporaryDirectory.appendingPathComponent("MijiaLAN-Preview/Diagnostics/device-events.jsonl")
-        let journal = DeviceEventLog(fileURL: preview ? previewLog : (ephemeral ? nil : DeviceEventLog.defaultURL), scope: preview ? .simulation : .app)
+        let journal = DeviceEventLog(fileURL: readOnlyAppTest?.directory.appendingPathComponent("traffic.jsonl") ?? (preview ? previewLog : (ephemeral ? nil : DeviceEventLog.defaultURL)), scope: readOnlyAppTest != nil ? .experiment : (preview ? .simulation : .app))
         discoverySuspendedForCurtains = !DeviceLANPolicy.allowsAutomaticDiscovery(for: loaded.devices)
         #if DEBUG
-        api = preview ? LANMiotAPI(config: { box.value }, transport: ControlCenterPreviewTransport(), curtainEvents: journal) : LANMiotAPI(config: { box.value }, curtainEvents: journal)
+        api = preview ? LANMiotAPI(config: { box.value }, transport: ControlCenterPreviewTransport(), curtainEvents: journal) : LANMiotAPI(config: { box.value }, port: readOnlyAppTest?.port ?? MiioPacket.port, curtainEvents: journal, allowsDeviceWrites: readOnlyAppTest == nil)
         #else
-        api = LANMiotAPI(config: { box.value }, curtainEvents: journal)
+        api = LANMiotAPI(config: { box.value }, port: readOnlyAppTest?.port ?? MiioPacket.port, curtainEvents: journal, allowsDeviceWrites: readOnlyAppTest == nil)
         #endif
         self.api = api
-        curtains = CurtainControlController(api: api, defaults: bridgeDefaults)
+        curtains = CurtainControlController(api: api, defaults: bridgeDefaults, readOnly: readOnlyAppTest != nil)
         let controller = DeviceController(api: api, config: { box.value }, pollingDefaults: bridgeDefaults)
         devices = controller
         let provider = CapabilityHomeProvider(controller: controller)
@@ -113,18 +125,56 @@ final class AppModel {
 
         matter = MatterBridgeController(defaults: bridgeDefaults, ephemeral: ephemeral)
         if ephemeral { matter.isEnabled = false }
-        matter.attach(controller)
+        if readOnlyAppTest == nil { matter.attach(controller) }
 
-        if preview || (ephemeral && environment["MIJIALAN_SNAPSHOT"] != nil) { bridge.isEnabled = false }
+        if readOnlyAppTest != nil || preview || (ephemeral && environment["MIJIALAN_SNAPSHOT"] != nil) { bridge.isEnabled = false }
         curtains.prepare = { [weak self] in
             guard let self else { throw CancellationError() }
             self.discoverySuspendedForCurtains = true
             while self.isRediscovering || self.isAddingManually { try await Task.sleep(for: .milliseconds(100)) }
         }
         curtains.reconcile(config.devices)
-        controller.refreshCurtains = { [weak curtains = self.curtains] in await curtains?.pollConfigured() }
+        if readOnlyAppTest != nil {
+            controller.refreshCurtains = { [weak self] in
+                guard let self else { return }
+                await self.curtains.pollConfigured()
+                self.curtains.events.flush()
+                if let reason = self.curtains.pausedPolling.values.first { await self.readOnlyTestLifetime?.stop(reason) }
+                else if self.curtains.events.storageFailed { await self.readOnlyTestLifetime?.stop(.configuration) }
+            }
+        } else {
+            controller.refreshCurtains = { [weak curtains = self.curtains] in await curtains?.pollConfigured() }
+        }
         attachBridgeIfNeeded()
         if !preview && !discoverySuspendedForCurtains { startRediscoveryLoop() }
+    }
+
+    func startReadOnlyAppTest(terminate: @escaping @MainActor () -> Void) {
+        guard let options = readOnlyAppTest, readOnlyTestLifetime == nil else { return }
+        store.setPanelVisible(false)
+        readOnlyTestActivity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "Bounded read-only App communication test")
+        curtains.events.record("application", source: .experiment, stage: .idle, outcome: .noPacket, reason: .configuration)
+        readOnlyTestLifetime = ReadOnlyAppTestLifetime(seconds: options.seconds) { [weak self] reason in
+            guard let self else { return }
+            // Drain/close the selected session before DeviceController's general shutdown spawns cleanup.
+            await self.curtains.shutdownAndWait()
+            self.devices.shutdown()
+            await self.api.shutdown()
+            self.matter.shutdown()
+            self.curtains.events.record("application", source: .experiment, stage: .finished,
+                outcome: reason == .deadline ? .noPacket : .paused, reason: reason)
+            self.curtains.events.flush()
+            let result: [String: String] = ["outcome": reason == .deadline ? "durationComplete" : "paused", "reason": reason.rawValue]
+            if let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]) {
+                try? data.write(to: options.directory.appendingPathComponent("result.json"), options: .atomic)
+            }
+            UserDefaults.standard.removePersistentDomain(forName: options.defaultsSuite)
+            if let activity = self.readOnlyTestActivity {
+                ProcessInfo.processInfo.endActivity(activity); self.readOnlyTestActivity = nil
+            }
+            terminate()
+        }
+        if let reason = curtains.pausedPolling.values.first { Task { await readOnlyTestLifetime?.stop(reason) } }
     }
 
     // MARK: Devices
@@ -193,6 +243,7 @@ final class AppModel {
     // MARK: Cloud Import (the one and only cloud use)
 
     func startCloudImport() {
+        guard readOnlyAppTest == nil else { return }
         importTask?.cancel()
         importState = .loadingQR
         let region = importRegion
@@ -336,6 +387,7 @@ final class AppModel {
     // MARK: Persistence
 
     private func apply(_ next: LocalHomeConfig) {
+        guard readOnlyAppTest == nil else { return }
         guard let data = next.encoded(), vault.set(data, for: Self.configAccount) else {
             vaultUnavailable = true
             logger.error("Could not save the device config to the Keychain")
@@ -356,7 +408,7 @@ final class AppModel {
 
     /// The bridge waits for the first imported device, so a fresh install does not advertise an empty bridge.
     private func attachBridgeIfNeeded() {
-        guard !bridgeAttached, !config.devices.isEmpty else { return }
+        guard readOnlyAppTest == nil, !bridgeAttached, !config.devices.isEmpty else { return }
         bridgeAttached = true
         bridge.attach(to: store, capabilities: devices)
     }

@@ -16,6 +16,7 @@ final class CurtainControlController {
     let events: CurtainEventLog
     @ObservationIgnored private let makeSession: @Sendable (String) async throws -> CurtainControlSession
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let readOnly: Bool
     @ObservationIgnored private var devices: [String: LocalDevice] = [:]
     @ObservationIgnored private var sessions: [String: CurtainControlSession] = [:]
     @ObservationIgnored private var sessionIDs: [String: UUID] = [:]
@@ -37,8 +38,8 @@ final class CurtainControlController {
     static let preferenceKey = "curtain.daily.enabled"
     static let pausedKey = "curtain.polling.paused"
 
-    init(api: LANMiotAPI, defaults: UserDefaults, makeSession: (@Sendable (String) async throws -> CurtainControlSession)? = nil) {
-        self.api = api; self.defaults = defaults; events = api.curtainEvents
+    init(api: LANMiotAPI, defaults: UserDefaults, readOnly: Bool = false, makeSession: (@Sendable (String) async throws -> CurtainControlSession)? = nil) {
+        self.api = api; self.defaults = defaults; self.readOnly = readOnly; events = api.curtainEvents
         self.makeSession = makeSession ?? { try await api.beginCurtainControl(did: $0) }
         enabledIDs = Set(defaults.stringArray(forKey: Self.preferenceKey) ?? [])
         pausedPolling = (defaults.dictionary(forKey: Self.pausedKey) as? [String: String] ?? [:]).compactMapValues(DeviceEventLog.Reason.init(rawValue:))
@@ -169,6 +170,9 @@ final class CurtainControlController {
         return false
     }
     private func request(_ did: String, _ command: CurtainControlSession.Command?) -> Bool {
+        if readOnly, command != nil {
+            return reject(did, command, reason: .configuration, message: L10n.tr("只读 App 测试拒绝控制指令。", "Read-only App test rejects control commands."))
+        }
         guard !shuttingDown, devices[did]?.model == CurtainValidationSession.model else {
             return reject(did, command, reason: .configuration, message: L10n.tr("请求未接收：设备不再可用。", "Request not accepted: device is unavailable."))
         }
@@ -242,6 +246,11 @@ final class CurtainControlController {
             return includes(did) ? L10n.tr("等待统一轮询", "Awaiting Device Poll") : L10n.tr("日常控制未启用 · 可手动读取", "Daily Control Off · Read Once Available")
         }
         return L10n.tr("上次 \(position)%", "Last read \(position)%")
+    }
+    func shutdownAndWait() async {
+        shutdown()
+        for ending in ends.values { await ending.value }
+        events.flush()
     }
     func shutdown() {
         shuttingDown = true

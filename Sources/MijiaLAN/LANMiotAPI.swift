@@ -38,6 +38,7 @@ public actor LANMiotAPI: MiCloudAPI {
     private let port: UInt16
     private let probeTimeout: Duration
     private let commandTimeout: Duration
+    private let allowsDeviceWrites: Bool
     private var clients: [String: (device: LocalDevice, client: MiioClient)] = [:]
     private var health: [String: LANDeviceHealth] = [:]
     private var consecutiveFailures: [String: Int] = [:]
@@ -79,16 +80,18 @@ public actor LANMiotAPI: MiCloudAPI {
         port: UInt16 = MiioPacket.port,
         probeTimeout: Duration = .milliseconds(2500),
         commandTimeout: Duration = .seconds(5),
-        curtainEvents: CurtainEventLog = .init()
+        curtainEvents: CurtainEventLog = .init(),
+        allowsDeviceWrites: Bool = true
     ) {
         self.init(config: config, transport: transport, port: port, probeTimeout: probeTimeout,
-                  commandTimeout: commandTimeout, clock: ProbeClock(), curtainEvents: curtainEvents, jitter: { Double.random(in: 0.9...1.1) })
+                  commandTimeout: commandTimeout, clock: ProbeClock(), curtainEvents: curtainEvents, allowsDeviceWrites: allowsDeviceWrites, jitter: { Double.random(in: 0.9...1.1) })
     }
 
     init(config: @escaping @Sendable () -> LocalHomeConfig, transport: any MiioTransport,
          port: UInt16 = MiioPacket.port, probeTimeout: Duration = .milliseconds(2500),
-         commandTimeout: Duration = .seconds(5), clock: ProbeClock, curtainEvents: CurtainEventLog = .init(), jitter: @escaping @Sendable () -> Double) {
+         commandTimeout: Duration = .seconds(5), clock: ProbeClock, curtainEvents: CurtainEventLog = .init(), allowsDeviceWrites: Bool = true, jitter: @escaping @Sendable () -> Double) {
         self.config = config
+        self.allowsDeviceWrites = allowsDeviceWrites
         self.curtainEvents = curtainEvents
         curtainEvents.registerDevices(config().devices)
         self.transport = transport
@@ -131,6 +134,7 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     func beginCurtainValidation(did: String, clock: CurtainValidationSession.Clock) async throws -> CurtainValidationSession {
+        guard allowsDeviceWrites else { throw DeviceControlError.unsupported("Read-only App test") }
         guard !isShutdown, !curtainStarting, dailyCurtains.isEmpty, dailyStarting.isEmpty else { throw DeviceControlError.busy }
         let device = try localDevice(forDid: did)
         guard device.model == CurtainValidationSession.model, device.specType == CurtainValidationSession.specification else {
@@ -193,7 +197,7 @@ public actor LANMiotAPI: MiCloudAPI {
         let lease = CurtainValidationLease(), source = config
         let session = CurtainControlSession(device: device, client: client(for: device), scheduler: scheduler, clock: clock, isCurrent: {
             lease.isValid && source().devices.contains { ProbeScheduler.sameEndpoint($0, device) && $0.specType == device.specType }
-        }, onInfo: { [weak self] in await self?.dailyCurtainInfoReceived(device) }, journal: curtainEvents)
+        }, onInfo: { [weak self] in await self?.dailyCurtainInfoReceived(device) }, journal: curtainEvents, allowWrites: allowsDeviceWrites)
         dailyCurtains[did] = (device, lease, session)
         return session
     }
@@ -328,6 +332,7 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     public func setProps(_ writes: [MiotPropWrite]) async throws {
+        guard allowsDeviceWrites else { throw DeviceControlError.unsupported("Read-only App test") }
         // Validate the entire batch before any device receives a write.
         for did in Set(writes.map(\.did)) {
             let device = try localDevice(forDid: did)
@@ -354,6 +359,7 @@ public actor LANMiotAPI: MiCloudAPI {
     }
 
     public func action(_ call: MiotActionCall) async throws {
+        guard allowsDeviceWrites else { throw DeviceControlError.unsupported("Read-only App test") }
         let device = try localDevice(forDid: call.did)
         if let reason = DeviceLANPolicy.restriction(for: device.model) { throw DeviceControlError.unsupported(reason) }
         let client = client(for: device)

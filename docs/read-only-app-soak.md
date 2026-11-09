@@ -1,0 +1,58 @@
+# DEBUG 真实 App 单台只读长测
+
+此入口使用真实 `AppModel → HomeStore → CapabilityHomeProvider → DeviceController → CurtainControlController` 统一后台轮询。配置来源改为受控私有 seed，凭据存内存 vault，默认值使用全新随机 suite；不读取正式钥匙串、不修改正式配置、六台暂停或配对。四项通信策略保持 e57af3c 的 N 组。它是隔离配置来源的真实 App 测试，不作为正常钥匙串加载验收。
+
+## 启动契约
+
+仅 Debug 有效，以下条件缺一即在 AppModel、vault、设备 API、发现初始化**之前退出，退出码 2**，不回退到普通模式：
+
+- `MIJIALAN_EPHEMERAL=1`
+- `MIJIALAN_READ_ONLY_APP_TEST=1`
+- `MIJIALAN_SEED_CONFIG`：绝对路径，当前用户所有、组/其他用户无权限的普通文件或 FIFO，不接受符号链接。实际凭据使用 0600 FIFO；假配置可用 0600 普通文件。
+- seed 必须恰好一台 `dooya.motor.dc1545`、正确 v1 URN、有效十进制 DID、32 位十六进制 token、IPv4 地址，无 skipped 条目。
+- `MIJIALAN_READ_ONLY_APP_TEST_LOG_DIRECTORY`：**尚不存在**的新目录，父目录必须已存在；入口原子创建 0700 目录，不重用或修改旧目录。
+- `MIJIALAN_READ_ONLY_APP_TEST_SECONDS`：整数 1…43200，实际本轮设 **14400（4 小时）**。
+- 不允许同时启用 UI preview / snapshot；不运行 DevSnapshot，也不创建菜单栏面板。后台固定 30 秒，前台设置保留 10 秒，仍由原统一调度减去轮次耗时。
+
+仅残留测试选项、没有正确完整标志时也会拒绝。Release 收到测试选项时拒绝启动该模式。没有这些测试选项时普通 App 行为保持原样；旧的普通 `MIJIALAN_EPHEMERAL` seed 行为不改。
+
+FIFO 专用读取使用 nonblocking open/poll，等待最多 **30 秒**、内容最多 **256 KiB**，检查类型、所有者和权限；没有 writer、种子不完整、错误 JSON 或多设备均失败关闭。本地与 Linux 已用假数据证实 `FileManager.contents(atPath:)` 对 FIFO 返回 nil，因此该模式不使用旧加载方法。FIFO 只在本次读取时打开，不打印路径、配置或底层系统错误；生产者应一次写完并关闭，之后删除管道。
+
+## 本地先验入口，再长测
+
+先用回环假设备和假 seed 编译验证：
+
+```sh
+swift build --product MijiaLANApp --force-resolved-versions
+swift test --filter ReadOnlyAppTestTests --force-resolved-versions
+bash scripts/build_app.sh debug
+```
+
+仅回环验入口时可显式设置 `MIJIALAN_READ_ONLY_APP_TEST_PORT` 为模拟服务器的 1024…65535 动态端口，时长可设 2 秒或足够完成一次冷读取的 20 秒；默认设备端口 54321。此选项也受完整门控约束，不能独立改变普通运行端口。
+
+已授权单台实机时，先结束 CLI，不与 App 并行访问目标。使用本地已准备的私有 FIFO 和新日志子目录，例如以下变量均只是路径，不含设备标识/地址/token：
+
+```sh
+MIJIALAN_EPHEMERAL=1 \
+MIJIALAN_READ_ONLY_APP_TEST=1 \
+MIJIALAN_SEED_CONFIG="$seed_fifo" \
+MIJIALAN_READ_ONLY_APP_TEST_LOG_DIRECTORY="$test_root/app-traffic" \
+MIJIALAN_READ_ONLY_APP_TEST_SECONDS=14400 \
+build/MijiaLAN.app/Contents/MacOS/MijiaLAN
+```
+
+`app-traffic` 不要提前 mkdir。只在既有合法授权可读取钥匙串时由外部生产者在内存筛选一台，通过 FIFO 交付；不打印凭据、不写私有配置磁盘、不修改 ACL，不绕过锁屏、SecurityAgent 或系统权限。权限阻塞会让 seed 超时或后续只读失败并结束；无需要求休息中的用户点击。
+
+## 只读、日志和结束
+
+- 只将隔离 suite 的唯一卷帘设为 opt-in。HomeKit/Matter 不附加、不启用，不发发现广播；不显示测试面板，不自动控制。
+- `CurtainControlController` 的实际请求入口拒绝 position/open/close/stop；`LANMiotAPI` 拒绝写入与 action，创建的专用 session 也设置 `allowWrites=false`。不是依赖不点击按钮实现只读。
+- 详细日志 `traffic.jsonl` 的 scope 为 **experiment**，完整收发滚动 64 MiB，关键历史另留 4 MiB；保持原有脱敏字段及流式导出格式。`plan.json` 仅含时长、策略、端口和设备数等安全元数据，不含 seed。
+- App 在该有界测试期间持有临时 userInitiated 活动，避免空闲睡眠/App Nap影响轮询；结束释放，不改变系统电源偏好或锁屏。
+- 正常统一轮询发现属性错误、缺值、时钟/身份异常或超时后仍按 e57 暂停该台；同一回调结束测试，不自动恢复或重试。检测日志存储失败也结束。
+- 达到时长上限或出现上述故障时，等待卷帘任务结束、关闭会话/socket、停止统一循环、flush 日志，写 `result.json`，随后 `NSApp.terminate` 正常退出。`outcome=durationComplete` 仅表示达到上限；`outcome=paused` 表示异常提前结束，`reason` 保留原因。应以结果文件和日志判断，不能只看进程退出码。故障时没有自动回退到其他策略。
+- 四小时用于积累精简读取和约每 300–330 秒一次的完整校验。实际成功轮数和完整六项次数以日志为准；通信结果不作为物理动作成功证据。
+
+## 云端验证边界
+
+新增 **6 项回归通过**，隔离完整 Swift **132 项通过**，**115 个 Swift 文件语法检查通过**。新增回归验证门控与默认无效、无效/多台/不安全 seed、0700 新目录、FIFO 成功及无 writer 超时、实际控制器/接口拒绝写入与 action、统一 DeviceController 成功只读、故障停止、日志重开和有界 deadline。Linux harness 的编解码为替身，AppModel/AppKit 生命周期只做语法检查；完整原生构建及进程级回环需家庭 Mac 补齐后再使用真实目标。没有修改 e57 通信算法，没有在云端发实机包。
