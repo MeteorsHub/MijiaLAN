@@ -69,7 +69,7 @@ umask 077
 .build/debug/mijia-lan curtain-experiment --socket stable --layout full --hello silence --stamp replyPlusOne --slot 1 --reads 48 --interval 30 --execute --baseline-normal --log-directory /tmp/mijialan-S1-new < /private/path/existing-config.json
 ```
 
-输入路径是占位符，`slot 1` 必须核对为当次选定的设备；日志目录必须尚不存在。没有私有配置时可复用[既有安全钥匙串管道](household-followup-diagnostics.md)向 stdin 传递，不单独打印 `security ... -w` 输出，不修改钥匙串 ACL、不执行 `tee`/`set -x`。只选这一个组，不自动执行整张矩阵。现在本地只需前面的编译、离线测试及 plan 模式。
+输入路径是占位符，`slot 1` 必须核对为当次选定的设备；日志目录必须尚不存在。没有私有配置时可复用[既有安全钥匙串管道](household-followup-diagnostics.md)向 stdin 传递，不单独打印 `security ... -w` 输出，不修改钥匙串 ACL、不执行 `tee`/`set -x`。只选这一个组，不自动执行整张矩阵。S1 命令是后续单因素示例；当前阶段与首轮组别以本页末尾最新现场准备记录为准。
 
 
 ## e57af3c 的 macOS 原生验收反馈
@@ -87,8 +87,18 @@ umask 077
 - 失败批次保留了 code0 的模拟位置 29 及 9/10 错误；时钟拒绝有 `clockAccepted=false`，错 RPC 有 `discarded` 并终止。日志未包含 token、IP 或 fixture 设备名。全部 CLI 回环无写包。
 - 独立 bundle ID、preview/ephemeral 原生预览：开关默认 off，off 期间无模拟卷帘请求；on 后共享轮询先六项、后 2/3 精简批次。自动刷新保留未提交文字 `64.`，没有忙状态或阶段跳变；点击真实确认按钮完成模拟 29→34，仅一次 write attempt，随后 `confirmed34`。关闭开关后停止后续模拟轮询。设置显示 **10/30**。
 
-### 仍待完成
+### 解锁后的补充完成项
 
-- 原生诊断日志页面的最终观察因 Mac 锁屏暂停，已请求用户解锁。磁盘日志与 CLI 字段核对已完成；页面最终展示、查看/导出操作的本轮原生观察尚未完成。
-- 反馈时 UI 预览待解锁后关闭；候选包已收为临时 `MijiaLAN.verified-build`，正式 App 未替换。不要将预览记为已经退出。
-- 本轮没有实机通信、解除暂停、恢复/重启设备。故障设备状态和正式运行环境保持原状。两轮模拟对照验证的是实现与日志一致性；持续读取故障根因及修订策略的实机稳定性仍待正常基线上的受控对照。
+同一本地线程随后反馈：
+
+- 用户解锁后实际打开诊断日志页面，确认显示 **64 MiB + 4 MiB** 及新增 packet 字段说明。
+- 经原生 `NSSavePanel` 成功导出 `native-export.jsonl`，**4556 行全部可解析且 scope=simulation**，包含本轮模拟 `confirmed34` 的完整操作链。
+- 隔离预览已通过自身退出并收纳为 `UI-Preview.verified-build`；正式 App 未替换。本轮原生检查全部完成，无需 e57af3c 之后的代码修正。此前锁屏造成的待检查项已完成。
+
+### 下一阶段：单台实机对照准备
+
+按本地线程报告，已按用户要求通过正式 App 自身 Cmd-Q 正常退出；原 App PID **91606**、Matter PID **91747** 均确认结束，没有其他测试探针。此退出发生在上述原生验证完成之后，不改写先前 Matter 验证期间正式桥接保留的事实。
+
+**此时尚未发送任何实机测试包。** 下一步先由用户恢复一台卷帘，并确认手机米家确实能驱动物理动作；正常基线确认后，先只对选定单台执行 **N 组（stable / adaptive / periodic / helloAnchored），只读 48 轮、目标轮间隔 30 秒**。沿用前文的显式 arming、独立日志目录和异常停止规则，不自动执行其他组。
+
+现有六台 `propertyError` 暂停配置继续保留，不在正式 App 清除或恢复。后续根据 N 组和手机/实物观察结果再安排单因素对照。N 组通过可作为新策略参考，持续读取故障的具体原因仍需可重复的策略差异与日志证据。基线恢复、N 组实机结果及长期稳定性均为待完成项。
