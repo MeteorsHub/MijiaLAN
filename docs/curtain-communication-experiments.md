@@ -70,3 +70,25 @@ umask 077
 ```
 
 输入路径是占位符，`slot 1` 必须核对为当次选定的设备；日志目录必须尚不存在。没有私有配置时可复用[既有安全钥匙串管道](household-followup-diagnostics.md)向 stdin 传递，不单独打印 `security ... -w` 输出，不修改钥匙串 ACL、不执行 `tee`/`set -x`。只选这一个组，不自动执行整张矩阵。现在本地只需前面的编译、离线测试及 plan 模式。
+
+
+## e57af3c 的 macOS 原生验收反馈
+
+来源：本地线程 `01a1b156-dd7f-7873-88dc-943821f74830`，验证提交 **`e57af3c8195b8845b06b970e6e8adab040567ec8`**。以下为本地实际观察与统计的转述；云端未打开本地证据文件。证据目录为本机 `/tmp/mijialan-e57af3c.M8FdFm`，含各组 wire/traffic/stdout 和 `verification.json`，该路径不能假定在云端存在。
+
+### 已完成
+
+- Xcode 27.2 原生 App/CLI 编译通过，完整 Swift 测试 **253 项通过**（13 + 161 + 32 + 47），包括实际 UDP 和真实 AES 回环。Debug App 打包、图标及 deep/strict 签名验证通过。
+- Matter 原套件因正式进程 91747 占 UDP 5540 为 6/7；仅临时副本改用 15540 后 **7/7**。正式桥接保留，未为验证停止或修改。
+- 真实编译 CLI 的七种 plan 全部正常输出，输入无效 stdin 也未被读取；arming 参数不完整时拒绝执行。
+- B0/S1/R1/H1/T1/N/P1 七种策略各对 **127.0.0.1 动态端口的模拟卷帘执行两轮**。fixture 凭据在内存生成，使用实际 Swift AES/MD5 与 Python OpenSSL 对端编解码，正常组共 **38 个实际 sent**。未加载家庭配置。
+- 四种异常：9/10 返回 -4004、错 RPC 后跟正常应答、stamp +100 跳变、SIGINT 取消，各只发送 hello/info/read 三包后非零退出，无后续读取或写入，异常组合计 **12 包**。
+- 全部 **50 个实际 sent** 与落盘 journal 的数量、源端口、RPC ID/stamp、地址布局吻合。stable 组只有一个实际源端口，fresh 每次 socket ID 独立；累计 hello/info/read 计数一致，正常 response ID 匹配。调度等待可通过 exchange 关联到 attempt 字段。
+- 失败批次保留了 code0 的模拟位置 29 及 9/10 错误；时钟拒绝有 `clockAccepted=false`，错 RPC 有 `discarded` 并终止。日志未包含 token、IP 或 fixture 设备名。全部 CLI 回环无写包。
+- 独立 bundle ID、preview/ephemeral 原生预览：开关默认 off，off 期间无模拟卷帘请求；on 后共享轮询先六项、后 2/3 精简批次。自动刷新保留未提交文字 `64.`，没有忙状态或阶段跳变；点击真实确认按钮完成模拟 29→34，仅一次 write attempt，随后 `confirmed34`。关闭开关后停止后续模拟轮询。设置显示 **10/30**。
+
+### 仍待完成
+
+- 原生诊断日志页面的最终观察因 Mac 锁屏暂停，已请求用户解锁。磁盘日志与 CLI 字段核对已完成；页面最终展示、查看/导出操作的本轮原生观察尚未完成。
+- 反馈时 UI 预览待解锁后关闭；候选包已收为临时 `MijiaLAN.verified-build`，正式 App 未替换。不要将预览记为已经退出。
+- 本轮没有实机通信、解除暂停、恢复/重启设备。故障设备状态和正式运行环境保持原状。两轮模拟对照验证的是实现与日志一致性；持续读取故障根因及修订策略的实机稳定性仍待正常基线上的受控对照。
