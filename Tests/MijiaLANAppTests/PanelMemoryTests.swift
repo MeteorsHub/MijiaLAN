@@ -112,20 +112,22 @@ struct PanelMemoryTests {
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let presentation = PanelPresentation(window: window, reduceMotion: { true })
+        defer { presentation.stop(); window.close() }
         var closes = 0
         presentation.didClose = { closes += 1 }
         presentation.show()
         presentation.hide()
         #expect(closes == 0)
         presentation.show()
-        try await Task.sleep(for: .milliseconds(200))
+        let reopened = try await waitForAppKit { presentation.phase == .open }
+        try #require(reopened, "Reopened animation did not complete within the fixture deadline")
         #expect(closes == 0)
         #expect(presentation.isPresented)
         presentation.hide()
-        try await Task.sleep(for: .milliseconds(200))
+        let closed = try await waitForAppKit { presentation.phase == .closed && closes == 1 && !window.isVisible }
+        #expect(closed, "Exit did not complete: phase=\(presentation.phase.rawValue), closes=\(closes), visible=\(window.isVisible)")
         #expect(closes == 1)
         #expect(!window.isVisible)
-        presentation.stop()
     }
 
     @Test("Native scroll offsets restore in either coordinate system and teardown cannot overwrite them")
@@ -158,6 +160,20 @@ struct PanelMemoryTests {
             recorder.stop()
             window.contentView = nil
         }
+    }
+
+    /// Animation duration is not a completion guarantee, especially with a locked WindowServer.
+    /// Service AppKit's default run loop, then yield the main actor so queued completions can run.
+    private func waitForAppKit(timeout: Duration = .seconds(5), _ condition: () -> Bool) async throws -> Bool {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while !condition(), ContinuousClock.now < deadline {
+            pumpAppKitTurn()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        return condition()
+    }
+    private func pumpAppKitTurn() {
+        _ = RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
     }
 
     private func settle(_ condition: () -> Bool) async {

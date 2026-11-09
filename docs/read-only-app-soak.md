@@ -66,3 +66,8 @@ bbfe803 的初始入口曾跳过 `MenuBarPanelController`，只覆盖真实 App 
 有界时长从 `ReadOnlyAppTestLifetime.init` 捕获的绝对 ContinuousClock 截止点计算，任务调度延迟不会延后其计时起点。期限回归等待明确完成事件后检查停止幂等，移除固定 sleep 1100 ms 的调度假设。bbfe803 在本地全量并行测试中暴露的 lifetime 断言竞态由此修正；旧 PanelMemory 的独立复测仍由本地分类，本提交不据此改动窗口关闭逻辑。
 
 本次菜单栏/绝对期限后续修正：云端入口定向 **6/6** 通过（包括 open-on-launch 参数拒绝），115 个 Swift 文件语法检查通过。菜单栏窗口与 NSWorkspace 通知的真实进程验收、全量原生测试继续由本地执行；未向实机发包。
+
+
+## PanelMemory 原生测试 fixture 等待修正
+
+本地在锁屏状态下定向复测仍复现旧 `PanelMemoryTests.exitCompletion` 的两个断言失败。该测试此前用两段固定 200 ms sleep 假定 120 ms AppKit 动画已结束；此次仅修改测试 fixture：以实际 `.open` / `.closed`、didClose 次数及窗口隐藏为完成条件，短步泵送默认 AppKit run loop 并让出主 actor，单阶段最多等待 5 秒；defer 清理窗口，不用清理动作提前满足断言。生产 `PanelPresentation`、窗口关闭和通信逻辑没有改动。云端只能执行语法检查，锁屏下真实 AppKit 完成行为仍待本地原生复测，未据此宣称 UI 已验证修复。
