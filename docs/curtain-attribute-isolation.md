@@ -85,3 +85,20 @@ swift test --filter 'CurtainAttributesTests|CurtainAttributeProbeTests|MiioDiagn
 
 
 本次云端定向 **11 项通过**（新功能/坏批次10项，加旧UDP超时用例定向复查），隔离完整 **142 项通过**，**119 个 Swift 文件语法检查通过**。首次全量执行时旧80ms UDP超时 fixture 的 discarded 断言出现一次并行调度失败；未修改该测试或传输代码，随后定向及完整复查通过。原生真实 AES/MD5 与 CLI 进程级尚待本地，不将 Linux 替身结果算作原生验收。本次未发硬件包、未改自动查询周期或 e57 网络通信算法。
+
+## e0167ba 本地原生验收完成
+
+来源为本地线程 `01a1b156-dd7f-7873-88dc-943821f74830` 的反馈，验证代码提交 **`e0167bafe99aa71026b0cb0a06db36e958200ff8`**。CLI/App 原生编译通过，相关 Swift **22 项通过**（CLI 3 + SDK/UDP/diagnostics 19）。本轮未重跑已知的无关锁屏动画 fixture，不改写其先前失败记录，也不表示完整原生套件重新全过。
+
+真实编译 CLI 的 **15 组进程级回环全部通过**：使用实际 AES/MD5 与 OpenSSL 对端，每个进程的网络 sandbox 仅允许127回环；假 DID123、零 token，不加载真实设备凭据。捕获共 **62 个 UDP 发送、32 个 get_properties 请求**，包括：
+
+- core2/3、扩展4/5/9/10单项、`[10,5,4,9]` 有序子集、六项 single 两轮、两个独立显式 baseline。
+- 实际请求顺序与计划、每地址 actualSent 计数全部吻合；无隐含 full，每个进程同一源端口，scope/脱敏检查通过。
+- single 首个属性遇属性错误、错 RPC 后跟合法应答、clock+100 或 SIGTERM，均只发送 hello/info/read 三包即停，没有下一属性或写入。
+- 两种坏值重放：全code0仅2.5=number2；本夜完整坏批次2.2=1/2.3=0/2.4=0/2.5=number2且9/10=-4004。两组同样三包后 failed、completed0，无后续读取或写入。
+
+证据由本地归档在 `diagnostics/curtain-overnight-2026-11-10/native-verification/attribute-tool-summary.json` 和 `attribute-loopback/`，云端未打开这些本地文件。此轮都是模拟回环；夜间硬件请求仍只有已审计的 **464 包**，没有后续实机请求或重启，另外五台未动。安装的正式 App 仍是44958fa且已退出，正式配置哈希不变。
+
+下一轮优先在用户恢复干净正常基线后，将相同六项按 single 有序持续读取，目标每地址至少48次（异常即提前停止），与已复现的 full-batch 对照，再根据结果选择扩展单项。single48轮本身为 **288 个属性RPC、每地址48次**，不能称为48个UDP包；若做前后完整基线，其额外暴露和独立会话另外计入恢复窗口。保留真实时间、每地址请求数及完整/拆分包数的区别，失败不追加后置基线或新组。
+
+目前仅完成工具原生验收，**等待用户恢复硬件基线后再继续**。正式读取逻辑不变，没有独立根因结论或修复验收。
