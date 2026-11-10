@@ -19,7 +19,7 @@
 
 - `CurtainReadProfile.normalFive`：初次、周期完整校验、手动、控制前置和旧 `CurtainValidationSession` 都读取五项。普通adaptive仍读取core2/3、按原有10次/300秒界限完整校验；只改变完整集合，不改刷新周期。
 - 五项继续严格检查地址唯一/完整、code0、类型、范围、fault=0和身份/固件/时钟。控制前仍要求停止，单次写入、不重试、有限回读；Stop优先级不变。不会删除9或接受其错误。
-- `packet.curtainReadProfile` 标记当前配置，实际 `packet.addresses/propertyCount` 是五项或core/确认两项；DEBUG只读App `plan.json` 列出五项及normal-five标记。
+- `packet.curtainReadProfile` 标记当前配置，实际 `packet.addresses/propertyCount` 是五项或core/确认两项。历史DEBUG只读App的manifest曾记录同样集合；该专用App测试模式现已删除。
 - 现有开关、暂停、配置、配对及64MiB完整日志不迁移、不清空。已坏设备不会因换版本自动恢复或解除暂停。
 - `curtain-attributes --properties 2.5 ...` 保留显式读取5和严格坏值验证，其基线阶段仍是用户明确指定的历史六项，不悄悄改名。做五项检查使用 `--phase probe` 与五项列表。
 - `curtain-experiment` 此版本默认跟随正常五项，计划输出实际集合；只有额外 `--diagnostic-six` 才使用明确标记的六项只读诊断。历史e57/e016的full6数据不改写为full5。
@@ -36,10 +36,10 @@
 ```sh
 swift build --product mijia-lan --force-resolved-versions
 swift build --product MijiaLANApp --force-resolved-versions
-swift test --filter 'CurtainNormalProfileTests|CurtainProbeTimeoutTests|CurtainControlTests|CurtainValidationTests|MiioPolicyTests|CurtainAttributeProbeTests|CurtainAttributesTests|ReadOnlyAppTestTests' --force-resolved-versions
+swift test --filter 'CurtainNormalProfileTests|CurtainProbeTimeoutTests|CurtainControlTests|CurtainValidationTests|MiioPolicyTests|CurtainAttributeProbeTests|CurtainAttributesTests' --force-resolved-versions
 ```
 
-重点验收：正常自动/手动/控制前置/旧验证的所有read均无5；其余五项坏code/type/range仍停止且不写；2/3回读及单写保持；manifest/log清楚显示五项；显式选择5仍可读且拒绝number2；诊断3秒回复在2秒默认下失败、显式5秒下成功，5秒无回复只有一个属性发送且不发single下一项。数据均用假种子/回环，现阶段不启动真实App或硬件请求。之后由本地验证结果再确定家庭验收，不能把有限五项探针通过写成修订App实机已修好。
+重点验收：正常自动/手动/控制前置/旧验证的所有read均无5；其余五项坏code/type/range仍停止且不写；2/3回读及单写保持；正常日志清楚显示五项；显式选择5仍可读且拒绝number2；诊断3秒回复在2秒默认下失败、显式5秒下成功，5秒无回复只有一个属性发送且不发single下一项。数据均用假种子/回环，现阶段不启动真实App或硬件请求。之后由本地验证结果再确定家庭验收，不能把有限五项探针通过写成修订App实机已修好。
 
 
 云端候选检查：隔离完整Swift **148 项通过**，**122 个Swift文件语法检查通过**。包括512轮虚拟时间的正常adaptive读取、正常日常及旧验证真实BSD回环各超过48次完整五项、原控制单写与两项回读、五项坏值拒绝、显式坏5重放、三秒延迟与五秒无回复。Linux编解码仍为替身，原生App/CLI、真实AES及实机控制/长测需要本地补齐。旧80ms UDP fixture曾因响应线程晚于截止点才启动而缺少discard事件；仅在fixture的sent边界先排入一个错源包以建立前提，未改80ms预算、断言或传输算法。锁屏动画旧失败仍不在本轮修复范围。
