@@ -18,6 +18,8 @@ enum CurtainExperiment {
         let execute: Bool
         let baselineNormal: Bool
         let logDirectory: String?
+        let readProfile: CurtainReadProfile
+        let statusReadProperties: [Int]
     }
     static func parse(_ args: [String]) throws -> Options {
         var values: [String: String] = [:], flags: Set<String> = []
@@ -25,7 +27,7 @@ enum CurtainExperiment {
         var index = 0
         while index < args.count {
             let key = args[index]
-            if ["--execute", "--baseline-normal"].contains(key) {
+            if ["--execute", "--baseline-normal", "--diagnostic-six"].contains(key) {
                 guard flags.insert(key).inserted else { throw invalid() }; index += 1
             } else {
                 guard valueKeys.contains(key), values[key] == nil, index + 1 < args.count else { throw invalid() }
@@ -42,9 +44,11 @@ enum CurtainExperiment {
               !flags.contains("--execute") || (flags.contains("--baseline-normal") && values["--log-directory"] != nil) else { throw invalid() }
         return Options(policy: .init(socket: socket, layout: layout, hello: hello, stamp: stamp), slot: slot,
                        reads: reads, interval: interval, execute: flags.contains("--execute"),
-                       baselineNormal: flags.contains("--baseline-normal"), logDirectory: values["--log-directory"])
+                       baselineNormal: flags.contains("--baseline-normal"), logDirectory: values["--log-directory"],
+                       readProfile: flags.contains("--diagnostic-six") ? .diagnosticSix : .normalFive,
+                       statusReadProperties: flags.contains("--diagnostic-six") ? CurtainReadProfile.diagnosticSix.propertyIDs : CurtainReadProfile.normalFive.propertyIDs)
     }
-    static func invalid() -> MiioError { .badResponse("curtain-experiment requires explicit --socket fresh|stable --layout full|adaptive|single --hello silence|periodic --stamp replyPlusOne|helloAnchored --slot N --reads 1...48 --interval 5...300; real reads also require --execute --baseline-normal --log-directory NEW_DIRECTORY. No writes are supported.") }
+    static func invalid() -> MiioError { .badResponse("curtain-experiment requires explicit --socket fresh|stable --layout full|adaptive|single --hello silence|periodic --stamp replyPlusOne|helloAnchored --slot N --reads 1...48 --interval 5...300; real reads also require --execute --baseline-normal --log-directory NEW_DIRECTORY. Default status profile is five fields without motor-reverse. Only explicit --diagnostic-six includes 2.5; this is not normal App behavior. No writes are supported.") }
     private enum Finish: String, Sendable { case complete, failed, cancelled, discarded }
     static func run(_ args: [String], port: UInt16) async throws {
         let options = try parse(args)
@@ -61,7 +65,7 @@ enum CurtainExperiment {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         let journal = DeviceEventLog(fileURL: destination.appendingPathComponent("traffic.jsonl"), scope: .experiment)
         journal.register([device.did])
-        let session = try CurtainControlSession.experiment(device: device, policy: options.policy, journal: journal, port: port)
+        let session = try CurtainControlSession.experiment(device: device, policy: options.policy, journal: journal, port: port, readProfile: options.readProfile)
         let worker = Task { () -> (Int, Finish) in
             var completed = 0
             var lastStart: ContinuousClock.Instant?

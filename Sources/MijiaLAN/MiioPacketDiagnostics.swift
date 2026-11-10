@@ -41,6 +41,8 @@ public struct MiioPacketDiagnostics: Codable, Equatable, Sendable {
     public internal(set) var rpcIDMatches: Bool?
     public internal(set) var peerEndpointMatches: Bool?
     public internal(set) var propertyCount: UInt16?
+    public internal(set) var requestTimeoutMilliseconds: Int64?
+    public internal(set) var curtainReadProfile: CurtainReadProfile?
     public internal(set) var attributePlan: CurtainAttributePlan?
     public internal(set) var attributeRound: UInt64?
     public internal(set) var attributeExposure: CurtainAttributeExposure?

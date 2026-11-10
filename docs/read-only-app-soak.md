@@ -4,6 +4,8 @@
 
 此入口使用真实 `AppModel → HomeStore → CapabilityHomeProvider → DeviceController → CurtainControlController` 统一后台轮询。配置来源改为受控私有 seed，凭据存内存 vault，默认值使用全新随机 suite；不读取正式钥匙串、不修改正式配置、六台暂停或配对。四项通信策略保持 e57af3c 的 N 组。它是隔离配置来源的真实 App 测试，不作为正常钥匙串加载验收。
 
+当前五字段兼容候选沿用本页门控/调度；manifest明确记录 `dc1545-fw1.1.3-normal-five` 和实际五项地址。后文44958fa的full6历史结果不改名、不算作新候选已验收。详见[当前候选](curtain-five-property-compatibility.md)。
+
 ## 启动契约
 
 仅 Debug 有效，以下条件缺一即在 AppModel、vault、设备 API、发现初始化**之前退出，退出码 2**，不回退到普通模式：
@@ -53,7 +55,7 @@ build/MijiaLAN.app/Contents/MacOS/MijiaLAN
 - App 在该有界测试期间持有临时 userInitiated 活动，避免空闲睡眠/App Nap影响轮询；结束释放，不改变系统电源偏好或锁屏。
 - 正常统一轮询发现属性错误、缺值、时钟/身份异常或超时后仍按 e57 暂停该台；同一回调结束测试，不自动恢复或重试。检测日志存储失败也结束。
 - 达到时长上限或出现上述故障时，等待卷帘任务结束、关闭会话/socket、停止统一循环、flush 日志，写 `result.json`，随后 `NSApp.terminate` 正常退出。`outcome=durationComplete` 仅表示达到上限；`outcome=paused` 表示异常提前结束，`reason` 保留原因。应以结果文件和日志判断，不能只看进程退出码。故障时没有自动回退到其他策略。
-- 四小时用于积累精简读取和约每 300–330 秒一次的完整校验。实际成功轮数和完整六项次数以日志为准；通信结果不作为物理动作成功证据。
+- 四小时用于积累精简读取和约每 300–330 秒一次的完整校验。实际成功轮数和当前完整五项次数以日志为准（旧44958fa记录为六项）；通信结果不作为物理动作成功证据。
 
 ## 云端验证边界
 

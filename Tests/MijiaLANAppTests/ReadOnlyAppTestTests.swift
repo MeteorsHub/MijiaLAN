@@ -98,6 +98,7 @@ private actor ReadOnlyPreview: MiioTransport {
         #expect(defaults.dictionary(forKey: CurtainControlController.pausedKey) == nil)
         #expect(throws: ReadOnlyAppTest.Rejected.self) { try ReadOnlyAppTest.prepare(f.environment) }
         let manifest = try String(contentsOf: test.directory.appendingPathComponent("plan.json"), encoding: .utf8)
+        #expect(manifest.contains("dc1545-fw1.1.3-normal-five") && !manifest.contains("2.5"))
         #expect(!manifest.contains(f.device.token) && !manifest.contains(f.device.name) && !manifest.contains(f.device.host))
     }
     @Test("Invalid, multiple-device, unsupported and insecure seeds never create logs or a fallback configuration")

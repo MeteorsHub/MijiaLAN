@@ -83,7 +83,7 @@ struct MiioDiagnosticsTests {
             fake.model = device.model; fake.firmware = "1.1.3"
             let client = MiioClient(host: device.host, token: token, transport: network, knownModel: device.model, policy: .legacy)
             let time = IncidentClock()
-            let session = CurtainControlSession(device: device, client: client, scheduler: CurtainRequestScheduler(clock: time.clock), clock: time.clock, isCurrent: { true }, journal: journal)
+            let session = CurtainControlSession(device: device, client: client, scheduler: CurtainRequestScheduler(clock: time.clock), clock: time.clock, isCurrent: { true }, journal: journal, allowWrites: false, readProfile: .diagnosticSix)
             for _ in 0..<37 { _ = try await session.poll() }
             for row in codes where row.code != 0 { fake.propertyErrors["2.\(row.piid)"] = row.code }
             let id = UUID()
@@ -113,7 +113,7 @@ struct MiioDiagnosticsTests {
         let rows = try #require(failure.arrayValue)
         let reverse = rows.first { $0["piid"] == .number(5) }
         #expect(reverse?["value"] == .number(2))
-        #expect(throws: (any Error).self) { try CurtainControlSession.preflight(failure) }
+        #expect(throws: (any Error).self) { try CurtainControlSession.preflight(failure, profile: .diagnosticSix) }
         // Even if the two negative codes are removed synthetically, the independently wrong type must fail.
         let typeOnly = JSONValue.array((failure.arrayValue ?? []).map { row in
             guard case .object(var fields) = row else { return row }
@@ -121,7 +121,7 @@ struct MiioDiagnosticsTests {
             if fields["piid"] == .number(10) { fields["code"] = .number(0); fields["value"] = .bool(false) }
             return .object(fields)
         })
-        #expect(throws: (any Error).self) { try CurtainControlSession.preflight(typeOnly) }
+        #expect(throws: (any Error).self) { try CurtainControlSession.preflight(typeOnly, profile: .diagnosticSix) }
     }
 
 }

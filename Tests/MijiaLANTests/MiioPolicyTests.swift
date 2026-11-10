@@ -67,8 +67,8 @@ struct MiioPolicyTests {
         for _ in 0..<32 { time.advance(.seconds(30)); #expect(try await session.poll().position == 29) }
         #expect(await transport.hellos >= 7)
         let layouts = await transport.layouts
-        #expect(layouts.first == [2,3,4,5,9,10] && layouts.contains([2,3]))
-        #expect(layouts.filter { $0.count == 6 }.count >= 3)
+        #expect(layouts.first == [2,3,4,9,10] && layouts.contains([2,3]))
+        #expect(layouts.filter { $0.count == 5 }.count >= 3)
         #expect(journal.snapshot().filter { $0.outcome == .packetChecked }.allSatisfy { $0.packet?.clockAccepted != false })
         await session.end()
     }
@@ -98,9 +98,9 @@ struct MiioPolicyTests {
             let (session, transport, time, _) = make(.real, policy: p)
             _ = try await session.poll(); time.advance(.seconds(30)); _ = try await session.poll()
             let old = await transport.layouts
-            if layout == .single { #expect(old.count == 12 && old.allSatisfy { $0.count == 1 }) }
-            if layout == .full { #expect(old == [[2,3,4,5,9,10], [2,3,4,5,9,10]]) }
-            if layout == .adaptive { #expect(old == [[2,3,4,5,9,10], [2,3]]) }
+            if layout == .single { #expect(old.count == 10 && old.allSatisfy { $0.count == 1 }) }
+            if layout == .full { #expect(old == [[2,3,4,9,10], [2,3,4,9,10]]) }
+            if layout == .adaptive { #expect(old == [[2,3,4,9,10], [2,3]]) }
             let result = try await session.manual(.position(64))
             #expect(result.confirmed && result.position == 64)
             await session.end()
@@ -122,7 +122,7 @@ struct MiioPolicyTests {
                 await #expect(throws: (any Error).self) { try await session.poll() }
             }
             let failure = await session.snapshot()
-            #expect(await transport.layouts.last == [2,3,4,5,9,10], "control=\(attemptControl) reason=\(String(describing: failure.failureReason))")
+            #expect(await transport.layouts.last == [2,3,4,9,10], "control=\(attemptControl) reason=\(String(describing: failure.failureReason))")
             #expect(await transport.writeCount() == 0)
             #expect(journal.snapshot().contains { $0.outcome == .responseCode && $0.piid == 9 && $0.code == -4004 })
             #expect(journal.snapshot().contains { $0.outcome == .observedValue && $0.piid == 3 && $0.value == 29 })

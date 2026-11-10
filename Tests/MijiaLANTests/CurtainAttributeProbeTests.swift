@@ -67,10 +67,10 @@ struct CurtainAttributeProbeTests {
             host: host, token: String(repeating: "0", count: 32), specType: CurtainValidationSession.specification)
     }
     private func make(_ ids: [Int], layout: CurtainAttributePlan.Layout, rounds: Int = 48,
-                      failFull38: Bool = false, typeOnly: Bool = false, discardFirst: Bool = false) throws -> (CurtainAttributeProbe, AttributeTestTransport, AttributeTestClock, DeviceEventLog) {
+                      failFull38: Bool = false, typeOnly: Bool = false, discardFirst: Bool = false, rpcTimeout: Int = 2) throws -> (CurtainAttributeProbe, AttributeTestTransport, AttributeTestClock, DeviceEventLog) {
         let clock = AttributeTestClock(), journal = DeviceEventLog(maxEvents: 16_384, scope: .offlineTest)
         let transport = AttributeTestTransport(clock: clock, failFull38: failFull38, typeOnly: typeOnly, discardFirst: discardFirst)
-        let plan = try CurtainAttributePlan(properties: ids, layout: layout, phase: .probe, rounds: rounds, intervalSeconds: 30)
+        let plan = try CurtainAttributePlan(properties: ids, layout: layout, phase: .probe, rounds: rounds, intervalSeconds: 30, rpcTimeoutSeconds: rpcTimeout)
         let probe = try CurtainAttributeProbe(device: device(), plan: plan, journal: journal, transport: transport,
             clock: clock.clock, time: .init(now: { clock.now }))
         return (probe, transport, clock, journal)
@@ -97,7 +97,7 @@ struct CurtainAttributeProbeTests {
     }
     @Test("A discarded wrong RPC followed by a valid reply stops single layout before its next selected property")
     func perRPCDiscard() async throws {
-        let (probe, transport, _, journal) = try make([5,3,9], layout: .single, discardFirst: true)
+        let (probe, transport, _, journal) = try make([5,3,9], layout: .single, discardFirst: true, rpcTimeout: 5)
         await #expect(throws: (any Error).self) { try await probe.readRound() }
         #expect(await transport.layouts == [[5]])
         #expect(await probe.exposure().reads == 1)
@@ -175,7 +175,7 @@ struct CurtainAttributeProbeTests {
             }
             return (reads, ports)
         }
-        let plan = try CurtainAttributePlan(properties: [5,3,9], layout: .single, phase: .probe, rounds: 2, intervalSeconds: 30)
+        let plan = try CurtainAttributePlan(properties: [5,3,9], layout: .single, phase: .probe, rounds: 2, intervalSeconds: 30, rpcTimeoutSeconds: wrongRPC ? 5 : 2)
         let journal = DeviceEventLog(scope: .offlineTest)
         let probe = try CurtainAttributeProbe(device: device(host: "127.0.0.1"), plan: plan, journal: journal, port: server.localPort,
             clock: clock.clock, time: .init(now: { clock.now }))

@@ -14,7 +14,7 @@ enum ReadOnlyDiagnostics {
         "xiaomi.feeder.pi2001": "urn:miot-spec-v2:device:pet-feeder:0000A06C:xiaomi-pi2001:",
     ]
     static let properties: [String: [(Int, Int)]] = [
-        "dooya.motor.dc1545": [(2, 2), (2, 3), (2, 4), (2, 5), (2, 9), (2, 10)],
+        "dooya.motor.dc1545": CurtainReadProfile.normalFive.propertyIDs.map { (2, $0) },
         "xiaomi.pet_waterer.70m2": [(2, 1), (2, 3), (2, 4), (2, 7), (2, 10), (2, 11)],
         "giot.heater.v13daf": [(2, 1), (2, 2), (2, 3), (3, 1), (3, 2)],
         "xiaomi.derh.13l": [(2, 1), (2, 2), (2, 3), (2, 5), (3, 1), (3, 2)],

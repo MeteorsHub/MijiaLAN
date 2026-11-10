@@ -49,7 +49,9 @@ struct ReadOnlyAppTest {
         guard mkdir(path, 0o700) == 0 else { throw Rejected() }
         let manifest: [String: Any] = ["mode": "readOnlyAppTest", "scope": "experiment", "deviceCount": 1,
             "seconds": seconds, "backgroundSeconds": 30, "foregroundSeconds": 10, "remotePort": port,
-            "socket": "stable", "layout": "adaptive", "hello": "periodic", "stamp": "helloAnchored"]
+            "socket": "stable", "layout": "adaptive", "hello": "periodic", "stamp": "helloAnchored",
+            "normalReadProfile": CurtainReadProfile.normalFive.rawValue,
+            "normalStatusProperties": CurtainReadProfile.normalFive.propertyIDs.map { "2.\($0)" }]
         do {
             try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys]).write(to: URL(fileURLWithPath: path).appendingPathComponent("plan.json"), options: .atomic)
         } catch { throw Rejected() }

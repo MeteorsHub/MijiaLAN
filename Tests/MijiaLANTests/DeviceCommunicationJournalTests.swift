@@ -110,9 +110,9 @@ struct DeviceCommunicationJournalTests {
         let url = try #require(Bundle.module.url(forResource: "dooya-repeated-value-2026-11-08", withExtension: "json"))
         struct Fixture: Decodable { let batch: JSONValue; let singleResponses: [[JSONValue]] }
         let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url))
-        #expect(throws: (any Error).self) { try CurtainControlSession.preflight(fixture.batch) }
+        #expect(throws: (any Error).self) { try CurtainControlSession.preflight(fixture.batch, profile: .diagnosticSix) }
         let individualRows = fixture.singleResponses.flatMap { $0 }
-        #expect(throws: (any Error).self) { try CurtainControlSession.preflight(.array(individualRows)) }
+        #expect(throws: (any Error).self) { try CurtainControlSession.preflight(.array(individualRows), profile: .diagnosticSix) }
         let positionOnly = individualRows.filter { $0["piid"] == .number(3) }
         #expect(throws: (any Error).self) { try CurtainControlSession.preflight(.array(positionOnly)) }
         let journal = DeviceEventLog(scope: .offlineTest)
@@ -125,7 +125,7 @@ struct DeviceCommunicationJournalTests {
         #expect(state.position == nil && fake.receivedWrites.isEmpty)
         #expect(journal.snapshot().contains { $0.outcome == .noPacket && $0.stage == .write && $0.reason == .untrustedReading && $0.writeAttempted == false })
         #expect(!journal.snapshot().contains { $0.stage == .write && ($0.outcome == .attempt || $0.outcome == .sent) })
-        #expect(journal.snapshot().filter { $0.outcome == .observedValue && $0.value == 14 }.count == 6)
+        #expect(journal.snapshot().filter { $0.outcome == .observedValue && $0.value == 14 }.count == 5)
     }
 
     @Test("Code-zero target-zero acknowledgement is not motion completion; synthetic unchanged position remains unconfirmed")

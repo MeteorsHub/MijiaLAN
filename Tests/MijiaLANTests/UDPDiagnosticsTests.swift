@@ -75,7 +75,15 @@ struct UDPDiagnosticsTests {
         }
         let observations = SocketObservations()
         await #expect(throws: MiioError.timeout) {
-            try await UDPMiioTransport().exchangeDiagnosed(Data([1]), host: "127.0.0.1", port: server.localPort, timeout: .milliseconds(80), observe: observations.append)
+            try await UDPMiioTransport().exchangeDiagnosed(Data([1]), host: "127.0.0.1", port: server.localPort, timeout: .milliseconds(80), observe: { event in
+                observations.append(event)
+                // Ensure at least one unexpected datagram is queued before the deadline starts.
+                // A loaded executor may schedule the background responder after 80 ms, which
+                // would correctly time out without ever receiving anything to discard.
+                if case .sent = event.boundary, let port = event.localPort {
+                    try? unexpected.send(Data([0]), to: "127.0.0.1", port: port)
+                }
+            })
         }
         try await responder.value
         let events = observations.snapshot

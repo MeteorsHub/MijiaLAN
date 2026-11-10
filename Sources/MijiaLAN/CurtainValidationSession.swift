@@ -180,11 +180,11 @@ public actor CurtainValidationSession {
     private func readState() async throws -> State {
         state.phase = .checking
         try await connectIfNeeded()
-        let values = try Self.values(await rpc(.read(did: device.did, confirmation: false)), expected: [2,3,4,5,9,10])
+        let values = try Self.values(await rpc(.read(did: device.did, confirmation: false)), expected: Set(CurtainReadProfile.normalFive.propertyIDs))
         let status = try Self.integer(values[2], range: 0...4)
         let position = try Self.integer(values[3], range: 0...100)
         _ = try Self.integer(values[4], range: 0...100)
-        guard values[9] == .number(0), case .bool = values[5], case .bool = values[10] else { throw DeviceControlError.notConfirmed }
+        guard values[9] == .number(0), case .bool = values[10] else { throw DeviceControlError.notConfirmed }
         if state.confirmed, state.requestedTarget != position { state.requestedTarget = nil; state.confirmed = false; state.writeAccepted = false }
         state.position = position; state.motorStatus = status; state.sampledAt = Date(); state.phase = .ready; state.message = nil
         return state

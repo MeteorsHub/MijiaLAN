@@ -11,13 +11,21 @@ public struct CurtainAttributePlan: Codable, Equatable, Sendable {
     public let phase: Phase
     public let rounds: Int
     public let intervalSeconds: Int
-    public init(properties: [Int], layout: Layout, phase: Phase, rounds: Int, intervalSeconds: Int) throws {
+    public let rpcTimeoutSeconds: Int
+    private enum CodingKeys: String, CodingKey { case properties, layout, phase, rounds, intervalSeconds, rpcTimeoutSeconds }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(properties: c.decode([Int].self, forKey: .properties), layout: c.decode(Layout.self, forKey: .layout),
+            phase: c.decode(Phase.self, forKey: .phase), rounds: c.decode(Int.self, forKey: .rounds),
+            intervalSeconds: c.decode(Int.self, forKey: .intervalSeconds), rpcTimeoutSeconds: c.decodeIfPresent(Int.self, forKey: .rpcTimeoutSeconds) ?? 2)
+    }
+    public init(properties: [Int], layout: Layout, phase: Phase, rounds: Int, intervalSeconds: Int, rpcTimeoutSeconds: Int = 2) throws {
         guard !properties.isEmpty, properties.count <= 6, Set(properties).count == properties.count,
-              properties.allSatisfy(Self.whitelist.contains), (1...48).contains(rounds), (5...300).contains(intervalSeconds),
+              properties.allSatisfy(Self.whitelist.contains), (1...48).contains(rounds), (5...300).contains(intervalSeconds), (1...30).contains(rpcTimeoutSeconds),
               phase == .probe || (properties == Self.whitelist && layout == .batch && rounds == 1)
         else { throw DeviceControlError.invalidValue("Explicit attribute plan") }
         self.properties = properties; self.layout = layout; self.phase = phase
-        self.rounds = rounds; self.intervalSeconds = intervalSeconds
+        self.rounds = rounds; self.intervalSeconds = intervalSeconds; self.rpcTimeoutSeconds = rpcTimeoutSeconds
     }
 }
 
@@ -113,7 +121,7 @@ public actor CurtainAttributeProbe {
          clock: CurtainValidationSession.Clock, time: MiioTimeSource) throws {
         guard device.model == CurtainValidationSession.model, device.specType == CurtainValidationSession.specification,
               let token = MiioToken.parse(device.token), let did = UInt32(device.did), did > 0 else { throw DeviceControlError.wrongDevice }
-        let checked = try CurtainAttributePlan(properties: plan.properties, layout: plan.layout, phase: plan.phase, rounds: plan.rounds, intervalSeconds: plan.intervalSeconds)
+        let checked = try CurtainAttributePlan(properties: plan.properties, layout: plan.layout, phase: plan.phase, rounds: plan.rounds, intervalSeconds: plan.intervalSeconds, rpcTimeoutSeconds: plan.rpcTimeoutSeconds)
         self.device = device; self.plan = checked; self.journal = journal; self.clock = clock
         lastCompletion = clock.now()
         client = MiioClient(host: device.host, token: token, port: port, transport: transport, retries: 0,
@@ -154,7 +162,7 @@ public actor CurtainAttributeProbe {
     private func rpc(_ request: MiioClient.CurtainRequest, info: Bool = false) async throws -> JSONValue {
         try await gap()
         defer { lastCompletion = clock.now() }
-        let result = try await client.curtainRequest(request, isCurrent: { true }, wire: wire(info ? .info : .preflight, kind: info ? .info : .read))
+        let result = try await client.curtainRequest(request, timeout: .seconds(plan.rpcTimeoutSeconds), isCurrent: { true }, wire: wire(info ? .info : .preflight, kind: info ? .info : .read))
         try checkWire()
         return result
     }

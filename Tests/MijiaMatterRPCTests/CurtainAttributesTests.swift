@@ -7,6 +7,11 @@ struct CurtainAttributesTests {
     @Test("Property plans preserve exact order, reject illegal/duplicate addresses and cannot arm implicitly")
     func parse() throws {
         let options = try CurtainAttributes.parse(base)
+        #expect(options.plan.rpcTimeoutSeconds == 2)
+        #expect(try CurtainAttributes.parse(base + ["--rpc-timeout", "5"]).plan.rpcTimeoutSeconds == 5)
+        for value in ["0", "31", "not-a-number"] {
+            #expect(throws: (any Error).self) { try CurtainAttributes.parse(base + ["--rpc-timeout", value]) }
+        }
         #expect(!options.execute && options.plan.properties == [10,5] && options.plan.layout == .single)
         for properties in ["", "2.1", "2.3,2.3", "3.2", "2.9,", "02.3", "2.03", "2.3,2.11"] {
             var args = base; args[1] = properties

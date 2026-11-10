@@ -190,14 +190,14 @@ public actor MiioClient {
         defer { release() }
         try Task.checkCancellation()
     }
-    func curtainRequest(_ request: CurtainRequest, isCurrent: @escaping @Sendable () -> Bool, wire: (@Sendable (CurtainWireEvent) -> Void)? = nil) async throws -> JSONValue {
+    func curtainRequest(_ request: CurtainRequest, timeout: Duration = .seconds(2), isCurrent: @escaping @Sendable () -> Bool, wire: (@Sendable (CurtainWireEvent) -> Void)? = nil) async throws -> JSONValue {
         let method: String
         let params: JSONValue
         switch request {
         case .info: method = "miIO.info"; params = .array([])
         case .read(let did, let confirmation):
             method = "get_properties"
-            let ids = confirmation ? [3, 2] : [2, 3, 4, 5, 9, 10]
+            let ids = confirmation ? [3, 2] : CurtainReadProfile.normalFive.propertyIDs
             params = .array(ids.map { .object(["did": .string(did), "siid": .number(2), "piid": .number(Double($0))]) })
         case .selectedRead(let did, let ids, _):
             guard !ids.isEmpty, ids.count <= 6, ids.allSatisfy({ [2,3,4,5,9,10].contains($0) }) else { throw DeviceControlError.unsupported("Read whitelist") }
@@ -212,7 +212,13 @@ public actor MiioClient {
             method = "set_properties"
             params = .array([.object(["did": .string(did), "siid": .number(2), "piid": .number(1), "value": .number(Double(value))])])
         }
-        return try await performCall(method, params: params, timeout: .seconds(2), retryCount: 0, validation: true, validationCheck: isCurrent, wire: wire)
+        let kind: DeviceEventLog.Kind = method == "miIO.info" ? .info : (method == "get_properties" ? .read : .write)
+        let confirmation: Bool
+        switch request { case .read(_, let value), .selectedRead(_, _, let value): confirmation = value; default: confirmation = false }
+        let stage: DeviceEventLog.Stage = confirmation ? .confirmation : (kind == .info ? .info : (kind == .write ? .write : .preflight))
+        let observed = wire ?? events?.wire(eventIdentifier, operation: DeviceCommunicationContext.operation ?? UUID(),
+            source: DeviceCommunicationContext.source ?? (confirmation ? .postWriteRead : (kind == .write ? .userControl : .manualRead)), stage: stage, kind: kind)
+        return try await performCall(method, params: params, timeout: timeout, retryCount: 0, validation: true, validationCheck: isCurrent, wire: observed)
     }
 
     private func performCall(_ method: String, params: JSONValue, timeout: Duration?, retryCount: Int?, validation: Bool, validationCheck: (@Sendable () -> Bool)? = nil, wire: (@Sendable (CurtainWireEvent) -> Void)? = nil) async throws -> JSONValue {
@@ -333,6 +339,7 @@ public actor MiioClient {
         var diagnostic = original
         diagnosticSequence &+= 1
         diagnostic.remotePort = port; diagnostic.policy = policy; diagnostic.queueWaitMilliseconds = queueWaitMilliseconds
+        diagnostic.requestTimeoutMilliseconds = Self.milliseconds(timeout)
         if packet == MiioPacket.hello { diagnostic.method = .hello }
         if packet == MiioPacket.hello {
             if lastHelloAt == nil { diagnostic.helloReason = .initial }

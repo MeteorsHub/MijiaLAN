@@ -32,7 +32,9 @@ struct ReadOnlyDiagnosticsTests {
     @Test("Curtain diagnostic allowlist excludes its write-only motor-control property")
     func allowlist() throws {
         let props = try #require(ReadOnlyDiagnostics.properties["dooya.motor.dc1545"])
-        #expect(!props.contains { $0 == 2 && $1 == 1 })
+        #expect(!props.contains { $0 == 2 && ($1 == 1 || $1 == 5) })
+        #expect(props.map { $0.1 } == [2,3,4,9,10])
+        #expect(ReadOnlyDiagnostics.properties["iot.tow_w.jd015"]?.contains { $0 == 2 && $1 == 5 } == true)
         #expect(props.contains { $0 == 2 && $1 == 3 })
         #expect(ReadOnlyDiagnostics.properties["unknown.model"] == nil)
     }

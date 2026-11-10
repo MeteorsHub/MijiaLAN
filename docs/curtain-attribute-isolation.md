@@ -29,6 +29,8 @@
 
 这些数据说明 stable/periodic/helloAnchored 未消除这次故障，优先区分完整合包、某个扩展属性及组合累计效应。9/10 首先报错未定位到具体 getter；2.5 同时类型异常也需保留。**不再仅改间隔来宣称修复。**
 
+最新正常App候选排除2.5，详见[五字段兼容修复](curtain-five-property-compatibility.md)。本页诊断白名单仍保留显式2.5，旧坏批次与历史六项计数不改写。
+
 ## 新入口：curtain-attributes
 
 这是独立 `CurtainAttributeProbe`，**不调用 CurtainControlSession.poll，不发启动 full 或300秒 full**。固定 stable socket / periodic hello / helloAnchored stamp；只支持 `get_properties`、必要 hello 和一次型号/固件 info。无控制方法，无 action，无重试，异常锁存后无法在该实例内恢复。
@@ -41,6 +43,7 @@
 
 - `--properties` 是全部 get_properties 的**有序**列表，只接受 2.2/3/4/5/9/10 的唯一子集；保留顺序，拒绝重复、空项、其他 SIID/PIID 或方法。
 - `--packet-layout batch`：每轮一个包，地址顺序精确等于列表；`single`：每轮按顺序逐项一个RPC。没有自动追加 2.2/3、安全 full、拆包回退或周期 full。
+- 可显式 `--rpc-timeout 5` 延长单次RPC等待（1…30秒、默认2），不重发；plan/result及wire日志记录实际预算，旧plan缺失该字段按2秒解码。hello与普通App不改超时。
 - 轮次1…48；开始间隔5…300秒，单一循环、不补积压。每次普通 RPC 保留5秒最小间隔；single 轮次及周期hello可能拉长实际时间，按日志比较，不把不同布局称为等 UDP 包数。
 - 每个 RPC 结束后检查 discarded 锁存，包括错 RPC 后又来了合法回复的情形；**在下一所选属性前停下**。不等整轮结束。任何负/非零 code、缺项、额外项、重复地址、不可信类型/范围、超时、时钟/身份异常均停。
 - 只校验所选字段的读值，不用部分值填充产品缓存或合成“可信当前位置”。尤其不能从单独2.3合法范围值推断全设备正常。

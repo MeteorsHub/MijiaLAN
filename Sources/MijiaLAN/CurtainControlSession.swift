@@ -37,6 +37,7 @@ public actor CurtainControlSession {
     private let client: MiioClient
     private let policy: MiioCommunicationPolicy
     private let allowWrites: Bool
+    private let readProfile: CurtainReadProfile
     private var lastFullCheck: Duration?
     private var compactRounds = 0
     private var readRound: UInt64 = 0
@@ -61,21 +62,23 @@ public actor CurtainControlSession {
 
     init(device: LocalDevice, client: MiioClient, scheduler: CurtainRequestScheduler,
          clock: CurtainValidationSession.Clock = .init(), isCurrent: @escaping @Sendable () -> Bool,
-         onInfo: @escaping @Sendable () async -> Void = {}, journal: CurtainEventLog = .init(), allowWrites: Bool = true) {
+         onInfo: @escaping @Sendable () async -> Void = {}, journal: CurtainEventLog = .init(), allowWrites: Bool = true, readProfile: CurtainReadProfile = .normalFive) {
+        precondition(readProfile != .diagnosticSix || !allowWrites, "Six-property profile is diagnostic and read-only")
         self.device = device; self.client = client; self.scheduler = scheduler; self.clock = clock
         self.policy = client.policy
-        self.allowWrites = allowWrites
+        self.allowWrites = allowWrites; self.readProfile = readProfile
         self.isCurrent = isCurrent; self.onInfo = onInfo; self.journal = journal
     }
     public func snapshot() -> State { state }
     /// Constructs no socket until explicitly invoked; intended for one-device, read-only CLI experiments.
     public static func experiment(device: LocalDevice, policy: MiioCommunicationPolicy, journal: DeviceEventLog,
-                                  transport: any MiioTransport = UDPMiioTransport(), port: UInt16 = MiioPacket.port) throws -> CurtainControlSession {
+                                  transport: any MiioTransport = UDPMiioTransport(), port: UInt16 = MiioPacket.port,
+                                  readProfile: CurtainReadProfile = .normalFive) throws -> CurtainControlSession {
         guard device.model == CurtainValidationSession.model, device.specType == CurtainValidationSession.specification,
               let token = MiioToken.parse(device.token), let identity = UInt32(device.did) else { throw DeviceControlError.wrongDevice }
         let client = MiioClient(host: device.host, token: token, port: port, transport: transport, retries: 0,
             knownModel: device.model, events: journal, eventIdentifier: device.did, policy: policy, expectedDeviceID: identity)
-        return CurtainControlSession(device: device, client: client, scheduler: CurtainRequestScheduler(), isCurrent: { true }, journal: journal, allowWrites: false)
+        return CurtainControlSession(device: device, client: client, scheduler: CurtainRequestScheduler(), isCurrent: { true }, journal: journal, allowWrites: false, readProfile: readProfile)
     }
     public func updates() -> AsyncStream<State> {
         let id = UUID()
@@ -169,14 +172,14 @@ public actor CurtainControlSession {
         }
     }
     private func packet(_ stage: CurtainEventLog.Stage, piid: Int? = nil, target: Int? = nil, capture: MiioPacketTrace? = nil) -> @Sendable (CurtainWireEvent) -> Void {
-        let journal = journal, did = device.did, operation = traceID, round = readRound
+        let journal = journal, did = device.did, operation = traceID, round = readRound, readProfile = readProfile
         let packetSource: CurtainEventLog.Source = stage == .confirmation ? .postWriteRead : source
         let value = stage == .write ? state.command?.write.value : nil
         let writeTrace = writeTrace
         let queuedAt = clock.now(), clock = clock
         let timer = CurtainPacketTimer()
         return { event in
-            var diagnostic = event.packet; diagnostic.readRound = round
+            var diagnostic = event.packet; diagnostic.readRound = round; diagnostic.curtainReadProfile = readProfile
             if case .attempt = event {
                 let wait = (clock.now() - queuedAt).components
                 diagnostic.schedulerWaitMilliseconds = wait.seconds * 1_000 + wait.attoseconds / 1_000_000_000_000_000
@@ -345,8 +348,8 @@ public actor CurtainControlSession {
     private func readFull() async throws -> State {
         readRound &+= 1
         try await connect()
-        let raw = try await readLayout(ids: [2,3,4,5,9,10], confirmation: false)
-        let reading = try Self.preflight(raw)
+        let raw = try await readLayout(ids: readProfile.propertyIDs, confirmation: false)
+        let reading = try Self.preflight(raw, profile: readProfile)
         try sample([2: .number(Double(reading.status)), 3: .number(Double(reading.position))])
         if state.confirmed, let goal = state.command?.target, state.position != goal {
             state.command = nil; state.confirmed = false; state.writeAccepted = false
@@ -368,10 +371,11 @@ public actor CurtainControlSession {
         return .array(rows)
     }
     /// Shared by the production preflight and offline batch/single-response evaluation.
-    static func preflight(_ result: JSONValue) throws -> (position: Int, status: Int) {
-        let values = try readValues(result, expected: [2,3,4,5,9,10])
+    static func preflight(_ result: JSONValue, profile: CurtainReadProfile = .normalFive) throws -> (position: Int, status: Int) {
+        let values = try readValues(result, expected: Set(profile.propertyIDs))
         _ = try number(values[4], range: 0...100)
-        guard values[9] == .number(0), case .bool = values[5], case .bool = values[10] else { throw CurtainInvalidReading() }
+        guard values[9] == .number(0), case .bool = values[10] else { throw CurtainInvalidReading() }
+        if profile == .diagnosticSix { guard case .bool = values[5] else { throw CurtainInvalidReading() } }
         return (try number(values[3], range: 0...100), try number(values[2], range: 0...4))
     }
     private static func exactInt(_ value: JSONValue?) -> Int? {

@@ -16,9 +16,9 @@ enum CurtainAttributes {
         let baselineNormal: Bool
         let logDirectory: String?
     }
-    static func invalid() -> MiioError { .badResponse("curtain-attributes requires --properties 2.PIID[,2.PIID...] (only 2,3,4,5,9,10; ordered, unique), --packet-layout batch|single --phase baseline-before|probe|baseline-after --slot N --rounds 1...48 --interval 5...300. Baseline phases require exactly 2.2,2.3,2.4,2.5,2.9,2.10, batch, one round. Real reads require --execute --baseline-normal --log-directory NEW_DIRECTORY and private config on stdin. No writes, automatic full queries or recovery.") }
+    static func invalid() -> MiioError { .badResponse("curtain-attributes requires --properties 2.PIID[,2.PIID...] (only 2,3,4,5,9,10; ordered, unique), --packet-layout batch|single --phase baseline-before|probe|baseline-after --slot N --rounds 1...48 --interval 5...300. Baseline phases require exactly 2.2,2.3,2.4,2.5,2.9,2.10, batch, one round. Real reads require --execute --baseline-normal --log-directory NEW_DIRECTORY and private config on stdin. Optional --rpc-timeout 1...30 seconds (default 2) extends one RPC wait only, never retries. No writes, automatic full queries or recovery.") }
     static func parse(_ args: [String]) throws -> Options {
-        let keys: Set<String> = ["--properties", "--packet-layout", "--phase", "--slot", "--rounds", "--interval", "--log-directory"]
+        let keys: Set<String> = ["--properties", "--packet-layout", "--phase", "--slot", "--rounds", "--interval", "--log-directory", "--rpc-timeout"]
         var values: [String: String] = [:], flags: Set<String> = [], index = 0
         while index < args.count {
             let key = args[index]
@@ -33,6 +33,7 @@ enum CurtainAttributes {
               let phase = values["--phase"].flatMap(CurtainAttributePlan.Phase.init(rawValue:)),
               let slot = values["--slot"].flatMap(Int.init), (1...256).contains(slot),
               let rounds = values["--rounds"].flatMap(Int.init), let interval = values["--interval"].flatMap(Int.init),
+              values["--rpc-timeout"] == nil || values["--rpc-timeout"].flatMap(Int.init).map({ (1...30).contains($0) }) == true,
               !flags.contains("--execute") || (flags.contains("--baseline-normal") && values["--log-directory"] != nil) else { throw invalid() }
         let pieces = raw.split(separator: ",", omittingEmptySubsequences: false)
         var ids: [Int] = []
@@ -41,7 +42,7 @@ enum CurtainAttributes {
             ids.append(id)
         }
         let plan: CurtainAttributePlan
-        do { plan = try .init(properties: ids, layout: layout, phase: phase, rounds: rounds, intervalSeconds: interval) }
+        do { plan = try .init(properties: ids, layout: layout, phase: phase, rounds: rounds, intervalSeconds: interval, rpcTimeoutSeconds: values["--rpc-timeout"].flatMap(Int.init) ?? 2) }
         catch { throw invalid() }
         return .init(plan: plan, slot: slot, execute: flags.contains("--execute"), baselineNormal: flags.contains("--baseline-normal"), logDirectory: values["--log-directory"])
     }
