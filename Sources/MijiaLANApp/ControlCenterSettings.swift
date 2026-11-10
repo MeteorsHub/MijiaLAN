@@ -2,6 +2,7 @@ import AppKit
 import MijiaCore
 import MijiaHomeKitBridge
 import MijiaLAN
+import ServiceManagement
 import SwiftUI
 
 struct ControlCenterSettings: View {
@@ -12,6 +13,8 @@ struct ControlCenterSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            LaunchAtLoginSettings()
+            Divider()
             SettingsSection(L10n.tr("HomeKit · Apple「家庭」", "HomeKit · Apple Home")) {
                 SettingsGroup {
                     SettingsToggleRow(L10n.tr("启用家庭桥接", "Enable Home Bridge"), symbol: "house", isOn: $bridge.isEnabled,
@@ -260,6 +263,7 @@ private struct SettingsMatterDeviceRow: View {
 }
 
 struct SettingsHomeKitManagement: View {
+    static let expansionSection = "homekit"
     let model: AppModel
     @Bindable var bridge: HomeKitBridgeController
     @State private var confirmingReset = false
@@ -336,30 +340,175 @@ struct SettingsHomeKitManagement: View {
 private struct SettingsHomeKitDeviceRow: View {
     let model: AppModel
     let device: LocalDevice
+    @Environment(\.panelSession) private var session
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var localExpanded = false
 
     private var supported: Bool { model.homeKitSupports(device) }
+    private var expanded: Binding<Bool> {
+        session?.expansion(deviceID: device.did, section: SettingsHomeKitManagement.expansionSection) ?? $localExpanded
+    }
 
     var body: some View {
+        let services = supported ? model.homeKitServices(device) : []
+        let included = supported && model.isInHomeKit(device)
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                if services.isEmpty {
+                    summary(services)
+                } else {
+                    Button {
+                        withAnimation(reduceMotion ? nil : PanelMotion.animation) { expanded.wrappedValue.toggle() }
+                    } label: {
+                        HStack(spacing: 10) {
+                            summary(services)
+                            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(.tertiary)
+                                .rotationEffect(.degrees(expanded.wrappedValue ? 90 : 0))
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(DevicePresentation.name(device))
+                    .accessibilityValue(expanded.wrappedValue ? L10n.tr("已展开", "Expanded") : L10n.tr("已收起", "Collapsed"))
+                    .accessibilityHint(L10n.tr("显示要加入「家庭」的控件和传感器", "Shows the controls and sensors that go to Home"))
+                }
+                Toggle(L10n.tr("在「家庭」中显示\(DevicePresentation.name(device))", "Show \(DevicePresentation.name(device)) in Home"), isOn: Binding(
+                    get: { included },
+                    set: { model.setInHomeKit(device, $0) }
+                ))
+                .labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(!supported)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            if expanded.wrappedValue, !services.isEmpty {
+                VStack(spacing: 0) {
+                    if device.model == "cuco.plug.v3" {
+                        serviceRows(services.filter { $0.isPrimary || $0.kind != .switch }, included: included)
+                        let advanced = services.filter { !$0.isPrimary && $0.kind == .switch }
+                        if !advanced.isEmpty {
+                            Divider().padding(.leading, 46).padding(.trailing, 12)
+                            PanelDisclosure(L10n.tr("高级项目（\(advanced.count)）", "Advanced Controls (\(advanced.count))"),
+                                            deviceID: device.did, section: "homekitAdvanced") {
+                                VStack(spacing: 0) { serviceRows(advanced, included: included) }
+                            }
+                            .padding(.leading, 12).padding(.trailing, 12).padding(.vertical, 8)
+                        }
+                    } else {
+                        serviceRows(services, included: included)
+                    }
+                }
+                .padding(.bottom, 4)
+                .transition(.opacity)
+            }
+        }
+    }
+
+    private func serviceRows(_ services: [CapabilityHomeKitService], included: Bool) -> some View {
+        let deviceSymbol = DevicePresentation.symbol(model.devices.snapshots[device.did])
+        return ForEach(services) { service in
+            Divider().padding(.leading, 46).padding(.trailing, 12)
+            SettingsHomeKitServiceRow(service: service, deviceSymbol: deviceSymbol, enabled: included, isOn: Binding(
+                get: { model.isInHomeKit(device, service: service) },
+                set: { model.setInHomeKit(device, service: service, $0) }
+            ))
+        }
+    }
+
+    private func summary(_ services: [CapabilityHomeKitService]) -> some View {
         HStack(spacing: 10) {
             SettingsSymbol(DevicePresentation.symbol(model.devices.snapshots[device.did]))
             VStack(alignment: .leading, spacing: 3) {
                 Text(DevicePresentation.name(device)).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
                 if !supported {
-                    Text(DeviceLANPolicy.restriction(for: device.model) ?? (model.smartDevice(for: device) == nil ? L10n.tr("还没读到设备规格", "Device specifications are not available yet.") : L10n.tr("「家庭」没有对应的配件类型", "No matching accessory type in Home.")))
+                    Text(model.devices.snapshots[device.did] == nil ? L10n.tr("还没读到设备规格", "Device specifications are not available yet.") : L10n.tr("「家庭」没有对应的配件类型", "No matching accessory type in Home."))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if let room = device.roomName, !room.isEmpty {
-                    Text(room).font(.system(size: 11)).foregroundStyle(.secondary)
+                } else {
+                    let shown = services.filter { model.isInHomeKit(device, service: $0) }.count
+                    let count = shown == services.count
+                        ? L10n.tr("\(services.count) 项", services.count == 1 ? "1 item" : "\(services.count) items")
+                        : L10n.tr("显示 \(shown)/\(services.count) 项", "\(shown) of \(services.count) shown")
+                    Text([device.roomName ?? "", count].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 4)
-            Toggle(L10n.tr("在「家庭」中显示\(DevicePresentation.name(device))", "Show \(DevicePresentation.name(device)) in Home"), isOn: Binding(
-                get: { supported && model.isInHomeKit(device) },
-                set: { model.setInHomeKit(device, $0) }
-            ))
-            .labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(!supported)
         }
-        .padding(.horizontal, 12).padding(.vertical, 10)
+    }
+}
+
+private struct SettingsHomeKitServiceRow: View {
+    let service: CapabilityHomeKitService
+    let deviceSymbol: String
+    /// False while the whole device stays out of Home.
+    let enabled: Bool
+    @Binding var isOn: Bool
+
+    private var hasNumberedHomeName: Bool {
+        service.kind == .switch && service.name != service.defaultName
+            && service.name.range(of: #"^(?:开关|Switch)\s+[0-9]+$"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    var body: some View {
+        let title = hasNumberedHomeName ? service.defaultName : service.name
+        HStack(spacing: 8) {
+            Image(systemName: service.isPrimary ? deviceSymbol : service.kind.symbol).font(.system(size: 13))
+                .foregroundStyle(.secondary).frame(width: 18).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 12)).foregroundStyle(enabled ? .primary : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                let detail = if service.isPrimary {
+                    L10n.tr("主控件 · \(service.kind.title)", "Main control · \(service.kind.title)")
+                } else if hasNumberedHomeName {
+                    L10n.tr("「家庭」名称 \(service.name)", "Home name \(service.name)")
+                } else {
+                    service.kind.title
+                }
+                Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            Toggle(L10n.tr("在「家庭」中显示\(title)", "Show \(title) in Home"), isOn: $isOn)
+                .labelsHidden().toggleStyle(.switch).controlSize(.mini).disabled(!enabled)
+        }
+        .padding(.leading, 46).padding(.trailing, 12).padding(.vertical, 5)
+    }
+}
+
+private extension CapabilityHomeKitService.Kind {
+    /// The accessory type Apple Home files the service under.
+    var title: String {
+        switch self {
+        case .outlet: L10n.tr("插座", "Outlet")
+        case .light: L10n.tr("灯", "Light")
+        case .fan: L10n.tr("风扇", "Fan")
+        case .airPurifier: L10n.tr("空气净化器", "Air Purifier")
+        case .climate: L10n.tr("冷暖控制", "Climate Control")
+        case .humidifier: L10n.tr("加湿/除湿器", "Humidifier/Dehumidifier")
+        case .windowCovering: L10n.tr("窗帘", "Window Covering")
+        case .switch: L10n.tr("开关", "Switch")
+        case .temperature: L10n.tr("温度传感器", "Temperature Sensor")
+        case .humidity: L10n.tr("湿度传感器", "Humidity Sensor")
+        case .airQuality: L10n.tr("空气质量传感器", "Air Quality Sensor")
+        case .filter: L10n.tr("滤芯", "Filter")
+        case .other: L10n.tr("其他", "Other")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .outlet: "powerplug"
+        case .light: "lightbulb"
+        case .fan: "fan"
+        case .airPurifier: "air.purifier"
+        case .climate: "thermometer.medium"
+        case .humidifier: "humidifier"
+        case .windowCovering: "blinds.horizontal.closed"
+        case .switch: "switch.2"
+        case .temperature: "thermometer.medium"
+        case .humidity: "humidity"
+        case .airQuality: "aqi.medium"
+        case .filter: "line.3.horizontal.decrease.circle"
+        case .other: "square.grid.2x2"
+        }
     }
 }
 
@@ -693,5 +842,80 @@ private struct SettingsNavigationButtonStyle: ButtonStyle {
                     .padding(.horizontal, 6).padding(.vertical, 3)
             }
             .onHover { hovering = $0 }
+    }
+}
+
+private struct LaunchAtLoginSettings: View {
+    @Environment(\.panelPresented) private var panelPresented
+    @State private var status: SMAppService.Status?
+    @State private var errorMessage: String?
+
+    private let isEphemeral = ProcessInfo.processInfo.environment["MIJIALAN_EPHEMERAL"] == "1" ||
+        ProcessInfo.processInfo.environment["MIJIALAN_UI_PREVIEW"] == "1"
+
+    var body: some View {
+        SettingsSection(L10n.tr("启动", "Startup")) {
+            SettingsGroup {
+                SettingsToggleRow(L10n.tr("登录时启动", "Launch at Login"), symbol: "power",
+                                  isOn: Binding(get: { registered == true }, set: setRegistered),
+                                  subtitle: subtitle, statusColor: status == .requiresApproval ? .orange : nil)
+                    .disabled(registered == nil)
+            }
+            if status == .requiresApproval {
+                Button(L10n.tr("打开登录项设置…", "Open Login Items Settings…")) {
+                    SMAppService.openSystemSettingsLoginItems()
+                }
+                .controlSize(.small).padding(.leading, 3)
+            }
+            if let errorMessage {
+                Text(L10n.tr("无法更改登录项。\(errorMessage)", "Could not change the login item. \(errorMessage)"))
+                    .font(.system(size: 11)).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true).padding(.leading, 3)
+            }
+        }
+        .onChange(of: panelPresented, initial: true) { _, presented in
+            guard presented, !isEphemeral else { return }
+            status = SMAppService.mainApp.status
+            errorMessage = nil
+        }
+    }
+
+    // A pending item is still registered. The switch can remove it while macOS approval is outstanding.
+    private var registered: Bool? {
+        switch status {
+        case .enabled, .requiresApproval: true
+        // A fresh main app can report .notFound before its first successful registration.
+        case .notRegistered, .notFound: false
+        default: nil
+        }
+    }
+
+    private var subtitle: String {
+        if isEphemeral { return L10n.tr("预览模式下无法更改登录项。", "Login items can’t be changed in preview mode.") }
+        if status == .requiresApproval {
+            return L10n.tr("系统尚未允许自动启动。请在系统设置中允许 MijiaLAN。",
+                           "macOS hasn’t allowed automatic launch. Allow MijiaLAN in System Settings.")
+        }
+        if registered == nil, status != nil {
+            return L10n.tr("macOS 暂时无法读取登录项状态。", "macOS couldn’t read the login item status.")
+        }
+        return L10n.tr("登录 Mac 后在菜单栏启动 MijiaLAN。", "Start MijiaLAN in the menu bar when you log in.")
+    }
+
+    private func setRegistered(_ requested: Bool) {
+        guard !isEphemeral else { return }
+        let service = SMAppService.mainApp
+        status = service.status
+        errorMessage = nil
+        guard let registered, registered != requested else { return }
+
+        var failure: String?
+        do {
+            if requested { try service.register() } else { try service.unregister() }
+        } catch {
+            failure = error.localizedDescription
+        }
+        status = service.status
+        if self.registered != requested { errorMessage = failure }
     }
 }

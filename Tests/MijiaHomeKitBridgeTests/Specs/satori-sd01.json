@@ -1,0 +1,510 @@
+{
+ "type": "urn:miot-spec-v2:device:bed:0000A06A:satori-sd01:1",
+ "description": "Bed",
+ "services": [
+  {
+   "iid": 1,
+   "type": "urn:miot-spec-v2:service:device-information:00007801:satori-sd01:1",
+   "description": "Device Information",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:manufacturer:00000001:satori-sd01:1",
+     "description": "Device Manufacturer",
+     "format": "string",
+     "access": [
+      "read"
+     ]
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:model:00000002:satori-sd01:1",
+     "description": "Device Model",
+     "format": "string",
+     "access": [
+      "read"
+     ]
+    },
+    {
+     "iid": 3,
+     "type": "urn:miot-spec-v2:property:serial-number:00000003:satori-sd01:1",
+     "description": "Device ID",
+     "format": "string",
+     "access": [
+      "read"
+     ],
+     "comment": "设备ID"
+    },
+    {
+     "iid": 4,
+     "type": "urn:miot-spec-v2:property:firmware-revision:00000005:satori-sd01:1",
+     "description": "Current Firmware Version",
+     "format": "string",
+     "access": [
+      "read"
+     ]
+    },
+    {
+     "iid": 5,
+     "type": "urn:miot-spec-v2:property:serial-no:000000FF:satori-sd01:1",
+     "description": "Serial Number",
+     "format": "string",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "comment": "SN码"
+    }
+   ],
+   "comment": "设备信息"
+  },
+  {
+   "iid": 2,
+   "type": "urn:miot-spec-v2:service:bed:0000785C:satori-sd01:1",
+   "description": "Bed",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:fault:00000009:satori-sd01:1",
+     "description": "Device Fault",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "No Faults"
+      }
+     ],
+     "comment": "故障"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:mode:00000008:satori-sd01:1",
+     "description": "Mode",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Zero Gravity",
+       "comment": "零压位"
+      },
+      {
+       "value": 1,
+       "description": "Waist Relief",
+       "comment": "腰部舒缓"
+      },
+      {
+       "value": 2,
+       "description": "Anti-snoring",
+       "comment": "止鼾"
+      },
+      {
+       "value": 3,
+       "description": "Tv",
+       "comment": "电视"
+      },
+      {
+       "value": 4,
+       "description": "Lie Flat",
+       "comment": "复原"
+      },
+      {
+       "value": 5,
+       "description": "Sleep",
+       "comment": "一键哄睡"
+      },
+      {
+       "value": 6,
+       "description": "None",
+       "comment": "无模式"
+      }
+     ],
+     "gatt-access": [],
+     "comment": "模式"
+    }
+   ],
+   "comment": "智能床"
+  },
+  {
+   "iid": 3,
+   "type": "urn:satori-spec:service:custom:00007801:satori-sd01:1",
+   "description": "custom",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:satori-spec:property:control:00000001:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "write"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "BackUp",
+       "comment": "BackUp"
+      },
+      {
+       "value": 1,
+       "description": "BackDown",
+       "comment": "BackDown"
+      },
+      {
+       "value": 2,
+       "description": "LegUp",
+       "comment": "LegUp"
+      },
+      {
+       "value": 3,
+       "description": "LegDown",
+       "comment": "LegDown"
+      },
+      {
+       "value": 4,
+       "description": "BackLegUp",
+       "comment": "BackLegUp"
+      },
+      {
+       "value": 5,
+       "description": "BackLegDown",
+       "comment": "BackLegDown"
+      },
+      {
+       "value": 6,
+       "description": "WaistUp",
+       "comment": "WaistUp"
+      },
+      {
+       "value": 7,
+       "description": "WaistDown",
+       "comment": "WaistDown"
+      },
+      {
+       "value": 8,
+       "description": "Stop",
+       "comment": "Stop"
+      }
+     ],
+     "comment": "微调"
+    },
+    {
+     "iid": 3,
+     "type": "urn:satori-spec:property:light-timed:00000003:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify",
+      "write"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "None",
+       "comment": "关闭"
+      },
+      {
+       "value": 1,
+       "description": "Min10",
+       "comment": "10分钟"
+      },
+      {
+       "value": 2,
+       "description": "Hour8",
+       "comment": "8小时"
+      },
+      {
+       "value": 3,
+       "description": "Hour10",
+       "comment": "10小时"
+      }
+     ],
+     "comment": "灯光开启时间"
+    },
+    {
+     "iid": 5,
+     "type": "urn:satori-spec:property:massage:00000004:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify",
+      "write"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "HeadAdd",
+       "comment": "HeadAdd"
+      },
+      {
+       "value": 1,
+       "description": "HeadSub",
+       "comment": "HeadSub"
+      },
+      {
+       "value": 2,
+       "description": "LegAdd",
+       "comment": "LegAdd"
+      },
+      {
+       "value": 3,
+       "description": "LegSub",
+       "comment": "LegSub"
+      },
+      {
+       "value": 4,
+       "description": "FrequencyAdd",
+       "comment": "FrequencyAdd"
+      },
+      {
+       "value": 5,
+       "description": "FrequencySub",
+       "comment": "FrequencySub"
+      }
+     ],
+     "comment": "按摩频率调整"
+    },
+    {
+     "iid": 6,
+     "type": "urn:satori-spec:property:memory-one:00000005:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify",
+      "write"
+     ],
+     "value-list": [
+      {
+       "value": 1,
+       "description": "Remember",
+       "comment": "Remember"
+      },
+      {
+       "value": 2,
+       "description": "Run",
+       "comment": "Run"
+      },
+      {
+       "value": 3,
+       "description": "Delete",
+       "comment": "Delete"
+      }
+     ],
+     "comment": "记忆1"
+    },
+    {
+     "iid": 7,
+     "type": "urn:satori-spec:property:memory-two:00000006:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify",
+      "write"
+     ],
+     "value-list": [
+      {
+       "value": 1,
+       "description": "Remember",
+       "comment": "Remember"
+      },
+      {
+       "value": 2,
+       "description": "Run",
+       "comment": "Run"
+      },
+      {
+       "value": 3,
+       "description": "Delete",
+       "comment": "Delete"
+      }
+     ],
+     "comment": "记忆2"
+    },
+    {
+     "iid": 8,
+     "type": "urn:satori-spec:property:memory-one-status:00000007:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 1,
+       "description": "HaveMemory",
+       "comment": "HaveMemory"
+      },
+      {
+       "value": 2,
+       "description": "NoMemory",
+       "comment": "NoMemory"
+      }
+     ],
+     "comment": "记忆1状态"
+    },
+    {
+     "iid": 9,
+     "type": "urn:satori-spec:property:memory-two-status:00000008:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 1,
+       "description": "HaveMemory",
+       "comment": "HaveMemory"
+      },
+      {
+       "value": 2,
+       "description": "NoMemory",
+       "comment": "NoMemory"
+      }
+     ],
+     "comment": "记忆2状态"
+    },
+    {
+     "iid": 10,
+     "type": "urn:satori-spec:property:head-msg-gear:00000009:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-range": [
+      0,
+      3,
+      1
+     ],
+     "comment": "头部按摩挡位"
+    },
+    {
+     "iid": 11,
+     "type": "urn:satori-spec:property:leg-msg-gear:0000000a:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-range": [
+      0,
+      3,
+      1
+     ],
+     "comment": "腿部按摩挡位"
+    },
+    {
+     "iid": 12,
+     "type": "urn:satori-spec:property:massage-gear:0000000b:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-range": [
+      0,
+      4,
+      1
+     ],
+     "comment": "按摩频率档位"
+    },
+    {
+     "iid": 13,
+     "type": "urn:satori-spec:property:massage-time:0000000c:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify",
+      "write"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Stop",
+       "comment": "Stop"
+      },
+      {
+       "value": 1,
+       "description": "Time10",
+       "comment": "Time10"
+      },
+      {
+       "value": 2,
+       "description": "Time20",
+       "comment": "Time20"
+      },
+      {
+       "value": 3,
+       "description": "Time30",
+       "comment": "Time30"
+      }
+     ],
+     "comment": "按摩时间"
+    },
+    {
+     "iid": 14,
+     "type": "urn:satori-spec:property:lightness:0000000d:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify",
+      "write"
+     ],
+     "value-range": [
+      0,
+      10,
+      1
+     ],
+     "comment": "亮度"
+    },
+    {
+     "iid": 15,
+     "type": "urn:satori-spec:property:query-status:0000000e:satori-sd01:1",
+     "description": "",
+     "format": "uint8",
+     "access": [
+      "write"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Light",
+       "comment": "Light"
+      },
+      {
+       "value": 1,
+       "description": "Memory1",
+       "comment": "Memory1"
+      },
+      {
+       "value": 2,
+       "description": "Memory2",
+       "comment": "Memory2"
+      }
+     ],
+     "comment": "询问设备状态"
+    }
+   ],
+   "comment": "自定义服务"
+  }
+ ]
+}

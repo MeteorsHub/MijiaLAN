@@ -1,4 +1,5 @@
 // HAPCharacteristic.swift
+// Modified for MijiaLAN; see Vendor/hap-swift/README.md.
 // Copyright 2026 Monagle Pty Ltd
 
 /// HAP characteristic unit types for numeric characteristics.
@@ -50,7 +51,8 @@ public struct HAPCharacteristic: Sendable, Identifiable {
     ) {
         self.iid = iid
         self.type = type
-        self.value = value
+        if case .string(let text) = value { self.value = .string(HAPString.bounded(text)) }
+        else { self.value = value }
         self.permissions = permissions
         self.format = format
         self.minValue = minValue

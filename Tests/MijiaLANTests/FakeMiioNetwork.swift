@@ -30,7 +30,14 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         var unreachable = false
         /// Set for a pre-MIoT device: it answers `get_prop` / `set_<name>` from these and `-9999` to MIoT methods.
         var legacyProps: [String: JSONValue]?
+        /// Further legacy methods a pre-MIoT device answers, with their replies (`get_status`, `app_start`).
+        var legacyReplies: [String: JSONValue] = [:]
+        /// Reply text after the id, sent as is: a number JSONValue cannot write, such as a 20-digit code.
+        var rawReply: String?
+        /// Setter and command calls, reads (`get_*`) left out.
         var legacyCalls: [String] = []
+        /// The names of each `get_prop`, in order.
+        var legacyReads: [[String]] = []
         var receivedMethods: [String] = []
         var receivedStamps: [UInt32] = []
         var receivedPayloads: [Data] = []
@@ -98,14 +105,25 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
         // Time is supplied by the fixture/clock model, not advanced once per RPC.
         // Incrementing on every call fabricates an echo-like clock jump in fast offline tests.
 
+        if let raw = device.rawReply, method != "miIO.info" {
+            let body = Data("{\"id\":\((request["id"] ?? .null).compactJSONString),\(raw)}".utf8) + [0]
+            return try MiioPacket.encode(body, token: device.token, deviceID: device.deviceID, stamp: device.stamp)
+        }
         var reply: [String: JSONValue] = ["id": request["id"] ?? .null]
         if var legacy = device.legacyProps, method != "miIO.info" {
             if method == "get_prop" {
-                reply["result"] = .array((params.arrayValue ?? []).map { legacy[$0.stringValue ?? ""] ?? .string("") })
-            } else if method.hasPrefix("set_"), let value = params.arrayValue?.first {
+                let names = (params.arrayValue ?? []).map { $0.stringValue ?? "" }
+                device.legacyReads.append(names)
+                reply["result"] = .array(names.map { legacy[$0] ?? .string("") })
+            } else if let result = device.legacyReplies[method] {
+                if !method.hasPrefix("get_") { device.legacyCalls.append("\(method) \(params.compactJSONString)") }
+                reply["result"] = result
+            } else if method.hasPrefix("set_") {
                 device.legacyCalls.append("\(method) \(params.compactJSONString)")
-                legacy[String(method.dropFirst(4))] = value
-                device.legacyProps = legacy
+                if let value = params.arrayValue?.first {
+                    legacy[String(method.dropFirst(4))] = value
+                    device.legacyProps = legacy
+                }
                 reply["result"] = .array([.string("ok")])
             } else {
                 reply["error"] = .object(["code": .number(-9999), "message": .string("user ack timeout")])

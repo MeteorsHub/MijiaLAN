@@ -1,4 +1,5 @@
 // HAPService.swift
+// Modified for MijiaLAN; see Vendor/hap-swift/README.md.
 // Copyright 2026 Monagle Pty Ltd
 
 public struct HAPService: Sendable {
@@ -8,11 +9,14 @@ public struct HAPService: Sendable {
     public var iid: UInt64
     public let type: HAPServiceType
     public var characteristics: [HAPCharacteristic]
+    /// Marks the accessory's main function, published as `primary`, so Home builds the tile around it.
+    public var isPrimary: Bool
 
-    public init(iid: UInt64 = 0, type: HAPServiceType, characteristics: [HAPCharacteristic]) {
+    public init(iid: UInt64 = 0, type: HAPServiceType, characteristics: [HAPCharacteristic], isPrimary: Bool = false) {
         self.iid = iid
         self.type = type
         self.characteristics = characteristics
+        self.isPrimary = isPrimary
     }
 }
 

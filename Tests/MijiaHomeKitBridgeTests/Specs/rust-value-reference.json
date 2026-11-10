@@ -1,0 +1,1552 @@
+[
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 0",
+    "read": {
+      "status": 0,
+      "value": 0
+    },
+    "value": 0,
+    "write": {
+      "status": 0,
+      "value": 0
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 1",
+    "read": {
+      "status": 0,
+      "value": 1
+    },
+    "value": 1,
+    "write": {
+      "status": 0,
+      "value": 1
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 2.5",
+    "read": {
+      "status": 0,
+      "value": 3
+    },
+    "value": 2.5,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 28.627450980392155",
+    "read": {
+      "status": 0,
+      "value": 29
+    },
+    "value": 28.627450980392155,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 101",
+    "read": {
+      "status": -70402
+    },
+    "value": 101,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 -1",
+    "read": {
+      "status": -70402
+    },
+    "value": -1,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 50",
+    "read": {
+      "status": -70402
+    },
+    "value": "50",
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 True",
+    "read": {
+      "status": -70402
+    },
+    "value": true,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 None",
+    "read": {
+      "status": -70402
+    },
+    "value": null,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint16",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint16 0",
+    "read": {
+      "status": 0,
+      "value": 0
+    },
+    "value": 0,
+    "write": {
+      "status": 0,
+      "value": 0
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint16",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint16 1",
+    "read": {
+      "status": 0,
+      "value": 1
+    },
+    "value": 1,
+    "write": {
+      "status": 0,
+      "value": 1
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint16",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint16 2.5",
+    "read": {
+      "status": 0,
+      "value": 3
+    },
+    "value": 2.5,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint16",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint16 28.627450980392155",
+    "read": {
+      "status": 0,
+      "value": 29
+    },
+    "value": 28.627450980392155,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint16",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint16 101",
+    "read": {
+      "status": -70402
+    },
+    "value": 101,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint16",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint16 -1",
+    "read": {
+      "status": -70402
+    },
+    "value": -1,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint16",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint16 50",
+    "read": {
+      "status": -70402
+    },
+    "value": "50",
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint16",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint16 True",
+    "read": {
+      "status": -70402
+    },
+    "value": true,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint16",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint16 None",
+    "read": {
+      "status": -70402
+    },
+    "value": null,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint32",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint32 0",
+    "read": {
+      "status": 0,
+      "value": 0
+    },
+    "value": 0,
+    "write": {
+      "status": 0,
+      "value": 0
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint32",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint32 1",
+    "read": {
+      "status": 0,
+      "value": 1
+    },
+    "value": 1,
+    "write": {
+      "status": 0,
+      "value": 1
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint32",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint32 2.5",
+    "read": {
+      "status": 0,
+      "value": 3
+    },
+    "value": 2.5,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint32",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint32 28.627450980392155",
+    "read": {
+      "status": 0,
+      "value": 29
+    },
+    "value": 28.627450980392155,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint32",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint32 101",
+    "read": {
+      "status": -70402
+    },
+    "value": 101,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint32",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint32 -1",
+    "read": {
+      "status": -70402
+    },
+    "value": -1,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint32",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint32 50",
+    "read": {
+      "status": -70402
+    },
+    "value": "50",
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint32",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint32 True",
+    "read": {
+      "status": -70402
+    },
+    "value": true,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint32",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint32 None",
+    "read": {
+      "status": -70402
+    },
+    "value": null,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "int",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "int 0",
+    "read": {
+      "status": 0,
+      "value": 0
+    },
+    "value": 0,
+    "write": {
+      "status": 0,
+      "value": 0
+    }
+  },
+  {
+    "attribute": {
+      "format": "int",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "int 1",
+    "read": {
+      "status": 0,
+      "value": 1
+    },
+    "value": 1,
+    "write": {
+      "status": 0,
+      "value": 1
+    }
+  },
+  {
+    "attribute": {
+      "format": "int",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "int 2.5",
+    "read": {
+      "status": 0,
+      "value": 3
+    },
+    "value": 2.5,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "int",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "int 28.627450980392155",
+    "read": {
+      "status": 0,
+      "value": 29
+    },
+    "value": 28.627450980392155,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "int",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "int 101",
+    "read": {
+      "status": -70402
+    },
+    "value": 101,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "int",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "int -1",
+    "read": {
+      "status": -70402
+    },
+    "value": -1,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "int",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "int 50",
+    "read": {
+      "status": -70402
+    },
+    "value": "50",
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "int",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "int True",
+    "read": {
+      "status": -70402
+    },
+    "value": true,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "int",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "int None",
+    "read": {
+      "status": -70402
+    },
+    "value": null,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "float 0",
+    "read": {
+      "status": 0,
+      "value": 0.0
+    },
+    "value": 0,
+    "write": {
+      "status": 0,
+      "value": 0.0
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "float 1",
+    "read": {
+      "status": 0,
+      "value": 1.0
+    },
+    "value": 1,
+    "write": {
+      "status": 0,
+      "value": 1.0
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "float 2.5",
+    "read": {
+      "status": 0,
+      "value": 3.0
+    },
+    "value": 2.5,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "float 28.627450980392155",
+    "read": {
+      "status": 0,
+      "value": 29.0
+    },
+    "value": 28.627450980392155,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "float 101",
+    "read": {
+      "status": -70402
+    },
+    "value": 101,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "float -1",
+    "read": {
+      "status": -70402
+    },
+    "value": -1,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "float 50",
+    "read": {
+      "status": -70402
+    },
+    "value": "50",
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "float True",
+    "read": {
+      "status": -70402
+    },
+    "value": true,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "float None",
+    "read": {
+      "status": -70402
+    },
+    "value": null,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 0.1,
+      "minValue": -40,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "temperature 21.56",
+    "read": {
+      "status": 0,
+      "value": 21.6
+    },
+    "value": 21.56,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 0.1,
+      "minValue": -40,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "temperature -3276.8",
+    "read": {
+      "status": -70402
+    },
+    "value": -3276.8,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 0.1,
+      "minValue": -40,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "temperature 99.99",
+    "read": {
+      "status": 0,
+      "value": 100.0
+    },
+    "value": 99.99,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 100,
+      "minStep": 0.1,
+      "minValue": -40,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "temperature -39.99",
+    "read": {
+      "status": 0,
+      "value": -40.0
+    },
+    "value": -39.99,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "bool",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "power True",
+    "read": {
+      "status": 0,
+      "value": true
+    },
+    "value": true,
+    "write": {
+      "status": 0,
+      "value": true
+    }
+  },
+  {
+    "attribute": {
+      "format": "bool",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "power False",
+    "read": {
+      "status": 0,
+      "value": false
+    },
+    "value": false,
+    "write": {
+      "status": 0,
+      "value": false
+    }
+  },
+  {
+    "attribute": {
+      "format": "bool",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "power 0",
+    "read": {
+      "status": 0,
+      "value": false
+    },
+    "value": 0,
+    "write": {
+      "status": 0,
+      "value": false
+    }
+  },
+  {
+    "attribute": {
+      "format": "bool",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "power 1",
+    "read": {
+      "status": 0,
+      "value": true
+    },
+    "value": 1,
+    "write": {
+      "status": 0,
+      "value": true
+    }
+  },
+  {
+    "attribute": {
+      "format": "bool",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "power 2",
+    "read": {
+      "status": -70402
+    },
+    "value": 2,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "bool",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "power on",
+    "read": {
+      "status": -70402
+    },
+    "value": "on",
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 2,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ],
+      "valid-values": [
+        2
+      ]
+    },
+    "name": "mode 0",
+    "read": {
+      "status": -70402
+    },
+    "value": 0,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 2,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ],
+      "valid-values": [
+        2
+      ]
+    },
+    "name": "mode 1",
+    "read": {
+      "status": -70402
+    },
+    "value": 1,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 2,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ],
+      "valid-values": [
+        2
+      ]
+    },
+    "name": "mode 2",
+    "read": {
+      "status": 0,
+      "value": 2
+    },
+    "value": 2,
+    "write": {
+      "status": 0,
+      "value": 2
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "maxValue": 2,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ],
+      "valid-values": [
+        2
+      ]
+    },
+    "name": "mode 1.5",
+    "read": {
+      "status": -70402
+    },
+    "value": 1.5,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 10,
+      "minStep": 3,
+      "minValue": 0.5,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "offset step 0",
+    "read": {
+      "status": -70402
+    },
+    "value": 0,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 10,
+      "minStep": 3,
+      "minValue": 0.5,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "offset step 1.5",
+    "read": {
+      "status": 0,
+      "value": 0.5
+    },
+    "value": 1.5,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 10,
+      "minStep": 3,
+      "minValue": 0.5,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "offset step 3",
+    "read": {
+      "status": 0,
+      "value": 3.5
+    },
+    "value": 3,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 10,
+      "minStep": 3,
+      "minValue": 0.5,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "offset step 10",
+    "read": {
+      "status": 0,
+      "value": 9.5
+    },
+    "value": 10,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 bounds 255",
+    "read": {
+      "status": 0,
+      "value": 255
+    },
+    "value": 255,
+    "write": {
+      "status": 0,
+      "value": 255
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 bounds 256",
+    "read": {
+      "status": -70402
+    },
+    "value": 256,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "uint8",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "uint8 bounds -1",
+    "read": {
+      "status": -70402
+    },
+    "value": -1,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "string",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "utf8 64",
+    "read": {
+      "status": 0,
+      "value": "中中中中中中中中中中中中中中中中中中中中abcd"
+    },
+    "value": "中中中中中中中中中中中中中中中中中中中中abcd",
+    "write": {
+      "status": 0,
+      "value": "中中中中中中中中中中中中中中中中中中中中abcd"
+    }
+  },
+  {
+    "attribute": {
+      "format": "string",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "utf8 66",
+    "read": {
+      "status": -70402
+    },
+    "value": "中中中中中中中中中中中中中中中中中中中中中中",
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "string",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "utf8 68",
+    "read": {
+      "status": -70402
+    },
+    "value": "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "int",
+      "maxValue": 100,
+      "minStep": 1,
+      "minValue": 0,
+      "perms": [
+        "pr"
+      ]
+    },
+    "name": "read only",
+    "read": {
+      "status": 0,
+      "value": 50
+    },
+    "value": 50,
+    "write": {
+      "status": -70404
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 1,
+      "minValue": 4,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "invalid range",
+    "read": {
+      "status": -70402
+    },
+    "value": 2,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "maxValue": 10,
+      "minStep": -1,
+      "minValue": 0,
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "negative step",
+    "read": {
+      "status": -70402
+    },
+    "value": 2,
+    "write": {
+      "status": -70410
+    }
+  },
+  {
+    "attribute": {
+      "format": "float",
+      "perms": [
+        "pr",
+        "pw",
+        "ev"
+      ]
+    },
+    "name": "float type overflow",
+    "read": {
+      "status": -70402
+    },
+    "value": 1e+300,
+    "write": {
+      "status": -70410
+    }
+  }
+]

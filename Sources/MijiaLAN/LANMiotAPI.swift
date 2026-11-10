@@ -41,6 +41,7 @@ public actor LANMiotAPI: MiCloudAPI {
     private let allowsDeviceWrites: Bool
     private var clients: [String: (device: LocalDevice, client: MiioClient)] = [:]
     private var health: [String: LANDeviceHealth] = [:]
+    private var legacyProfiles: [String: LegacyMiioProfile] = [:]
     private var consecutiveFailures: [String: Int] = [:]
     private var healthObserver: (@Sendable ([String: LANDeviceHealth]) -> Void)?
     private let clock: ProbeClock
@@ -298,7 +299,7 @@ public actor LANMiotAPI: MiCloudAPI {
             for (did, keys) in byDid {
                 guard let device = devices[did], DeviceLANPolicy.allowsPropertyRequests(for: device.model) else { continue }
                 let client = client(for: device)
-                let legacy = LegacyMiioProfile.forModel(device.model)
+                let legacy = legacyProfile(for: device)
                 let extra = (companions[did] ?? []).filter { !requested.contains($0) }
                 let props = (keys + extra).map { (siid: $0.siid, piid: $0.piid) }
                 group.addTask {
@@ -341,7 +342,7 @@ public actor LANMiotAPI: MiCloudAPI {
         for (did, group) in Dictionary(grouping: writes, by: \.did) {
             let (device, client) = try client(forDid: did)
             do {
-                if let legacy = LegacyMiioProfile.forModel(device.model) {
+                if let legacy = legacyProfile(for: device) {
                     try await client.setProperties(group, legacy: legacy)
                 } else {
                     try await client.setProperties(group)
@@ -363,18 +364,32 @@ public actor LANMiotAPI: MiCloudAPI {
         let device = try localDevice(forDid: call.did)
         if let reason = DeviceLANPolicy.restriction(for: device.model) { throw DeviceControlError.unsupported(reason) }
         let client = client(for: device)
-        guard LegacyMiioProfile.forModel(device.model) == nil else { throw MiioError.unsupportedByLegacyDevice }
         do {
-            try await client.action(call)
+            if let legacy = legacyProfile(for: device) {
+                try await client.action(call, legacy: legacy)
+            } else {
+                try await client.action(call)
+            }
             guard isCurrent(device, client: client) else { throw CancellationError() }
             record(call.did, .online, error: nil)
         } catch {
             guard isCurrent(device, client: client) else { throw CancellationError() }
-            recordFailure(call.did, error, model: device.model)
+            if error as? MiioError != .unsupportedByLegacyDevice { recordFailure(call.did, error, model: device.model) }
             publishHealth()
             throw error
         }
         publishHealth()
+    }
+
+    /// Legacy tables resolved against each model's spec. A model whose spec is not cached yet is resolved again on
+    /// the next request instead of keeping its unresolved reads.
+    private func legacyProfile(for device: LocalDevice) -> LegacyMiioProfile? {
+        if let profile = legacyProfiles[device.model] { return profile }
+        guard let profile = LegacyMiioProfile.forModel(device.model) else { return nil }
+        let schema = DeviceSchema.load(model: device.model, specType: device.specType)
+        let resolved = profile.resolved(with: schema)
+        if schema != nil { legacyProfiles[device.model] = resolved }
+        return resolved
     }
 
     // MARK: Clients & Health
@@ -392,7 +407,7 @@ public actor LANMiotAPI: MiCloudAPI {
             endpoint = (device, client)
             let props = capabilities.filter { $0.readable }.map { (siid: $0.siid, piid: $0.iid) }
             let readings: [MiotPropKey: DeviceReading]
-            if let legacy = LegacyMiioProfile.forModel(device.model) {
+            if let legacy = legacyProfile(for: device) {
                 let values = try await client.getProperties(did: did, props, legacy: legacy)
                 readings = Dictionary(uniqueKeysWithValues: props.map { p in
                     let key = MiotPropKey(did: did, siid: p.siid, piid: p.piid)

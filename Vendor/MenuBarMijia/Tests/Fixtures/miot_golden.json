@@ -1,0 +1,824 @@
+{
+  "specs": {
+    "yeelink.light.ceiling22": {
+      "type": "urn:miot-spec-v2:device:light:0000A001:yeelink-ceiling22:1",
+      "services": [
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:service:light:00007802:yeelink-ceiling22:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:on:00000006:yeelink-ceiling22:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            },
+            {
+              "iid": 2,
+              "type": "urn:miot-spec-v2:property:brightness:0000000D:yeelink-ceiling22:1",
+              "format": "uint8",
+              "access": ["read", "write"],
+              "value-range": [1, 255, 1]
+            },
+            {
+              "iid": 3,
+              "type": "urn:miot-spec-v2:property:color-temperature:0000000F:yeelink-ceiling22:1",
+              "format": "uint32",
+              "access": ["read", "write"],
+              "value-range": [2700, 6500, 1]
+            },
+            {
+              "iid": 4,
+              "type": "urn:miot-spec-v2:property:mode:00000008:yeelink-ceiling22:1",
+              "format": "uint8",
+              "access": ["read", "write"],
+              "value-list": [
+                { "value": 0, "description": "Day" },
+                { "value": 1, "description": "Night" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "xiaomi.aircondition.mc5": {
+      "type": "urn:miot-spec-v2:device:air-conditioner:0000A004:xiaomi-mc5:2",
+      "services": [
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:service:air-conditioner:0000780F:xiaomi-mc5:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:on:00000006:xiaomi-mc5:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            },
+            {
+              "iid": 2,
+              "type": "urn:miot-spec-v2:property:mode:00000008:xiaomi-mc5:1",
+              "format": "uint8",
+              "access": ["read", "write"],
+              "value-list": [
+                { "value": 2, "description": "Cool" },
+                { "value": 3, "description": "Dry" },
+                { "value": 4, "description": "Fan" },
+                { "value": 5, "description": "Heat" }
+              ]
+            },
+            {
+              "iid": 4,
+              "type": "urn:miot-spec-v2:property:target-temperature:00000021:xiaomi-mc5:1",
+              "format": "float",
+              "access": ["read", "write"],
+              "value-range": [16, 31, 0.5]
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:service:fan-control:00007809:xiaomi-mc5:1",
+          "properties": [
+            {
+              "iid": 2,
+              "type": "urn:miot-spec-v2:property:fan-level:00000016:xiaomi-mc5:1",
+              "format": "uint8",
+              "access": ["read", "write"],
+              "value-list": [
+                { "value": 0, "description": "Auto" },
+                { "value": 1, "description": "Low" },
+                { "value": 2, "description": "Medium" },
+                { "value": 3, "description": "High" }
+              ]
+            }
+          ]
+        },
+        {
+          "iid": 4,
+          "type": "urn:miot-spec-v2:service:environment:0000780A:xiaomi-mc5:1",
+          "properties": [
+            {
+              "iid": 7,
+              "type": "urn:miot-spec-v2:property:temperature:00000020:xiaomi-mc5:1",
+              "format": "float",
+              "access": ["read"],
+              "value-range": [-30, 100, 0.1]
+            }
+          ]
+        }
+      ]
+    },
+    "cuco.plug.v3": {
+      "type": "urn:miot-spec-v2:device:outlet:0000A002:cuco-v3:1",
+      "services": [
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:service:switch:0000780C:cuco-v3:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:on:00000006:cuco-v3:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:service:power-consumption:0000780E:cuco-v3:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:power-consumption:0000002F:cuco-v3:1",
+              "format": "uint16",
+              "access": ["read"],
+              "value-range": [0, 65535, 1],
+              "comment": "耗电量（单位:0,01Kwh）"
+            },
+            {
+              "iid": 6,
+              "type": "urn:miot-spec-v2:property:electric-power:00000066:cuco-v3:1",
+              "format": "float",
+              "access": ["read"],
+              "value-range": [0, 3500, 0.1]
+            }
+          ]
+        },
+        {
+          "iid": 7,
+          "type": "urn:miot-spec-v2:service:physical-controls-locked:00007807:cuco-v3:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:physical-controls-locked:0000001D:cuco-v3:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            }
+          ]
+        },
+        {
+          "iid": 13,
+          "type": "urn:miot-spec-v2:service:light:00007802:cuco-v3:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:on:00000006:cuco-v3:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            }
+          ]
+        }
+      ]
+    },
+    "cuco.plug.cp2d": {
+      "type": "urn:miot-spec-v2:device:outlet:0000A002:cuco-cp2d:1",
+      "services": [
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:service:switch:0000780C:cuco-cp2d:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:on:00000006:cuco-cp2d:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:service:power-consumption:0000780E:cuco-cp2d:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:power-consumption:0000002F:cuco-cp2d:1",
+              "format": "uint32",
+              "access": ["read"],
+              "unit": "0.01kWh"
+            }
+          ]
+        }
+      ]
+    },
+    "dmaker.fan.p5": {
+      "type": "urn:miot-spec-v2:device:fan:0000A005:dmaker-p5:1",
+      "services": [
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:service:fan:00007808:dmaker-p5:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:on:00000006:dmaker-p5:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            },
+            {
+              "iid": 2,
+              "type": "urn:miot-spec-v2:property:fan-level:00000016:dmaker-p5:1",
+              "format": "uint8",
+              "access": ["read", "write"],
+              "value-list": [
+                { "value": 1, "description": "Level1" },
+                { "value": 2, "description": "Level2" },
+                { "value": 3, "description": "Level3" },
+                { "value": 4, "description": "Level4" }
+              ]
+            },
+            {
+              "iid": 3,
+              "type": "urn:miot-spec-v2:property:mode:00000008:dmaker-p5:1",
+              "format": "uint8",
+              "access": ["read", "write"],
+              "value-list": [
+                { "value": 0, "description": "Straight Wind" },
+                { "value": 1, "description": "Natural Wind" }
+              ]
+            },
+            {
+              "iid": 4,
+              "type": "urn:miot-spec-v2:property:horizontal-swing:00000017:dmaker-p5:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            },
+            {
+              "iid": 10,
+              "type": "urn:miot-spec-v2:property:fan-level:00000016:dmaker-p5:1",
+              "format": "uint8",
+              "access": ["read", "write"],
+              "value-range": [1, 100, 1]
+            }
+          ]
+        }
+      ]
+    },
+    "roborock.vacuum.a15": {
+      "type": "urn:miot-spec-v2:device:vacuum:0000A006:roborock-a15:1",
+      "services": [
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:service:vacuum:00007810:roborock-a15:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:status:00000007:roborock-a15:1",
+              "format": "uint8",
+              "access": ["read"],
+              "value-list": [
+                { "value": 1, "description": "Idle" },
+                { "value": 5, "description": "Sweeping" },
+                { "value": 6, "description": "Go Charging" },
+                { "value": 8, "description": "Charging" },
+                { "value": 10, "description": "Paused" }
+              ]
+            },
+            {
+              "iid": 4,
+              "type": "urn:miot-spec-v2:property:mode:00000008:roborock-a15:1",
+              "format": "uint8",
+              "access": ["read", "write"],
+              "value-list": [
+                { "value": 101, "description": "Silent" },
+                { "value": 102, "description": "Basic" },
+                { "value": 103, "description": "Strong" },
+                { "value": 104, "description": "Full Speed" }
+              ]
+            }
+          ],
+          "actions": [
+            { "iid": 1, "type": "urn:miot-spec-v2:action:start-sweep:00002804:roborock-a15:1" },
+            { "iid": 2, "type": "urn:miot-spec-v2:action:pause-sweeping:00002805:roborock-a15:1" }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:service:battery:00007805:roborock-a15:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:battery-level:00000014:roborock-a15:1",
+              "format": "uint8",
+              "access": ["read"],
+              "value-range": [0, 100, 1]
+            }
+          ],
+          "actions": [
+            { "iid": 1, "type": "urn:miot-spec-v2:action:start-charge:00002806:roborock-a15:1" }
+          ]
+        }
+      ]
+    },
+    "miaomiaoce.sensor_ht.t2": {
+      "type": "urn:miot-spec-v2:device:temperature-humidity-sensor:0000A00A:miaomiaoce-t2:1",
+      "services": [
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:service:temperature-humidity-sensor:00007814:miaomiaoce-t2:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:temperature:00000020:miaomiaoce-t2:1",
+              "format": "float",
+              "access": ["read"],
+              "value-range": [-30, 100, 0.1]
+            },
+            {
+              "iid": 2,
+              "type": "urn:miot-spec-v2:property:relative-humidity:00000036:miaomiaoce-t2:1",
+              "format": "uint8",
+              "access": ["read"],
+              "value-range": [0, 100, 1]
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:service:battery:00007805:miaomiaoce-t2:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:battery-level:00000014:miaomiaoce-t2:1",
+              "format": "uint8",
+              "access": ["read"],
+              "value-range": [0, 100, 1]
+            }
+          ]
+        }
+      ]
+    },
+    "lemesh.switch.sw2f12": {
+      "type": "urn:miot-spec-v2:device:switch:0000A003:lemesh-sw2f12:1",
+      "services": [
+        {
+          "iid": 2,
+          "type": "urn:miot-spec-v2:service:switch:0000780C:lemesh-sw2f12:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:on:00000006:lemesh-sw2f12:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            }
+          ]
+        },
+        {
+          "iid": 3,
+          "type": "urn:miot-spec-v2:service:switch:0000780C:lemesh-sw2f12:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:on:00000006:lemesh-sw2f12:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            }
+          ]
+        },
+        {
+          "iid": 7,
+          "type": "urn:miot-spec-v2:service:physical-controls-locked:00007807:lemesh-sw2f12:1",
+          "properties": [
+            {
+              "iid": 1,
+              "type": "urn:miot-spec-v2:property:physical-controls-locked:0000001D:lemesh-sw2f12:1",
+              "format": "bool",
+              "access": ["read", "write"]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "devices": [
+    {
+      "did": "did_light",
+      "name": "书房吸顶灯",
+      "model": "yeelink.light.ceiling22",
+      "isOnline": true
+    },
+    {
+      "did": "group.living_lights",
+      "name": "客厅灯组",
+      "model": "yeelink.light.ceiling22",
+      "isOnline": true
+    },
+    {
+      "did": "did_ac",
+      "name": "客厅空调",
+      "model": "xiaomi.aircondition.mc5",
+      "isOnline": true
+    },
+    {
+      "did": "did_plug",
+      "name": "桌面插座",
+      "model": "cuco.plug.v3",
+      "isOnline": true
+    },
+    {
+      "did": "did_plug_unit",
+      "name": "计量插座",
+      "model": "cuco.plug.cp2d",
+      "isOnline": true
+    },
+    {
+      "did": "did_fan",
+      "name": "卧室落地扇",
+      "model": "dmaker.fan.p5",
+      "isOnline": true
+    },
+    {
+      "did": "did_vacuum",
+      "name": "石头扫地机",
+      "model": "roborock.vacuum.a15",
+      "isOnline": true
+    },
+    {
+      "did": "did_sensor",
+      "name": "主卧温湿度计",
+      "model": "miaomiaoce.sensor_ht.t2",
+      "isOnline": true
+    },
+    {
+      "did": "did_panel",
+      "name": "情景Mesh双键开关",
+      "model": "lemesh.switch.sw2f12",
+      "isOnline": true
+    },
+    {
+      "did": "did_panel.s2",
+      "name": "筒灯",
+      "model": "lemesh.switch.sw2f12",
+      "isOnline": true,
+      "splitParentDid": "did_panel",
+      "splitSiid": 2
+    },
+    {
+      "did": "did_panel.s3",
+      "name": "灯带",
+      "model": "lemesh.switch.sw2f12",
+      "isOnline": true,
+      "splitParentDid": "did_panel",
+      "splitSiid": 3
+    }
+  ],
+  "rooms": [
+    { "id": "r_study", "name": "书房", "dids": ["did_light", "did_plug"] },
+    { "id": "r_living", "name": "客厅", "dids": ["did_ac", "did_vacuum", "group.living_lights", "did_panel"] },
+    { "id": "r_bed", "name": "主卧", "dids": ["did_fan", "did_sensor"] }
+  ],
+  "values": [
+    { "did": "did_light", "siid": 2, "piid": 1, "value": 1 },
+    { "did": "did_light", "siid": 2, "piid": 2, "value": 128 },
+    { "did": "did_light", "siid": 2, "piid": 3, "value": 4100 },
+    { "did": "did_light", "siid": 2, "piid": 4, "value": 1 },
+    { "did": "group.living_lights", "siid": 2, "piid": 1, "value": 1 },
+    { "did": "group.living_lights", "siid": 2, "piid": 2, "value": 255 },
+    { "did": "group.living_lights", "siid": 2, "piid": 3, "value": 5000 },
+    { "did": "group.living_lights", "siid": 2, "piid": 4, "value": 1 },
+    { "did": "did_ac", "siid": 2, "piid": 1, "value": true },
+    { "did": "did_ac", "siid": 2, "piid": 2, "value": 2 },
+    { "did": "did_ac", "siid": 2, "piid": 4, "value": 24.5 },
+    { "did": "did_ac", "siid": 3, "piid": 2, "value": 1 },
+    { "did": "did_ac", "siid": 4, "piid": 7, "value": 27.2 },
+    { "did": "did_plug", "siid": 2, "piid": 1, "value": true },
+    { "did": "did_plug", "siid": 3, "piid": 1, "value": 185 },
+    { "did": "did_plug", "siid": 3, "piid": 6, "value": 48.5 },
+    { "did": "did_plug", "siid": 7, "piid": 1, "value": 1 },
+    { "did": "did_plug_unit", "siid": 2, "piid": 1, "value": true },
+    { "did": "did_plug_unit", "siid": 3, "piid": 1, "value": 512 },
+    { "did": "did_fan", "siid": 2, "piid": 1, "value": true },
+    { "did": "did_fan", "siid": 2, "piid": 2, "value": 2 },
+    { "did": "did_fan", "siid": 2, "piid": 3, "value": 1 },
+    { "did": "did_fan", "siid": 2, "piid": 4, "value": 0 },
+    { "did": "did_fan", "siid": 2, "piid": 10, "value": 65 },
+    { "did": "did_vacuum", "siid": 2, "piid": 1, "value": 5 },
+    { "did": "did_vacuum", "siid": 2, "piid": 4, "value": 103 },
+    { "did": "did_vacuum", "siid": 3, "piid": 1, "value": 82 },
+    { "did": "did_sensor", "siid": 2, "piid": 1, "value": 23.8 },
+    { "did": "did_sensor", "siid": 2, "piid": 2, "value": 54 },
+    { "did": "did_sensor", "siid": 3, "piid": 1, "value": 91 },
+    { "did": "did_panel", "siid": 2, "piid": 1, "value": true },
+    { "did": "did_panel", "siid": 3, "piid": 1, "value": false }
+  ],
+  "expectedKinds": {
+    "did_light": {
+      "kind": "light",
+      "entityId": "miot:did_light:2",
+      "isOn": true,
+      "brightnessPercent": 50,
+      "colorTempKelvin": 4100,
+      "minKelvin": 2700,
+      "maxKelvin": 6500,
+      "currentEffect": "Night",
+      "availableEffects": ["Day", "Night"]
+    },
+    "group.living_lights": {
+      "kind": "light",
+      "entityId": "miot:group.living_lights:2",
+      "isOn": true,
+      "brightnessPercent": 100,
+      "colorTempKelvin": 5000,
+      "minKelvin": 2700,
+      "maxKelvin": 6500,
+      "currentEffect": null,
+      "availableEffects": []
+    },
+    "did_ac": {
+      "kind": "climate",
+      "entityId": "miot:did_ac:2",
+      "isOn": true,
+      "hvacMode": "cool",
+      "availableModes": ["cool", "dry", "fan_only", "heat", "off"],
+      "targetTemperature": 24.5,
+      "currentTemperature": 27.2,
+      "minTemp": 16,
+      "maxTemp": 31,
+      "step": 0.5,
+      "fanMode": "Low",
+      "availableFanModes": ["Auto", "Low", "Medium", "High"]
+    },
+    "did_plug": {
+      "kind": "plug",
+      "switchEntityId": "miot:did_plug:2",
+      "isOn": true,
+      "powerWatts": 48.5,
+      "energyKwh": 1.85,
+      "childLockEntityId": "miot:did_plug:7",
+      "isChildLocked": true
+    },
+    "did_plug_unit": {
+      "kind": "plug",
+      "switchEntityId": "miot:did_plug_unit:2",
+      "isOn": true,
+      "powerWatts": null,
+      "energyKwh": 5.12,
+      "childLockEntityId": null,
+      "isChildLocked": false
+    },
+    "did_fan": {
+      "kind": "fan",
+      "entityId": "miot:did_fan:2",
+      "isOn": true,
+      "percentage": 65,
+      "presetMode": "Natural Wind",
+      "availablePresetModes": ["Straight Wind", "Natural Wind"],
+      "isOscillating": false
+    },
+    "did_vacuum": {
+      "kind": "vacuum",
+      "entityId": "miot:did_vacuum:2",
+      "status": "cleaning",
+      "battery": 82,
+      "modeEntityId": "miot:did_vacuum:2",
+      "currentMode": "Strong",
+      "availableModes": ["Silent", "Basic", "Strong", "Full Speed"]
+    },
+    "did_sensor": {
+      "kind": "sensor",
+      "temperature": 23.8,
+      "humidity": 54,
+      "battery": 91
+    },
+    "did_panel.s2": {
+      "kind": "plug",
+      "switchEntityId": "miot:did_panel:2",
+      "isOn": true,
+      "powerWatts": null,
+      "childLockEntityId": null,
+      "isChildLocked": false
+    },
+    "did_panel.s3": {
+      "kind": "plug",
+      "switchEntityId": "miot:did_panel:3",
+      "isOn": false,
+      "powerWatts": null,
+      "childLockEntityId": null,
+      "isChildLocked": false
+    }
+  },
+  "expectedEnvironmentReadings": [
+    {
+      "id": "did_sensor",
+      "label": "主卧",
+      "roomName": "主卧",
+      "temperature": 23.8,
+      "humidity": 54,
+      "battery": 91
+    }
+  ],
+  "expectedRequiredProps": {
+    "did_light": [
+      { "did": "did_light", "siid": 2, "piid": 1 },
+      { "did": "did_light", "siid": 2, "piid": 2 },
+      { "did": "did_light", "siid": 2, "piid": 3 },
+      { "did": "did_light", "siid": 2, "piid": 4 }
+    ],
+    "group.living_lights": [
+      { "did": "group.living_lights", "siid": 2, "piid": 1 },
+      { "did": "group.living_lights", "siid": 2, "piid": 2 },
+      { "did": "group.living_lights", "siid": 2, "piid": 3 },
+      { "did": "group.living_lights", "siid": 2, "piid": 4 }
+    ],
+    "did_ac": [
+      { "did": "did_ac", "siid": 2, "piid": 1 },
+      { "did": "did_ac", "siid": 2, "piid": 2 },
+      { "did": "did_ac", "siid": 2, "piid": 4 },
+      { "did": "did_ac", "siid": 4, "piid": 7 },
+      { "did": "did_ac", "siid": 3, "piid": 2 }
+    ],
+    "did_plug": [
+      { "did": "did_plug", "siid": 2, "piid": 1 },
+      { "did": "did_plug", "siid": 3, "piid": 6 },
+      { "did": "did_plug", "siid": 3, "piid": 1 },
+      { "did": "did_plug", "siid": 7, "piid": 1 }
+    ],
+    "did_plug_unit": [
+      { "did": "did_plug_unit", "siid": 2, "piid": 1 },
+      { "did": "did_plug_unit", "siid": 3, "piid": 1 }
+    ],
+    "did_fan": [
+      { "did": "did_fan", "siid": 2, "piid": 1 },
+      { "did": "did_fan", "siid": 2, "piid": 3 },
+      { "did": "did_fan", "siid": 2, "piid": 2 },
+      { "did": "did_fan", "siid": 2, "piid": 10 },
+      { "did": "did_fan", "siid": 2, "piid": 4 }
+    ],
+    "did_vacuum": [
+      { "did": "did_vacuum", "siid": 2, "piid": 1 },
+      { "did": "did_vacuum", "siid": 2, "piid": 4 },
+      { "did": "did_vacuum", "siid": 3, "piid": 1 }
+    ],
+    "did_sensor": [
+      { "did": "did_sensor", "siid": 2, "piid": 1 },
+      { "did": "did_sensor", "siid": 2, "piid": 2 },
+      { "did": "did_sensor", "siid": 3, "piid": 1 }
+    ],
+    "did_panel": [
+      { "did": "did_panel", "siid": 2, "piid": 1 },
+      { "did": "did_panel", "siid": 7, "piid": 1 }
+    ],
+    "did_panel.s2": [
+      { "did": "did_panel", "siid": 2, "piid": 1 }
+    ],
+    "did_panel.s3": [
+      { "did": "did_panel", "siid": 3, "piid": 1 }
+    ]
+  },
+  "commandCases": [
+    {
+      "model": "yeelink.light.ceiling22",
+      "command": { "kind": "setLightPower", "entityId": "miot:did_light:2", "isOn": false },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_light", "siid": 2, "piid": 1, "value": false }]
+      }
+    },
+    {
+      "model": "yeelink.light.ceiling22",
+      "command": { "kind": "setLightBrightness", "entityId": "miot:did_light:2", "percent": 60 },
+      "expected": {
+        "kind": "setProps",
+        "writes": [
+          { "did": "did_light", "siid": 2, "piid": 1, "value": true },
+          { "did": "did_light", "siid": 2, "piid": 2, "value": 153 }
+        ]
+      }
+    },
+    {
+      "model": "yeelink.light.ceiling22",
+      "command": { "kind": "setLightBrightness", "entityId": "miot:did_light:2", "percent": 0 },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_light", "siid": 2, "piid": 1, "value": false }]
+      }
+    },
+    {
+      "model": "yeelink.light.ceiling22",
+      "command": { "kind": "setLightColorTemp", "entityId": "miot:did_light:2", "kelvin": 7000 },
+      "expected": {
+        "kind": "setProps",
+        "writes": [
+          { "did": "did_light", "siid": 2, "piid": 1, "value": true },
+          { "did": "did_light", "siid": 2, "piid": 3, "value": 6500 }
+        ]
+      }
+    },
+    {
+      "model": "yeelink.light.ceiling22",
+      "command": { "kind": "setLightEffect", "entityId": "miot:did_light:2", "effect": "Night" },
+      "expected": {
+        "kind": "setProps",
+        "writes": [
+          { "did": "did_light", "siid": 2, "piid": 1, "value": true },
+          { "did": "did_light", "siid": 2, "piid": 4, "value": 1 }
+        ]
+      }
+    },
+    {
+      "model": "xiaomi.aircondition.mc5",
+      "command": { "kind": "setClimateMode", "entityId": "miot:did_ac:2", "hvacMode": "heat" },
+      "expected": {
+        "kind": "setProps",
+        "writes": [
+          { "did": "did_ac", "siid": 2, "piid": 1, "value": true },
+          { "did": "did_ac", "siid": 2, "piid": 2, "value": 5 }
+        ]
+      }
+    },
+    {
+      "model": "xiaomi.aircondition.mc5",
+      "command": { "kind": "setClimateMode", "entityId": "miot:did_ac:2", "hvacMode": "off" },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_ac", "siid": 2, "piid": 1, "value": false }]
+      }
+    },
+    {
+      "model": "xiaomi.aircondition.mc5",
+      "command": { "kind": "setClimateTemperature", "entityId": "miot:did_ac:2", "temperature": 23.24 },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_ac", "siid": 2, "piid": 4, "value": 23 }]
+      }
+    },
+    {
+      "model": "xiaomi.aircondition.mc5",
+      "command": { "kind": "setClimateTemperature", "entityId": "miot:did_ac:2", "temperature": 23.26 },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_ac", "siid": 2, "piid": 4, "value": 23.5 }]
+      }
+    },
+    {
+      "model": "xiaomi.aircondition.mc5",
+      "command": { "kind": "setClimateFanMode", "entityId": "miot:did_ac:2", "fanMode": "High" },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_ac", "siid": 3, "piid": 2, "value": 3 }]
+      }
+    },
+    {
+      "model": "dmaker.fan.p5",
+      "command": { "kind": "setFanPresetMode", "entityId": "miot:did_fan:2", "presetMode": "Natural Wind" },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_fan", "siid": 2, "piid": 3, "value": 1 }]
+      }
+    },
+    {
+      "model": "dmaker.fan.p5",
+      "command": { "kind": "setFanPresetMode", "entityId": "miot:did_fan:2", "presetMode": "Level3" },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_fan", "siid": 2, "piid": 2, "value": 3 }]
+      }
+    },
+    {
+      "model": "dmaker.fan.p5",
+      "command": { "kind": "setFanOscillating", "entityId": "miot:did_fan:2", "oscillating": true },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_fan", "siid": 2, "piid": 4, "value": true }]
+      }
+    },
+    {
+      "model": "cuco.plug.v3",
+      "command": { "kind": "setSwitch", "entityId": "miot:did_plug:2", "isOn": false },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_plug", "siid": 2, "piid": 1, "value": false }]
+      }
+    },
+    {
+      "model": "cuco.plug.v3",
+      "command": { "kind": "setSwitch", "entityId": "miot:did_plug:7", "isOn": false },
+      "expected": {
+        "kind": "setProps",
+        "writes": [{ "did": "did_plug", "siid": 7, "piid": 1, "value": false }]
+      }
+    },
+    {
+      "model": "roborock.vacuum.a15",
+      "command": { "kind": "vacuumAction", "entityId": "miot:did_vacuum:2", "action": "start" },
+      "expected": {
+        "kind": "action",
+        "call": { "did": "did_vacuum", "siid": 2, "aiid": 1, "inputs": [] }
+      }
+    },
+    {
+      "model": "roborock.vacuum.a15",
+      "command": { "kind": "vacuumAction", "entityId": "miot:did_vacuum:2", "action": "pause" },
+      "expected": {
+        "kind": "action",
+        "call": { "did": "did_vacuum", "siid": 2, "aiid": 2, "inputs": [] }
+      }
+    },
+    {
+      "model": "roborock.vacuum.a15",
+      "command": { "kind": "vacuumAction", "entityId": "miot:did_vacuum:2", "action": "returnToBase" },
+      "expected": {
+        "kind": "action",
+        "call": { "did": "did_vacuum", "siid": 3, "aiid": 1, "inputs": [] }
+      }
+    }
+  ]
+}

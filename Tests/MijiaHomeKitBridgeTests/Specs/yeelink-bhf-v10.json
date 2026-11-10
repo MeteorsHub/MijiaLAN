@@ -1,0 +1,164 @@
+{
+ "type": "urn:miot-spec-v2:device:bath-heater:0000A028:yeelink-v10:1",
+ "description": "Bath Heater",
+ "services": [
+  {
+   "iid": 2,
+   "type": "urn:miot-spec-v2:service:light:00007802:yeelink-v10:1",
+   "description": "Light",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:on:00000006:yeelink-v10:1",
+     "description": "Switch Status",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "none",
+     "comment": "开关"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:mode:00000008:yeelink-v10:1",
+     "description": "Mode",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "none",
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Day",
+       "comment": "日光"
+      },
+      {
+       "value": 1,
+       "description": "Night",
+       "comment": "月光"
+      }
+     ],
+     "comment": "模式"
+    }
+   ],
+   "actions": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:action:toggle:00002811:yeelink-v10:1",
+     "description": "Toggle",
+     "in": [],
+     "out": [],
+     "comment": "开关状态切换"
+    }
+   ],
+   "comment": "灯"
+  },
+  {
+   "iid": 3,
+   "type": "urn:miot-spec-v2:service:ptc-bath-heater:0000783B:yeelink-v10:1",
+   "description": "PTC Bath Heater",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:mode:00000008:yeelink-v10:1",
+     "description": "Mode",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Idle",
+       "comment": "待机"
+      },
+      {
+       "value": 1,
+       "description": "Dry",
+       "comment": "干燥"
+      }
+     ],
+     "comment": "模式"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:blow:000000CD:yeelink-v10:1",
+     "description": "Blow",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "comment": "吹风"
+    },
+    {
+     "iid": 3,
+     "type": "urn:miot-spec-v2:property:heating:000000C7:yeelink-v10:1",
+     "description": "Heating",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "comment": "风暖"
+    },
+    {
+     "iid": 4,
+     "type": "urn:miot-spec-v2:property:ventilation:000000CE:yeelink-v10:1",
+     "description": "Ventilation",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "comment": "换气"
+    },
+    {
+     "iid": 5,
+     "type": "urn:miot-spec-v2:property:heat-level:00000047:yeelink-v10:1",
+     "description": "Heat Level",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 1,
+       "description": "Level1",
+       "comment": "加热低挡"
+      },
+      {
+       "value": 2,
+       "description": "Level2",
+       "comment": "加热高挡"
+      }
+     ],
+     "comment": "加热档位"
+    }
+   ],
+   "actions": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:action:stop-working:00002825:yeelink-v10:1",
+     "description": "Stop Working",
+     "in": [],
+     "out": [],
+     "comment": "停止工作"
+    }
+   ],
+   "comment": "浴霸风暖"
+  }
+ ]
+}

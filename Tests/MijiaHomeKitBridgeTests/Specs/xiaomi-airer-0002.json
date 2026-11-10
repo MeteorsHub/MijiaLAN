@@ -1,0 +1,335 @@
+{
+ "type": "urn:miot-spec-v2:device:airer:0000A00D:xiaomi-0002:1:0000D067",
+ "description": "xiaomi airer 0002",
+ "services": [
+  {
+   "iid": 2,
+   "type": "urn:miot-spec-v2:service:airer:00007817:xiaomi-0002:1:0000D067",
+   "description": "Airer",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:fault:00000009:xiaomi-0002:1:0000D067",
+     "description": "Device Fault",
+     "format": "uint32",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": " No Faults",
+       "comment": "无故障"
+      },
+      {
+       "value": 1,
+       "description": "Encounter Obstacles",
+       "comment": "遇阻"
+      },
+      {
+       "value": 2,
+       "description": "Overweight",
+       "comment": "超重 "
+      },
+      {
+       "value": 3,
+       "description": "Motor Fault",
+       "comment": "电机故障 "
+      }
+     ],
+     "source": 1,
+     "gatt-access": [],
+     "comment": "故障"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:status:00000007:xiaomi-0002:1:0000D067",
+     "description": "Status",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Stop",
+       "comment": "停止"
+      },
+      {
+       "value": 1,
+       "description": "Rising",
+       "comment": "上升中"
+      },
+      {
+       "value": 2,
+       "description": "Down",
+       "comment": "下降中"
+      },
+      {
+       "value": 3,
+       "description": "Stop Upper Limit",
+       "comment": "上限位停止"
+      },
+      {
+       "value": 4,
+       "description": "Stop Lower Limit",
+       "comment": "下限位停止"
+      }
+     ],
+     "source": 1,
+     "comment": "工作状态"
+    },
+    {
+     "iid": 5,
+     "type": "urn:miot-spec-v2:property:motor-control:00000038:xiaomi-0002:1:0000D067",
+     "description": "Motor Control",
+     "format": "uint8",
+     "access": [
+      "write"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Pause",
+       "comment": "暂停"
+      },
+      {
+       "value": 1,
+       "description": "Up",
+       "comment": "升高"
+      },
+      {
+       "value": 2,
+       "description": "Down",
+       "comment": "降低"
+      },
+      {
+       "value": 3,
+       "description": "pause",
+       "comment": "暂停"
+      },
+      {
+       "value": 4,
+       "description": "Up While Set Limit",
+       "comment": "设限时上升"
+      },
+      {
+       "value": 5,
+       "description": "Down While Set Limit",
+       "comment": "设限时降低"
+      }
+     ],
+     "source": 1,
+     "comment": "电机控制"
+    },
+    {
+     "iid": 11,
+     "type": "urn:miot-spec-v2:property:current-position:00000039:xiaomi-0002:1:0000D067",
+     "description": "Current Position",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "unit": "percentage",
+     "value-range": [
+      0,
+      100,
+      1
+     ],
+     "comment": "当前位置"
+    },
+    {
+     "iid": 12,
+     "type": "urn:miot-spec-v2:property:target-position:0000003A:xiaomi-0002:1:0000D067",
+     "description": "Target Position",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "percentage",
+     "value-range": [
+      0,
+      100,
+      1
+     ],
+     "comment": "设定位置"
+    },
+    {
+     "iid": 13,
+     "type": "urn:miot-spec-v2:property:motion-start-position:00000114:xiaomi-0002:1:0000D067",
+     "description": "Motion Start Position",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "percentage",
+     "value-range": [
+      0,
+      99,
+      1
+     ],
+     "source": 1,
+     "gatt-access": [],
+     "comment": "设置运行起始位置"
+    },
+    {
+     "iid": 14,
+     "type": "urn:miot-spec-v2:property:motion-end-position:00000115:xiaomi-0002:1:0000D067",
+     "description": "Motion End Position",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "percentage",
+     "value-range": [
+      1,
+      100,
+      1
+     ],
+     "source": 1,
+     "gatt-access": [],
+     "comment": "设置运行结束位置"
+    },
+    {
+     "iid": 16,
+     "type": "urn:miot-spec-v2:property:run-speed:000003FB:xiaomi-0002:1",
+     "description": "Run Speed",
+     "format": "float",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "unit": "percentage",
+     "value-range": [
+      0,
+      50,
+      0.1
+     ],
+     "comment": "运行速度"
+    }
+   ],
+   "comment": "晾衣架"
+  },
+  {
+   "iid": 3,
+   "type": "urn:miot-spec-v2:service:light:00007802:xiaomi-0002:1:0000D067",
+   "description": "Light",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:on:00000006:xiaomi-0002:1:0000D067",
+     "description": "Switch Status",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "source": 1,
+     "gatt-access": [],
+     "comment": "照明"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:brightness:0000000D:xiaomi-0002:1:0000D067",
+     "description": "Brightness",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "percentage",
+     "value-range": [
+      1,
+      100,
+      1
+     ],
+     "comment": "亮度"
+    },
+    {
+     "iid": 4,
+     "type": "urn:miot-spec-v2:property:night-light-switch:000002E9:xiaomi-0002:1",
+     "description": "Night Light Switch",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "comment": "夜灯开关"
+    },
+    {
+     "iid": 5,
+     "type": "urn:miot-spec-v2:property:night-brightness:000003C6:xiaomi-0002:1",
+     "description": "Night Brightness",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "percentage",
+     "value-range": [
+      1,
+      100,
+      1
+     ],
+     "gatt-access": [],
+     "comment": "夜间亮度"
+    }
+   ],
+   "actions": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:action:toggle:00002811:xiaomi-0002:1",
+     "description": "Toggle",
+     "in": [],
+     "out": [],
+     "comment": "开关状态切换"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:action:set-night-light:000028E8:xiaomi-0002:1",
+     "description": "Set Night Light",
+     "in": [
+      4,
+      5
+     ],
+     "out": [],
+     "comment": "设置夜灯"
+    }
+   ],
+   "comment": "灯"
+  },
+  {
+   "iid": 5,
+   "type": "urn:miot-spec-v2:service:alarm:00007804:xiaomi-0002:1:0000D067",
+   "description": "Alarm",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:alarm:00000012:xiaomi-0002:1:0000D067",
+     "description": "Alarm",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "comment": "提示音"
+    }
+   ],
+   "comment": "提示音"
+  }
+ ]
+}

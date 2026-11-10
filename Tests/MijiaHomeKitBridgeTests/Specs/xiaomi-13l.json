@@ -1,0 +1,164 @@
+{
+ "type": "urn:miot-spec-v2:device:dehumidifier:0000A02D:xiaomi-13l:1",
+ "services": [
+  {
+   "iid": 2,
+   "type": "urn:miot-spec-v2:service:dehumidifier:00007841:xiaomi-13l:1",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:on:00000006:xiaomi-13l:1",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ]
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:fault:00000009:xiaomi-13l:1",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "No Faults"
+      },
+      {
+       "value": 1,
+       "description": "Water Full"
+      },
+      {
+       "value": 2,
+       "description": "Sensor Fault1"
+      },
+      {
+       "value": 3,
+       "description": "Sensor Fault2"
+      },
+      {
+       "value": 4,
+       "description": "Communication Fault1"
+      },
+      {
+       "value": 5,
+       "description": "Filter Clean"
+      },
+      {
+       "value": 6,
+       "description": "Defrost"
+      },
+      {
+       "value": 7,
+       "description": "Fan Motor"
+      },
+      {
+       "value": 8,
+       "description": "Overload"
+      },
+      {
+       "value": 9,
+       "description": "Lack Of Refrigerant"
+      }
+     ]
+    },
+    {
+     "iid": 3,
+     "type": "urn:miot-spec-v2:property:mode:00000008:xiaomi-13l:1",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Smart"
+      },
+      {
+       "value": 1,
+       "description": "Sleep"
+      },
+      {
+       "value": 2,
+       "description": "Clothes Drying"
+      }
+     ]
+    },
+    {
+     "iid": 5,
+     "type": "urn:miot-spec-v2:property:target-humidity:00000022:xiaomi-13l:1",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-range": [
+      30,
+      70,
+      1
+     ],
+     "unit": "percentage"
+    }
+   ]
+  },
+  {
+   "iid": 3,
+   "type": "urn:miot-spec-v2:service:environment:0000780A:xiaomi-13l:1",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:relative-humidity:0000000C:xiaomi-13l:1",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-range": [
+      0,
+      100,
+      1
+     ],
+     "unit": "percentage"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:temperature:00000020:xiaomi-13l:1",
+     "format": "float",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-range": [
+      -30,
+      100,
+      1
+     ],
+     "unit": "celsius"
+    }
+   ]
+  },
+  {
+   "iid": 6,
+   "type": "urn:miot-spec-v2:service:physical-controls-locked:00007807:xiaomi-13l:1",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:physical-controls-locked:0000001D:xiaomi-13l:1",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -55,3 +55,8 @@ SOFTWARE.
 ## Optional Matter sidecar
 
 `MatterBridge` uses matter.js (`@matter/main` and its Matter packages), Copyright 2022–2026 Matter.js Authors, under Apache-2.0. The macOS build installs and bundles it with the App, alongside Node.js 22.22.0 for Apple Silicon and Intel. Node.js license notices are bundled under each MatterRuntime architecture directory. The npm lockfile records its transitive dependencies; their individual license files are included in installed packages.
+
+## Locally maintained core and compatibility mappings
+
+MijiaCore 1.1.4 (`c6a9db1c84fa30125ed4b642b6745487dec94e89`) is preserved under `Vendor/MenuBarMijia`, with its original MIT notice.
+The hass-xiaomi-miot compatibility data is Apache-2.0; see `Vendor/hass-xiaomi-miot`. HomeKit mapping references from homebridge-miot retain their MIT attribution under `Vendor/homebridge-miot`.

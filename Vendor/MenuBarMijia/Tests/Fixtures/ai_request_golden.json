@@ -1,0 +1,316 @@
+{
+  "_comment": "Jev /v1/systemone 请求结构的双端共享语料（#38）。只比对键名、顺序与设备目录别名骨架，不比对具体中文文案（状态摘要、环境描述等自由文本）和动态时间。Windows: windows/tests/core.test.ts；macOS: MijiaCoreTests.GoldenCorpusTests 由主代理后补，字段名以本文件为准：state 为 catalog/command/time/environment/active_devices/user_habits，questions 为 target/op/temp + 每台可控设备一个 dev_dN。设备数量故意超过 10 台：任何一端都不能再按前 10 台截断决策头（#33）。",
+  "utterance": "有点热，帮我把家里调到舒服一点",
+  "context": {
+    "timeSummary": "下午 15:30",
+    "environmentSummary": "客厅 26.5°C 58%，主卧 25.0°C 52%",
+    "activeDevicesSummary": "客厅吸顶灯(开 亮度60% 当前:Day 可用模式:Day/Night)、主卧空调(cool 25°C 可用模式:cool/heat/dry/fan_only/auto 温度范围:16-30°C)",
+    "habitSummary": "个人口头禅：「有点热」→已将主卧空调设为 25°C"
+  },
+  "devices": [
+    {
+      "id": "light.living_ceiling",
+      "name": "客厅吸顶灯",
+      "roomId": "room_living",
+      "roomName": "客厅",
+      "model": "yeelink.light.ceiling22",
+      "isOnline": true,
+      "kind": {
+        "kind": "light",
+        "entityId": "miot:light.living_ceiling:2",
+        "isOn": true,
+        "brightnessPercent": 60,
+        "colorTempKelvin": 4100,
+        "minKelvin": 2700,
+        "maxKelvin": 6500,
+        "currentEffect": "Day",
+        "availableEffects": ["Day", "Night"]
+      }
+    },
+    {
+      "id": "light.living_strip",
+      "name": "客厅灯带",
+      "roomId": "room_living",
+      "roomName": "客厅",
+      "model": "yeelink.light.strip2",
+      "isOnline": true,
+      "kind": {
+        "kind": "light",
+        "entityId": "miot:light.living_strip:2",
+        "isOn": true,
+        "brightnessPercent": 35,
+        "colorTempKelvin": 3000,
+        "minKelvin": 2700,
+        "maxKelvin": 6500,
+        "currentEffect": null,
+        "availableEffects": []
+      }
+    },
+    {
+      "id": "climate.bedroom_ac",
+      "name": "主卧空调",
+      "roomId": "room_bedroom",
+      "roomName": "主卧",
+      "model": "lumi.acpartner.mcn04",
+      "isOnline": true,
+      "kind": {
+        "kind": "climate",
+        "entityId": "miot:climate.bedroom_ac:2",
+        "isOn": true,
+        "hvacMode": "cool",
+        "availableModes": ["cool", "heat", "dry", "fan_only", "auto"],
+        "targetTemperature": 25,
+        "currentTemperature": 26,
+        "minTemp": 16,
+        "maxTemp": 30,
+        "step": 1,
+        "fanMode": "medium",
+        "availableFanModes": ["low", "medium", "high", "auto"]
+      }
+    },
+    {
+      "id": "fan.bedroom_standing",
+      "name": "主卧落地扇",
+      "roomId": "room_bedroom",
+      "roomName": "主卧",
+      "model": "zhimi.fan.za5",
+      "isOnline": true,
+      "kind": {
+        "kind": "fan",
+        "entityId": "miot:fan.bedroom_standing:2",
+        "isOn": true,
+        "percentage": 50,
+        "presetMode": "Level 2",
+        "availablePresetModes": ["Level 1", "Level 2", "Level 3", "Level 4"],
+        "isOscillating": true
+      }
+    },
+    {
+      "id": "light.study_desk",
+      "name": "书房台灯",
+      "roomId": "room_study",
+      "roomName": "书房",
+      "model": "yeelink.light.lamp1",
+      "isOnline": true,
+      "kind": {
+        "kind": "light",
+        "entityId": "miot:light.study_desk:2",
+        "isOn": false,
+        "brightnessPercent": 40,
+        "colorTempKelvin": 4000,
+        "minKelvin": 2700,
+        "maxKelvin": 6500,
+        "currentEffect": null,
+        "availableEffects": ["Day", "Night"]
+      }
+    },
+    {
+      "id": "climate.study_ac",
+      "name": "书房空调",
+      "roomId": "room_study",
+      "roomName": "书房",
+      "model": "lumi.acpartner.mcn02",
+      "isOnline": true,
+      "kind": {
+        "kind": "climate",
+        "entityId": "miot:climate.study_ac:2",
+        "isOn": false,
+        "hvacMode": "off",
+        "availableModes": ["cool", "heat", "dry", "fan_only"],
+        "targetTemperature": 26,
+        "currentTemperature": null,
+        "minTemp": 16,
+        "maxTemp": 30,
+        "step": 1,
+        "fanMode": null,
+        "availableFanModes": []
+      }
+    },
+    {
+      "id": "plug.balcony_rack",
+      "name": "阳台晾衣架",
+      "roomId": "room_balcony",
+      "roomName": "阳台",
+      "model": "mijia.plug.mcn01",
+      "isOnline": true,
+      "kind": {
+        "kind": "plug",
+        "switchEntityId": "miot:plug.balcony_rack:2",
+        "isOn": true,
+        "powerWatts": 12,
+        "childLockEntityId": null,
+        "isChildLocked": false
+      }
+    },
+    {
+      "id": "plug.kitchen_outlet",
+      "name": "厨房插座",
+      "roomId": "room_kitchen",
+      "roomName": "厨房",
+      "model": "cuco.plug.cp1",
+      "isOnline": true,
+      "kind": {
+        "kind": "plug",
+        "switchEntityId": "miot:plug.kitchen_outlet:2",
+        "isOn": false,
+        "powerWatts": 0,
+        "childLockEntityId": "miot:plug.kitchen_outlet:3",
+        "isChildLocked": false
+      }
+    },
+    {
+      "id": "vacuum.living_robot",
+      "name": "客厅扫地机",
+      "roomId": "room_living",
+      "roomName": "客厅",
+      "model": "roborock.vacuum.a27",
+      "isOnline": true,
+      "kind": {
+        "kind": "vacuum",
+        "entityId": "miot:vacuum.living_robot:2",
+        "status": "docked",
+        "battery": 88,
+        "modeEntityId": null,
+        "currentMode": null,
+        "availableModes": []
+      }
+    },
+    {
+      "id": "light.kids_desk",
+      "name": "儿童房台灯",
+      "roomId": "room_kids",
+      "roomName": "儿童房",
+      "model": "yeelink.light.lamp2",
+      "isOnline": true,
+      "kind": {
+        "kind": "light",
+        "entityId": "miot:light.kids_desk:2",
+        "isOn": false,
+        "brightnessPercent": null,
+        "colorTempKelvin": null,
+        "minKelvin": 2700,
+        "maxKelvin": 6500,
+        "currentEffect": null,
+        "availableEffects": []
+      }
+    },
+    {
+      "id": "fan.living_circulator",
+      "name": "客厅循环扇",
+      "roomId": "room_living",
+      "roomName": "客厅",
+      "model": "zhimi.fan.za4",
+      "isOnline": true,
+      "kind": {
+        "kind": "fan",
+        "entityId": "miot:fan.living_circulator:2",
+        "isOn": false,
+        "percentage": null,
+        "presetMode": null,
+        "availablePresetModes": ["Level 1", "Level 2", "Level 3"],
+        "isOscillating": false
+      }
+    },
+    {
+      "id": "light.dining_pendant",
+      "name": "餐厅吊灯",
+      "roomId": "room_dining",
+      "roomName": "餐厅",
+      "model": "yeelink.light.ceiling20",
+      "isOnline": true,
+      "kind": {
+        "kind": "light",
+        "entityId": "miot:light.dining_pendant:2",
+        "isOn": false,
+        "brightnessPercent": 70,
+        "colorTempKelvin": 4000,
+        "minKelvin": 2700,
+        "maxKelvin": 6500,
+        "currentEffect": "Night",
+        "availableEffects": ["Day", "Night"]
+      }
+    },
+    {
+      "id": "sensor.living_env",
+      "name": "客厅温湿度计",
+      "roomId": "room_living",
+      "roomName": "客厅",
+      "model": "miaomiaoce.sensor_ht.t2",
+      "isOnline": true,
+      "kind": {
+        "kind": "sensor",
+        "temperature": 26.5,
+        "humidity": 58,
+        "battery": 94
+      }
+    }
+  ],
+  "scenes": [
+    { "id": "scene.home", "name": "回家模式", "entityId": "scene.home" },
+    { "id": "scene.sleep", "name": "睡眠模式", "entityId": "scene.sleep" }
+  ],
+  "expected": {
+    "stateKeys": ["catalog", "command", "time", "environment", "active_devices", "user_habits"],
+    "questionsKeys": [
+      "target",
+      "op",
+      "temp",
+      "dev_d1",
+      "dev_d2",
+      "dev_d3",
+      "dev_d4",
+      "dev_d5",
+      "dev_d6",
+      "dev_d7",
+      "dev_d8",
+      "dev_d9",
+      "dev_d10",
+      "dev_d11",
+      "dev_d12"
+    ],
+    "targetAliases": [
+      "d1",
+      "d2",
+      "d3",
+      "d4",
+      "d5",
+      "d6",
+      "d7",
+      "d8",
+      "d9",
+      "d10",
+      "d11",
+      "d12",
+      "room_lights:客厅",
+      "all_lights",
+      "all_devices",
+      "s1",
+      "s2",
+      "none"
+    ],
+    "catalogDeviceLines": [
+      { "alias": "d1", "name": "客厅吸顶灯", "room": "客厅", "category": "light" },
+      { "alias": "d2", "name": "客厅灯带", "room": "客厅", "category": "light" },
+      { "alias": "d3", "name": "主卧空调", "room": "主卧", "category": "climate" },
+      { "alias": "d4", "name": "主卧落地扇", "room": "主卧", "category": "fan" },
+      { "alias": "d5", "name": "书房台灯", "room": "书房", "category": "light" },
+      { "alias": "d6", "name": "书房空调", "room": "书房", "category": "climate" },
+      { "alias": "d7", "name": "阳台晾衣架", "room": "阳台", "category": "plug" },
+      { "alias": "d8", "name": "厨房插座", "room": "厨房", "category": "plug" },
+      { "alias": "d9", "name": "客厅扫地机", "room": "客厅", "category": "vacuum" },
+      { "alias": "d10", "name": "儿童房台灯", "room": "儿童房", "category": "light" },
+      { "alias": "d11", "name": "客厅循环扇", "room": "客厅", "category": "fan" },
+      { "alias": "d12", "name": "餐厅吊灯", "room": "餐厅", "category": "light" }
+    ],
+    "catalogSceneLines": [
+      { "alias": "s1", "name": "回家模式" },
+      { "alias": "s2", "name": "睡眠模式" }
+    ],
+    "decisionHeadCriteriaKeys": {
+      "dev_d1": ["none", "power_on", "power_off", "effect_day", "effect_night", "bri_20", "bri_100", "bri_down_20", "bri_up_20"],
+      "dev_d3": ["none", "power_on", "power_off", "cool_24", "cool_25", "cool_26", "heat_22", "heat_24", "hvac_dry", "temp_up_2", "temp_down_2"],
+      "dev_d4": ["none", "power_on", "power_off", "fan_low", "fan_medium", "fan_high", "osc_on", "osc_off"],
+      "dev_d7": ["none", "power_on", "power_off"]
+    }
+  }
+}

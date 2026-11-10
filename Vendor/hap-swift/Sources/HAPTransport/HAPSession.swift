@@ -51,6 +51,13 @@ public actor HAPSession {
         return output
     }
 
+    /// Reserve frame counters and submit their bytes in one actor-isolated operation.
+    /// Returning ciphertext to competing response/event tasks lets a later counter
+    /// reach TCP first, which makes the peer's next authentication check fail.
+    public func encryptAndSend(_ plaintext: Data, send: @Sendable (Data) -> Void) throws {
+        send(try encrypt(plaintext))
+    }
+
     /// HAP spec §6.5.2: the plaintext of one frame is at most 1024 bytes.
     public static let maxFramePlaintext = 1024
 

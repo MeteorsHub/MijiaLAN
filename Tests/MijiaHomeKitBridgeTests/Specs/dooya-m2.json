@@ -1,0 +1,113 @@
+{
+ "type": "urn:miot-spec-v2:device:curtain:0000A00C:dooya-m2:1",
+ "services": [
+  {
+   "iid": 2,
+   "type": "urn:miot-spec-v2:service:curtain:00007816:dooya-m2:1",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:fault:00000009:dooya-m2:1",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "No Faults"
+      }
+     ]
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:motor-control:00000038:dooya-m2:1",
+     "format": "uint8",
+     "access": [
+      "write"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Close"
+      },
+      {
+       "value": 1,
+       "description": "Pause"
+      },
+      {
+       "value": 2,
+       "description": "Open"
+      }
+     ],
+     "unit": "none"
+    },
+    {
+     "iid": 4,
+     "type": "urn:miot-spec-v2:property:status:00000007:dooya-m2:1",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Closing"
+      },
+      {
+       "value": 1,
+       "description": "Stop"
+      },
+      {
+       "value": 2,
+       "description": "Opening"
+      }
+     ]
+    },
+    {
+     "iid": 6,
+     "type": "urn:miot-spec-v2:property:current-position:00000039:dooya-m2:1",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-range": [
+      0,
+      100,
+      1
+     ],
+     "unit": "percentage"
+    },
+    {
+     "iid": 7,
+     "type": "urn:miot-spec-v2:property:target-position:0000003A:dooya-m2:1",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-range": [
+      0,
+      100,
+      1
+     ],
+     "unit": "percentage"
+    },
+    {
+     "iid": 8,
+     "type": "urn:miot-spec-v2:property:motor-reverse:00000072:dooya-m2:1",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ]
+    }
+   ]
+  }
+ ]
+}

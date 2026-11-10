@@ -1,4 +1,5 @@
 // AppleHAPService.swift
+// Modified for MijiaLAN; see Vendor/hap-swift/README.md.
 // Copyright 2026 Monagle Pty Ltd
 
 #if canImport(Network)
@@ -94,7 +95,7 @@ public actor AppleHAPService {
 
     // MARK: - Lifecycle
 
-    public func start(port: UInt16 = 0) async throws {
+    public func start(port: UInt16 = 0, loopbackOnly: Bool = false) async throws {
         // Wire the pairing change callback now that self is fully initialized.
         let advertiser = self.advertiser
         let bridge = self.bridge
@@ -103,6 +104,7 @@ public actor AppleHAPService {
         let server = self.server
 
         server.onPairingChange = {
+            guard !loopbackOnly else { return }
             let isPaired = await pairingStore.isPaired
             let name = await bridge.accessoryDatabase().first?.name ?? "HAP Bridge"
             let category = await bridge.category
@@ -122,6 +124,7 @@ public actor AppleHAPService {
         // required (not just a TXT record update) for iOS to re-read /accessories
         // and discover newly added bridged accessories.
         await bridge.addAccessoryChangeHandler { [advertiser, bridge, pairingStore, setupID, server] configNumber in
+            guard !loopbackOnly else { return }
             await advertiser.stopAdvertising()
             let isPaired = await pairingStore.isPaired
             let name = await bridge.accessoryDatabase().first?.name ?? "HAP Bridge"
@@ -144,19 +147,21 @@ public actor AppleHAPService {
             }
         }
 
-        try await server.start(port: port)
+        try await server.start(port: port, loopbackOnly: loopbackOnly)
         let actualPort = server.port
 
         let isPaired = await pairingStore.isPaired
         let configNumber = await bridge.currentConfigurationNumber
-        try await advertiser.advertise(
-            name: await bridge.accessoryDatabase().first?.name ?? "HAP Bridge",
-            port: actualPort,
-            category: await bridge.category,
-            setupID: setupID,
-            configNumber: configNumber,
-            isPaired: isPaired
-        )
+        if !loopbackOnly {
+            try await advertiser.advertise(
+                name: await bridge.accessoryDatabase().first?.name ?? "HAP Bridge",
+                port: actualPort,
+                category: await bridge.category,
+                setupID: setupID,
+                configNumber: configNumber,
+                isPaired: isPaired
+            )
+        }
 
         logger.info("HAP service started on port \(actualPort), device ID: \(deviceID)")
     }
