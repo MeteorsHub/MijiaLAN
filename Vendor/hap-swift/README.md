@@ -44,3 +44,9 @@ Removing/demoting the last administrator revokes remaining users. Persistent upd
 vault saves leave live state unchanged. Legacy MijiaLAN blobs did not record roles and treated every controller
 as an administrator; migration preserves that effective trust rather than inventing roles or resetting pairings.
 New pairings always retain their declared roles. See `docs/security-hardening.md` in the MijiaLAN repository.
+
+## Upstream MijiaLAN reliability integration
+
+Integrated iPocket-APP/MijiaLAN's `35bc600`, `ab24c03`, `30a731c`, `a56d52f`, `d01c0f1` and `f3a41db` changes: numeric/string constraints, primary services, encrypted frame submission ordering, FIFO event delivery, mixed-read success statuses, response-before-event ordering and write-origin correction semantics. The regression suite includes authenticated TCP/UDP loopback and reference-value vectors.
+
+This fork keeps its pairing permission checks, revoked-session validation, strict HTTP parser, 32-connection admission bound, bounded receive buffers and partial-request deadlines. A protocol failure closes the connection. The extra upstream raw HAP/miIO payload logging sink was not imported; the existing alias-only 64 MiB journal remains authoritative. Existing pairing storage and identifiers are retained.

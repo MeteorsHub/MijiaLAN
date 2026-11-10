@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   matter:
     runs-on: ubuntu-latest
@@ -28,11 +31,13 @@ jobs:
       - run: swift --version
       - run: swift build --product mijia-lan --force-resolved-versions
       - run: swift build --product MijiaLANApp --force-resolved-versions
+      - name: Verify vendored MijiaCore behavior
+        run: swift test --package-path Vendor/MenuBarMijia --scratch-path .build/mijiacore-tests --filter 'MiCloudTests|MiCloudPollingTests|ModelActionPolicyTests|SnapshotObservationTests|LocalizationTests'
       - name: Run core and transport regression suites
         shell: bash
         run: |
           mkdir -p build/ci-logs
-          swift test --force-resolved-versions --filter 'MijiaLANTests|MijiaHomeKitBridgeTests|MijiaMatterRPCTests|MatterPlatformTests|MatterSnapshotPollingTests|CurtainControlPreferenceTests|CurtainInteractionTests|CurtainManualFailurePresentationTests|CurtainPositionDraftTests|NumberDraftPollingTests|HomeKitServiceSelectionTests' 2>&1 | tee build/ci-logs/swift-tests.log
+          swift test --force-resolved-versions --filter 'MijiaLANTests|MijiaHomeKitBridgeTests|MijiaMatterRPCTests|MatterPlatformTests|MatterSnapshotPollingTests|CurtainControlPreferenceTests|CurtainInteractionTests|CurtainManualFailurePresentationTests|CurtainPositionDraftTests|NumberDraftPollingTests|HomeKitServiceSelectionTests|CachedHomeKitDiagnosticTests' 2>&1 | tee build/ci-logs/swift-tests.log
       - name: Preserve test logs
         if: always()
         uses: actions/upload-artifact@v4

@@ -301,6 +301,7 @@ struct SettingsHomeKitManagement: View {
                 }
             }
 
+            HomeKitServiceLimitNotice(warnings: bridge.serviceLimitWarnings)
             SettingsSection(L10n.tr("在「家庭」中显示 · \(model.selectedHomeKitDeviceCount) 台", "Shown in Home · \(model.selectedHomeKitDeviceCount)")) {
                 if model.config.devices.isEmpty {
                     Text(L10n.tr("请先返回设置导入米家设备。", "Return to Settings to import your Mijia devices first."))
@@ -919,3 +920,22 @@ private struct LaunchAtLoginSettings: View {
         if self.registered != requested { errorMessage = failure }
     }
 }
+
+private struct HomeKitServiceLimitNotice: View {
+    let warnings: [HomeKitBridgeController.ServiceLimitWarning]
+
+    var body: some View {
+        ForEach(warnings) { warning in
+            Label {
+                Text(L10n.tr("\(warning.deviceName)：家庭可显示的功能已达上限，另有 \(warning.omittedServiceCount) 项可在 Mac 中使用。",
+                             "\(warning.deviceName): Home's feature limit was reached. \(warning.omittedServiceCount) additional features remain available on your Mac."))
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle").accessibilityHidden(true)
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// A device's switch, and under it, once expanded, each service it publishes with a switch of its own.

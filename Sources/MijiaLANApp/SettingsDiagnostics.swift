@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 /// Local journal only: this screen has no device/API/controller dependency.
 struct SettingsDiagnostics: View {
     let journal: CurtainEventLog
+    var cachedHomeKitSummary: (() -> Data?)? = nil
     @State private var text = ""
     @State private var importantOnly = true
     @State private var status: String?
@@ -29,6 +30,12 @@ struct SettingsDiagnostics: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                 }
+            }
+            if cachedHomeKitSummary != nil {
+                Button(L10n.tr("导出 HomeKit 状态摘要…", "Export HomeKit State Summary…")) { exportSummary() }
+                    .disabled(exporting)
+                Text(L10n.tr("摘要只读取当前缓存，包含本地设备代号、读数类型及家庭读取错误码，不触发设备查询。", "The summary reads only cached state: local device aliases, value types and Home read error codes. It does not query devices."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if journal.storageFailed { Text(L10n.tr("本地日志保存失败，当前内存记录仍可导出。", "Local persistence failed; current memory records can still be exported.")).foregroundStyle(.orange).font(.caption) }
             if let status { Text(status).font(.caption).foregroundStyle(.secondary) }
@@ -70,6 +77,24 @@ struct SettingsDiagnostics: View {
                 defer { exporting = false }
                 do { try await journal.export(to: url); status = L10n.tr("全部现存历史已导出", "All retained history exported") }
                 catch { status = L10n.tr("无法导出到所选位置", "Could not export to that location") }
+            }
+        }
+    }
+    private func exportSummary() {
+        guard let data = cachedHomeKitSummary?() else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "MijiaLAN-HomeKit-summary.json"
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            exporting = true
+            Task {
+                defer { exporting = false }
+                do {
+                    try await Task.detached(priority: .utility) { try data.write(to: url, options: .atomic) }.value
+                    status = L10n.tr("缓存摘要已导出", "Cached summary exported")
+                } catch { status = L10n.tr("无法导出到所选位置", "Could not export to that location") }
             }
         }
     }

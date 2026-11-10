@@ -562,7 +562,7 @@ public final class DeviceController {
             if structureChanged { structureRevision &+= 1 }
             valuesRevision &+= 1
         }
-        if uiChanged || context.panelVisible { withMutation(keyPath: \.snapshots) {} }
+        if structureChanged || valuesChanged || uiChanged || context.panelVisible { withMutation(keyPath: \.snapshots) {} }
         publishedSnapshots = snapshots
     }
 }

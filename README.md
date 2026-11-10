@@ -13,6 +13,7 @@ MijiaLAN 使用 miIO / MIoT 协议直接与局域网设备通信。已有设备 
 - **详细控制与共享状态**：Mac 与 HomeKit 共用能力目录、轮询和命令执行入口，支持机型对应的模式、亮度、色温、温度、风速、摆动、读数和厨房设备菜单。
 - **本地凭据存储**：设备 token、设备清单和 HomeKit 配对信息保存在 macOS 钥匙串，不持久化小米云登录会话。
 - **中英文界面**：跟随系统或单独 App 语言设置，支持系统、浅色和深色外观。
+- **HomeKit 控件与启动**：可按服务选择电源、温湿度等项目；智能插座的辅助控件收在高级项目中。支持登录 Mac 时启动。新增 HomeKit 状态缓存摘要导出，查看及导出不会额外查询设备。
 - **轮询设置、卷帘与诊断**：设置前台/后台间隔（默认 5/30 秒），立即生效并保存合法旧值。受支持的卷帘自动刷新并可直接控制，无逐台启用、验证解锁或人工恢复门槛；错误可见并退避检查，控制不自动重发。`dooya.motor.dc1545` 的电机反向 2.5 已退出 App 能力及正常通信，完整检查采用其余五项。普通刷新不打断编辑。完整设备通信日志滚动保留 64 MiB，关键历史另留 4 MiB，可查看范围和分块导出。详见[正常卷帘与迁移](docs/curtain-normal-operation.md)、[轮询与诊断说明](docs/device-polling-and-log-history.md)及[现场兼容证据](docs/curtain-five-property-compatibility.md)。App专用隔离长测入口已删除，使用正常菜单栏界面实测。[显式只读排因工具](docs/curtain-attribute-isolation.md)保留；本轮新版实机长测待本地验证。
 - **自动找回 IP**：定期广播发现设备，在 DHCP 地址变化后按设备 ID 更新地址。
 - **后台性能优化**：离线重试逐步退避，最长间隔 24 小时；面板隐藏 30 秒后释放界面，并保留页面、滚动位置和输入草稿。详见[性能与后台运行说明](docs/performance.md)。
@@ -125,7 +126,7 @@ MIJIALAN_UI_PREVIEW=1 "$(swift build --show-bin-path)/MijiaLANApp"
 
 本项目的原创代码使用 [MIT License](LICENSE)，版权归 iPocket-APP。第三方组件保留各自许可证：
 
-- [MenuBarMijia](https://github.com/jryang1997/MenuBarMijia) 的 `MijiaCore`（MIT）：扫码登录、MIoT 规格解析、设备合成和 HomeStore。
+- [MenuBarMijia](Vendor/MenuBarMijia) 的 `MijiaCore`（MIT）：扫码登录、MIoT 规格解析、设备合成和 HomeStore。
 - [hap-swift](https://github.com/acumen-dev/hap-swift)（Apache-2.0）：HomeKit Accessory Protocol 实现，内置副本包含本地修复。
 - Apple Swift 开源库及其他间接依赖：详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
