@@ -37,6 +37,7 @@ public actor CurtainControlSession {
     private let client: MiioClient
     private let policy: MiioCommunicationPolicy
     private let allowWrites: Bool
+    private let automaticRecovery: Bool
     private let readProfile: CurtainReadProfile
     private var lastFullCheck: Duration?
     private var compactRounds = 0
@@ -62,11 +63,12 @@ public actor CurtainControlSession {
 
     init(device: LocalDevice, client: MiioClient, scheduler: CurtainRequestScheduler,
          clock: CurtainValidationSession.Clock = .init(), isCurrent: @escaping @Sendable () -> Bool,
-         onInfo: @escaping @Sendable () async -> Void = {}, journal: CurtainEventLog = .init(), allowWrites: Bool = true, readProfile: CurtainReadProfile = .normalFive) {
+         onInfo: @escaping @Sendable () async -> Void = {}, journal: CurtainEventLog = .init(), allowWrites: Bool = true, readProfile: CurtainReadProfile = .normalFive, automaticRecovery: Bool = false) {
         precondition(readProfile != .diagnosticSix || !allowWrites, "Six-property profile is diagnostic and read-only")
         self.device = device; self.client = client; self.scheduler = scheduler; self.clock = clock
         self.policy = client.policy
         self.allowWrites = allowWrites; self.readProfile = readProfile
+        self.automaticRecovery = automaticRecovery
         self.isCurrent = isCurrent; self.onInfo = onInfo; self.journal = journal
     }
     public func snapshot() -> State { state }
@@ -78,7 +80,7 @@ public actor CurtainControlSession {
               let token = MiioToken.parse(device.token), let identity = UInt32(device.did) else { throw DeviceControlError.wrongDevice }
         let client = MiioClient(host: device.host, token: token, port: port, transport: transport, retries: 0,
             knownModel: device.model, events: journal, eventIdentifier: device.did, policy: policy, expectedDeviceID: identity)
-        return CurtainControlSession(device: device, client: client, scheduler: CurtainRequestScheduler(), isCurrent: { true }, journal: journal, allowWrites: false, readProfile: readProfile)
+        return CurtainControlSession(device: device, client: client, scheduler: CurtainRequestScheduler(), isCurrent: { true }, journal: journal, allowWrites: false, readProfile: readProfile, automaticRecovery: false)
     }
     public func updates() -> AsyncStream<State> {
         let id = UUID()
@@ -117,7 +119,9 @@ public actor CurtainControlSession {
         if [.manualPosition, .manualOpen, .manualClose, .manualStop].contains(source), state.command != nil, !writeTrace.attempted {
             detail += L10n.tr("；写入未发", "; write was not attempted")
         }
-        state.message = detail + L10n.tr("；已停止后续请求，不会自动重发或重连。", "; further requests stopped. No automatic retry or reconnect.")
+        state.message = detail + (automaticRecovery
+            ? L10n.tr("；本次请求已结束，写入不会自动重发。状态读取将在退避后重新检查。", "; this request ended. Writes are never retried automatically. State checks resume after backoff.")
+            : L10n.tr("；已停止后续请求，不会自动重发或重连。", "; further requests stopped. No automatic retry or reconnect."))
         publish()
     }
     private func run(_ command: Command?, operationID: UUID? = nil, source override: CurtainEventLog.Source? = nil, body: @escaping @Sendable () async throws -> State) async throws -> State {
@@ -315,14 +319,15 @@ public actor CurtainControlSession {
         guard verified, !stopping, operation == nil, state.phase == .ready || state.phase == .moving else { throw DeviceControlError.busy }
         return try await run(nil) { try await self.readFull() }
     }
-    /// One read-only turn in the App's unified poll. A paused session cannot reconnect itself.
+    /// One read-only turn in the shared poll. The App owns retry backoff; explicit experiments fail closed.
     public func poll(operationID: UUID = UUID(), source: DeviceEventLog.Source = .backgroundPoll) async throws -> State {
         try current()
-        guard operation == nil, !stopping, state.failureReason == nil else { throw DeviceControlError.busy }
+        guard operation == nil, !stopping, automaticRecovery || state.failureReason == nil else { throw DeviceControlError.busy }
         guard device.model == CurtainValidationSession.model, device.specType == CurtainValidationSession.specification else {
             throw DeviceControlError.unsupported("Curtain model/specification")
         }
-        let cold = !started
+        let recovering = state.failureReason != nil
+        let cold = !started || !verified
         started = true
         return try await run(nil, operationID: operationID, source: source) {
             if cold {
@@ -331,6 +336,8 @@ public actor CurtainControlSession {
                 await self.markDrained()
                 try await self.connect(force: true)
             }
+            // Never recover using only the compact pair: validate every supported safety field.
+            if recovering { return try await self.readFull() }
             return try await self.readScheduled()
         }
     }
@@ -412,7 +419,7 @@ public actor CurtainControlSession {
                            reason: .deduplicated, target: command.target)
             return state
         }
-        guard state.phase == .ready else { throw DeviceControlError.unavailable("Read to confirm before controlling") }
+        guard state.phase == .ready || (automaticRecovery && state.failureReason != nil) else { throw DeviceControlError.unavailable("Read to confirm before controlling") }
         if let target = command.target, !(0...100).contains(target) { throw DeviceControlError.invalidValue("position") }
         return try await run(command, operationID: operationID) {
             _ = try await self.readFull()

@@ -81,7 +81,7 @@ private actor ReadOnlyPreview: MiioTransport {
         #expect(throws: ReadOnlyAppTest.Rejected.self) { try ReadOnlyAppTest.prepare(partial) }
         #expect(!FileManager.default.fileExists(atPath: f.environment[ReadOnlyAppTest.directoryKey]!))
     }
-    @Test("A validated single-device 4-hour launch creates a fresh 0700 directory, isolated opt-in and explicit 10/30 settings")
+    @Test("A validated single-device 4-hour launch creates a fresh 0700 directory, isolated storage and explicit 5/30 settings")
     func validated() throws {
         let f = try ReadOnlyLaunchFixture(); defer { f.remove() }
         let prepared = try ReadOnlyAppTest.prepare(f.environment)
@@ -92,12 +92,15 @@ private actor ReadOnlyPreview: MiioTransport {
         let defaults = try #require(UserDefaults(suiteName: test.defaultsSuite))
         defer { defaults.removePersistentDomain(forName: test.defaultsSuite) }
         test.configure(defaults)
-        #expect(defaults.stringArray(forKey: CurtainControlController.preferenceKey) == ["123"])
-        #expect(DevicePollingIntervals.load(from: defaults) == .init(foregroundSeconds: 10, backgroundSeconds: 30))
+        #expect(defaults.stringArray(forKey: CurtainControlController.preferenceKey) == nil)
+        #expect(DevicePollingIntervals.load(from: defaults) == .init(foregroundSeconds: 5, backgroundSeconds: 30))
         #expect(!defaults.bool(forKey: "homekit_bridge_enabled") && !defaults.bool(forKey: "matter.enabled"))
         #expect(defaults.dictionary(forKey: CurtainControlController.pausedKey) == nil)
         #expect(throws: ReadOnlyAppTest.Rejected.self) { try ReadOnlyAppTest.prepare(f.environment) }
         let manifest = try String(contentsOf: test.directory.appendingPathComponent("plan.json"), encoding: .utf8)
+        let plan = try #require(JSONSerialization.jsonObject(with: Data(manifest.utf8)) as? [String: Any])
+        #expect(plan["foregroundSeconds"] as? Int == 5 && plan["backgroundSeconds"] as? Int == 30)
+        #expect(plan["normalStatusProperties"] as? [String] == ["2.2", "2.3", "2.4", "2.9", "2.10"])
         #expect(manifest.contains("dc1545-fw1.1.3-normal-five") && !manifest.contains("2.5"))
         #expect(!manifest.contains(f.device.token) && !manifest.contains(f.device.name) && !manifest.contains(f.device.host))
     }
@@ -201,7 +204,7 @@ private actor ReadOnlyPreview: MiioTransport {
         }
         devices.refreshCurtains = {
             await curtains.pollConfigured()
-            if let reason = curtains.pausedPolling.values.first { await lifetime.stop(reason) }
+            if let reason = curtains.readFailures.values.first { await lifetime.stop(reason) }
         }
         await devices.refreshNow()
         #expect(lifetime.finished && reasons == [.deadline, .propertyError])

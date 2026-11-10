@@ -16,6 +16,21 @@ struct DeviceLANPolicyTests {
             schema: schema, capabilities: DeviceCapabilityCatalog.capabilities(schema: schema, model: model), health: LANDeviceHealth(state: .online))
     }
 
+    @Test("Motor reverse is removed from product catalogs and injected snapshots only for the supported model")
+    func excludedReverse() throws {
+        var s = try snapshot()
+        #expect(!s.capabilities.contains { $0.siid == 2 && $0.iid == 5 })
+        let other = DeviceCapabilityCatalog.capabilities(schema: s.schema, model: "dooya.motor.other")
+        let reverse = try #require(other.first { $0.siid == 2 && $0.iid == 5 })
+        #expect(reverse.readable && reverse.writable) // Not a global PIID5 ban.
+        s.capabilities.append(reverse)
+        #expect(s.capabilitiesByID[reverse.id] == nil)
+        let injected = DeviceSnapshot(device: s.device, schema: s.schema, capabilities: other)
+        #expect(injected.capabilitiesByID[reverse.id] == nil)
+        #expect(!DeviceLANPolicy.allowsCapability(model: s.device.model, kind: .action, siid: 2, iid: 99, inputs: [5]))
+        #expect(DeviceLANPolicy.allowsCapability(model: s.device.model, kind: .property, siid: 3, iid: 5))
+    }
+
     @Test("Only the exact reported model is restricted, independently of connectivity")
     func exactModel() {
         #expect(!DeviceLANPolicy.allowsPropertyRequests(for: "dooya.motor.dc1545"))
@@ -34,7 +49,10 @@ struct DeviceLANPolicyTests {
             var snapshot = try snapshot()
             for row in batch.readings {
                 let id = DeviceCapability.propertyID(row.siid, row.piid)
-                let cap = try #require(snapshot.capabilitiesByID[id])
+                guard let cap = snapshot.capabilitiesByID[id] else {
+                    #expect(row.siid == 2 && row.piid == 5) // Excluded from the product, retained in the historical fixture.
+                    continue
+                }
                 let incoming = DeviceReading(value: row.hasValue ? row.value : nil, code: row.code,
                     error: row.code == 0 ? nil : MiotPropertyStatus.description(row.code))
                 let checked = cap.checkedReading(incoming)

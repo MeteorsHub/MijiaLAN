@@ -19,8 +19,8 @@ struct DeviceLANPolicyNetworkTests {
         let fake = network.add(host: "test", token: token, deviceID: 123)
         fake.model = model
         let client = MiioClient(host: "test", token: try #require(MiioToken.parse(token)), transport: network, knownModel: model)
-        await #expect(throws: DeviceControlError.self) { try await client.readProperties(did: "123", [(2, 2)]) }
-        await #expect(throws: DeviceControlError.self) { try await client.setProperties([MiotPropWrite(did: "123", siid: 2, piid: 1, value: .number(2))]) }
+        await #expect(throws: DeviceControlError.self) { try await client.readProperties(did: "123", [(2, 5)]) }
+        await #expect(throws: DeviceControlError.self) { try await client.setProperties([MiotPropWrite(did: "123", siid: 2, piid: 5, value: .bool(true))]) }
         await #expect(throws: DeviceControlError.self) { try await client.action(MiotActionCall(did: "123", siid: 2, aiid: 1)) }
         await #expect(throws: DeviceControlError.self) { try await client.call("get_prop") }
         #expect(network.exchangeCount == 0)
@@ -58,7 +58,7 @@ struct DeviceLANPolicyNetworkTests {
         #expect(try await api.getProps(keys).isEmpty)
         let caps = try capabilities()
         let readings = await api.readCapabilities(did: "123", capabilities: caps)
-        #expect(readings.count == 6)
+        #expect(readings.count == 5)
         #expect(readings.values.allSatisfy { !$0.isAvailable && $0.error != nil })
         await #expect(throws: DeviceControlError.self) {
             try await api.setProps([MiotPropWrite(did: "456", siid: 2, piid: 1, value: .bool(false)),

@@ -240,7 +240,10 @@ public struct DeviceSnapshot: Equatable, Sendable, Identifiable {
     public var device: LocalDevice
     public var schema: DeviceSchema { didSet { coreSpec = schema.coreSpec } }
     public var capabilities: [DeviceCapability] {
-        didSet { capabilitiesByID = Dictionary(capabilities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) }
+        didSet {
+            capabilities = capabilities.filter { DeviceLANPolicy.allowsCapability(model: device.model, kind: $0.kind, siid: $0.siid, iid: $0.iid, inputs: $0.inputs, outputs: $0.outputs) }
+            capabilitiesByID = Dictionary(capabilities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        }
     }
     public private(set) var coreSpec: MiotDeviceSpec?
     public private(set) var capabilitiesByID: [String: DeviceCapability]
@@ -251,9 +254,10 @@ public struct DeviceSnapshot: Equatable, Sendable, Identifiable {
     public var commandReceipt: DeviceCommandReceipt?
     public init(device: LocalDevice, schema: DeviceSchema, capabilities: [DeviceCapability],
                 readings: [String: DeviceReading] = [:], prepared: [String: JSONValue] = [:], health: LANDeviceHealth = LANDeviceHealth()) {
-        self.device = device; self.schema = schema; self.capabilities = capabilities
+        self.device = device; self.schema = schema
+        self.capabilities = capabilities.filter { DeviceLANPolicy.allowsCapability(model: device.model, kind: $0.kind, siid: $0.siid, iid: $0.iid, inputs: $0.inputs, outputs: $0.outputs) }
         self.coreSpec = schema.coreSpec
-        self.capabilitiesByID = Dictionary(capabilities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        self.capabilitiesByID = Dictionary(self.capabilities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         self.readings = readings; self.prepared = prepared; self.health = health
     }
     public var id: String { device.did }
@@ -331,6 +335,7 @@ public enum DeviceCapabilityCatalog {
         for service in schema.services where !excludedServices.contains(service.name) {
             let argumentIDs = Set(service.actions.filter { actionNames.contains($0.name) }.flatMap(\.inputs))
             for p in service.properties {
+                guard DeviceLANPolicy.allowsCapability(model: model, kind: .property, siid: service.iid, iid: p.iid) else { continue }
                 let prepared = schema.isCooking && (argumentIDs.contains(p.iid) || (service.name == schema.category && preparedNames.contains(p.name)))
                 var readable = p.access.contains("read")
                 var writable = p.access.contains("write")
@@ -403,6 +408,7 @@ public enum DeviceCapabilityCatalog {
                 ))
             }
             for a in service.actions {
+                guard DeviceLANPolicy.allowsCapability(model: model, kind: .action, siid: service.iid, iid: a.iid, inputs: a.inputs, outputs: a.outputs) else { continue }
                 let supported = DeviceLANPolicy.allowsPropertyRequests(for: model) && legacy == nil && actionNames.contains(a.name) && service.name == schema.category
                 result.append(DeviceCapability(
                     id: DeviceCapability.actionID(service.iid, a.iid), model: model, specification: schema.type, kind: .action, siid: service.iid, iid: a.iid,

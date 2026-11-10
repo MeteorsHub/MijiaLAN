@@ -197,7 +197,7 @@ public actor LANMiotAPI: MiCloudAPI {
         let lease = CurtainValidationLease(), source = config
         let session = CurtainControlSession(device: device, client: client(for: device), scheduler: scheduler, clock: clock, isCurrent: {
             lease.isValid && source().devices.contains { ProbeScheduler.sameEndpoint($0, device) && $0.specType == device.specType }
-        }, onInfo: { [weak self] in await self?.dailyCurtainInfoReceived(device) }, journal: curtainEvents, allowWrites: allowsDeviceWrites)
+        }, onInfo: { [weak self] in await self?.dailyCurtainInfoReceived(device) }, journal: curtainEvents, allowWrites: allowsDeviceWrites, automaticRecovery: true)
         dailyCurtains[did] = (device, lease, session)
         return session
     }
@@ -520,7 +520,7 @@ public actor LANMiotAPI: MiCloudAPI {
             Task { await active.session.end() }
         }
         for device in devices where device.model == CurtainValidationSession.model {
-            curtainEvents.record(device.did, source: .legacyProbe, stage: .idle, outcome: .noPacket, reason: .manualOnly)
+            curtainEvents.record(device.did, source: .legacyProbe, stage: .idle, outcome: .noPacket, reason: .configuration)
         }
         curtainEvents.registerDevices(devices)
         configuredDevices = devices

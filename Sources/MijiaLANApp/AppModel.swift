@@ -139,7 +139,7 @@ final class AppModel {
                 guard let self else { return }
                 await self.curtains.pollConfigured()
                 self.curtains.events.flush()
-                if let reason = self.curtains.pausedPolling.values.first { await self.readOnlyTestLifetime?.stop(reason) }
+                if let reason = self.curtains.readFailures.values.first { await self.readOnlyTestLifetime?.stop(reason) }
                 else if self.curtains.events.storageFailed { await self.readOnlyTestLifetime?.stop(.configuration) }
             }
         } else {
@@ -174,7 +174,7 @@ final class AppModel {
             }
             terminate()
         }
-        if let reason = curtains.pausedPolling.values.first { Task { await readOnlyTestLifetime?.stop(reason) } }
+        if let reason = curtains.readFailures.values.first { Task { await readOnlyTestLifetime?.stop(reason) } }
     }
 
     // MARK: Devices

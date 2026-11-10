@@ -16,7 +16,7 @@
 - seed 必须恰好一台 `dooya.motor.dc1545`、正确 v1 URN、有效十进制 DID、32 位十六进制 token、IPv4 地址，无 skipped 条目。
 - `MIJIALAN_READ_ONLY_APP_TEST_LOG_DIRECTORY`：**尚不存在**的新目录，父目录必须已存在；入口原子创建 0700 目录，不重用或修改旧目录。
 - `MIJIALAN_READ_ONLY_APP_TEST_SECONDS`：整数 1…43200，实际本轮设 **14400（4 小时）**。
-- 不允许同时启用 UI preview / snapshot 或 `MIJIALAN_PANEL_OPEN_ON_LAUNCH=1`；不运行 DevSnapshot。创建普通 `MenuBarPanelController`，保留状态项、隐藏面板窗口、NSWorkspace 通知及正常后台生命周期。面板保持隐藏，测试模式的 reopen/展示请求不打开面板。后台固定 30 秒，前台设置保留 10 秒，仍由原统一调度减去轮次耗时。
+- 不允许同时启用 UI preview / snapshot 或 `MIJIALAN_PANEL_OPEN_ON_LAUNCH=1`；不运行 DevSnapshot。创建普通 `MenuBarPanelController`，保留状态项、隐藏面板窗口、NSWorkspace 通知及正常后台生命周期。面板保持隐藏，测试模式的 reopen/展示请求不打开面板。后台固定 30 秒，前台默认5秒（manifest与configure共用DevicePollingIntervals默认值），仍由原统一调度减去轮次耗时。
 
 仅残留测试选项、没有正确完整标志时也会拒绝。Release 收到测试选项时拒绝启动该模式。没有这些测试选项时普通 App 行为保持原样；旧的普通 `MIJIALAN_EPHEMERAL` seed 行为不改。
 
@@ -49,11 +49,11 @@ build/MijiaLAN.app/Contents/MacOS/MijiaLAN
 
 ## 只读、日志和结束
 
-- 只将隔离 suite 的唯一卷帘设为 opt-in。HomeKit/Matter 不附加、不启用，不发发现广播；普通菜单栏控制器存在但面板保持后台隐藏，不自动控制。
+- 隔离配置仅含唯一卷帘，使用正常默认自动刷新，无opt-in偏好。HomeKit/Matter 不附加、不启用，不发发现广播；普通菜单栏控制器存在但面板保持后台隐藏，不自动控制。
 - `CurtainControlController` 的实际请求入口拒绝 position/open/close/stop；`LANMiotAPI` 拒绝写入与 action，创建的专用 session 也设置 `allowWrites=false`。不是依赖不点击按钮实现只读。
 - 详细日志 `traffic.jsonl` 的 scope 为 **experiment**，完整收发滚动 64 MiB，关键历史另留 4 MiB；保持原有脱敏字段及流式导出格式。`plan.json` 仅含时长、策略、端口和设备数等安全元数据，不含 seed。
 - App 在该有界测试期间持有临时 userInitiated 活动，避免空闲睡眠/App Nap影响轮询；结束释放，不改变系统电源偏好或锁屏。
-- 正常统一轮询发现属性错误、缺值、时钟/身份异常或超时后仍按 e57 暂停该台；同一回调结束测试，不自动恢复或重试。检测日志存储失败也结束。
+- 只读隔离测试发现属性错误、缺值、时钟/身份异常或超时后，同一回调结束整个实验，不自动恢复或重试。生产模式则按统一轮询退避检查，详见正常使用迁移说明。检测日志存储失败也结束。
 - 达到时长上限或出现上述故障时，等待卷帘任务结束、关闭会话/socket、停止统一循环、flush 日志，写 `result.json`，随后 `NSApp.terminate` 正常退出。`outcome=durationComplete` 仅表示达到上限；`outcome=paused` 表示异常提前结束，`reason` 保留原因。应以结果文件和日志判断，不能只看进程退出码。故障时没有自动回退到其他策略。
 - 四小时用于积累精简读取和约每 300–330 秒一次的完整校验。实际成功轮数和当前完整五项次数以日志为准（旧44958fa记录为六项）；通信结果不作为物理动作成功证据。
 

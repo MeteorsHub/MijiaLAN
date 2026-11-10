@@ -48,7 +48,7 @@ struct ReadOnlyAppTest {
         // mkdir is atomic: an existing directory (including another run's) is never reused or chmod'ed.
         guard mkdir(path, 0o700) == 0 else { throw Rejected() }
         let manifest: [String: Any] = ["mode": "readOnlyAppTest", "scope": "experiment", "deviceCount": 1,
-            "seconds": seconds, "backgroundSeconds": 30, "foregroundSeconds": 10, "remotePort": port,
+            "seconds": seconds, "backgroundSeconds": DevicePollingIntervals().backgroundSeconds, "foregroundSeconds": DevicePollingIntervals().foregroundSeconds, "remotePort": port,
             "socket": "stable", "layout": "adaptive", "hello": "periodic", "stamp": "helloAnchored",
             "normalReadProfile": CurtainReadProfile.normalFive.rawValue,
             "normalStatusProperties": CurtainReadProfile.normalFive.propertyIDs.map { "2.\($0)" }]
@@ -94,8 +94,7 @@ struct ReadOnlyAppTest {
         throw Rejected()
     }
     @MainActor func configure(_ defaults: UserDefaults) {
-        defaults.set([config.devices[0].did], forKey: CurtainControlController.preferenceKey)
-        DevicePollingIntervals(foregroundSeconds: 10, backgroundSeconds: 30).save(to: defaults)
+        DevicePollingIntervals().save(to: defaults)
         defaults.set(false, forKey: "homekit_bridge_enabled")
         defaults.set(false, forKey: "homekit_bridge_keep_awake")
         defaults.set(false, forKey: "matter.enabled")

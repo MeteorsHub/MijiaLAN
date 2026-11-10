@@ -73,7 +73,7 @@ private actor InteractionTransport: MiioTransport {
         let controller = CurtainControlController(api: api, defaults: defaults, makeSession: {
             try await api.beginCurtainControl(did: $0, scheduler: scheduler, clock: clock.clock)
         })
-        controller.reconcile([device]); controller.setEnabled(device, true); controller.read(did)
+        controller.reconcile([device]); controller.read(did)
         try await idle(controller)
         #expect(controller.states[did]?.position == 29)
         return Fixture(controller: controller, api: api, transport: transport, defaults: defaults, suite: suite)
@@ -135,7 +135,7 @@ private actor InteractionTransport: MiioTransport {
         #expect(await f.transport.methods.filter { $0 == "set_properties" }.count == 1)
         await f.stop()
     }
-    @Test("A poisoned preceding read fails a queued position explicitly, sends no write and pauses subsequent polling")
+    @Test("A poisoned preceding read fails a queued position explicitly, sends no write and backs off polling without blocking a new user request")
     func failedPrecedingRead() async throws {
         let f = try await make(), c = f.controller
         await f.transport.holdNextRead(poison: true)
@@ -144,13 +144,16 @@ private actor InteractionTransport: MiioTransport {
         #expect(c.send(did, .position(64)))
         await f.transport.release(); await poll.value; try await idle(c)
         #expect(c.submissions[did]?.phase == .failed && c.errors[did] != nil)
-        #expect(c.pausedPolling[did] == .untrustedReading && c.states[did]?.position == nil)
+        #expect(c.readFailures[did] == .untrustedReading && c.states[did]?.position == nil)
         #expect(await f.transport.methods.filter { $0 == "set_properties" }.isEmpty)
         #expect(c.events.snapshot().contains { $0.source == .manualPosition && $0.outcome == .noPacket && $0.writeAttempted == false && $0.reason == .untrustedReading })
         let before = await f.transport.methods
         await c.pollConfigured()
         #expect(await f.transport.methods == before)
-        #expect(!c.send(did, .position(64)) && c.errors[did] != nil)
+        #expect(c.send(did, .position(64))) // A fresh user action performs its own full preflight, with no manual unlock.
+        try await idle(c)
+        #expect(c.states[did]?.position == 64 && c.readFailures[did] == nil)
+        #expect(await f.transport.methods.filter { $0 == "set_properties" }.count == 1)
         await f.stop()
     }
     @Test("Stop supersedes a queued position, drains the in-flight read, and sends only one priority motor Stop")
@@ -167,7 +170,7 @@ private actor InteractionTransport: MiioTransport {
         #expect(writes.count == 1)
         guard case .object(let fields) = try #require(writes.first) else { Issue.record("Expected a stop write"); await f.stop(); return }
         #expect(fields["piid"] == .number(1) && fields["value"] == .number(1))
-        #expect(c.pausedPolling[did] == nil)
+        #expect(c.readFailures[did] == nil)
         await f.stop()
     }
     @Test("A different request received while a user request is queued is explicitly rejected, not silently lost")

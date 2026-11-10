@@ -37,7 +37,10 @@ struct FieldTelemetryReplayTests {
             health: LANDeviceHealth(state: .online))
         for row in sample.readings {
             let id = DeviceCapability.propertyID(row.siid, row.piid)
-            let cap = try #require(snapshot.capabilitiesByID[id])
+            guard let cap = snapshot.capabilitiesByID[id] else {
+                #expect(model == CurtainValidationSession.model && row.siid == 2 && row.piid == 5)
+                continue // Raw historical evidence stays in the fixture; the product no longer exposes reverse.
+            }
             let reading = DeviceReading(value: row.code == 0 && row.hasValue ? row.value : nil, code: row.code,
                 error: row.code == 0 && row.hasValue ? nil : MiotPropertyStatus.description(row.code))
             snapshot.readings[id] = cap.checkedReading(reading)

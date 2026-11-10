@@ -15,7 +15,7 @@ struct DeviceInformation: View {
                 infoRow(L10n.tr("IP 地址", "IP Address"), value: snapshot.device.host)
                 infoRow(L10n.tr("型号", "Model"), value: snapshot.device.model)
                 infoRow(L10n.tr("连通性", "Connectivity"), value: snapshot.device.model == CurtainValidationSession.model
-                    ? (snapshot.health.lastSeen == nil ? L10n.tr("尚未通过信息验证", "Device Info Not Verified Yet") : L10n.tr("上次信息验证可达（非实时）", "Last Verified Info Reachable (Not Live)"))
+                    ? (snapshot.health.lastSeen == nil ? L10n.tr("尚未连接", "Not Connected Yet") : L10n.tr("上次连接成功（非实时）", "Last Connection Succeeded (Not Live)"))
                     : (snapshot.isOnline ? L10n.tr("在线（设备信息可达）", "Online (device info reachable)") : ConnectionIssue(health: snapshot.health).title))
                 if snapshot.lanReadingsRestriction != nil {
                     if !usesCurtainControl {

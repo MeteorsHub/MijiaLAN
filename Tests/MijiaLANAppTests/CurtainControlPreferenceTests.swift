@@ -12,9 +12,10 @@ private final class PollingCurtainClock: @unchecked Sendable {
     }) }
 }
 private actor CountedPreview: MiioTransport {
-    private let preview: ControlCenterPreviewTransport
+    private var preview: ControlCenterPreviewTransport
     var count = 0
     init(failReadback: Bool = false) { preview = ControlCenterPreviewTransport(failReadback: failReadback) }
+    func recover() { preview = ControlCenterPreviewTransport() }
     func exchange(_ packet: Data, host: String, port: UInt16, timeout: Duration) async throws -> Data {
         count += 1
         return try await preview.exchange(packet, host: host, port: port, timeout: timeout)
@@ -27,11 +28,11 @@ private actor CountedPreview: MiioTransport {
         LocalDevice(did: "123", name: "Simulated Curtain", model: CurtainValidationSession.model,
             host: "192.0.2.12", token: String(repeating: "0", count: 32), specType: CurtainValidationSession.specification)
     }
-    private func make(_ defaults: UserDefaults, transport: CountedPreview) -> (CurtainControlController, DeviceController, LANMiotAPI) {
+    private func make(_ defaults: UserDefaults, transport: CountedPreview, now: @escaping () -> Date = { Date() }) -> (CurtainControlController, DeviceController, LANMiotAPI) {
         let config = LocalHomeConfig(devices: [device()])
         let api = LANMiotAPI(config: { config }, transport: transport)
         let clock = PollingCurtainClock(), scheduler = CurtainRequestScheduler(clock: clock.clock)
-        let curtains = CurtainControlController(api: api, defaults: defaults, makeSession: {
+        let curtains = CurtainControlController(api: api, defaults: defaults, now: now, makeSession: {
             try await api.beginCurtainControl(did: $0, scheduler: scheduler, clock: clock.clock)
         })
         curtains.reconcile(config.devices)
@@ -39,90 +40,72 @@ private actor CountedPreview: MiioTransport {
         devices.refreshCurtains = { [weak curtains] in await curtains?.pollConfigured() }
         return (curtains, devices, api)
     }
-    @Test("Control opt-in restores legacy preference, does not itself communicate, and intervals persist")
-    func preferences() async throws {
-        let suite = "curtain-preferences-" + UUID().uuidString
+    private func idle(_ controller: CurtainControlController) async throws {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while controller.isWorking(device().did), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(1)) }
+        #expect(!controller.isWorking(device().did))
+    }
+    @Test("Absent or legacy disabled/paused preferences never gate automatic reads or normal controls")
+    func migration() async throws {
+        for legacy in [false, true] {
+            let suite = "curtain-migration-" + UUID().uuidString
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            if legacy {
+                defaults.set([String](), forKey: CurtainControlController.preferenceKey)
+                defaults.set([device().did: "propertyError"], forKey: CurtainControlController.pausedKey)
+            }
+            defaults.set("unchanged", forKey: "unrelated.pairing.fixture")
+            let network = CountedPreview(), (curtains, devices, api) = make(defaults, transport: network)
+            #expect(await network.count == 0) // Configuration alone does not send; the unified round does.
+            #expect(defaults.object(forKey: CurtainControlController.preferenceKey) == nil)
+            #expect(defaults.object(forKey: CurtainControlController.pausedKey) == nil)
+            #expect(defaults.string(forKey: "unrelated.pairing.fixture") == "unchanged")
+            await devices.refreshNow()
+            #expect(curtains.states[device().did]?.position == 29)
+            #expect(curtains.send(device().did, .position(64)))
+            try await idle(curtains)
+            #expect(curtains.states[device().did]?.position == 64)
+            #expect(api.curtainEvents.snapshot().filter { $0.kind == .write && $0.outcome == .attempt }.count == 1)
+            let before = await network.count
+            for _ in 0..<12 { await devices.refreshNow() }
+            #expect(await network.count > before)
+            devices.setPollingIntervals(.init(foregroundSeconds: 8, backgroundSeconds: 45))
+            curtains.shutdown(); devices.shutdown(); await api.shutdown()
+            let next = CountedPreview(), (restored, nextDevices, nextAPI) = make(defaults, transport: next)
+            #expect(nextDevices.pollingIntervals == .init(foregroundSeconds: 8, backgroundSeconds: 45))
+            await nextDevices.refreshNow()
+            #expect(restored.states[device().did]?.position == 29)
+            restored.shutdown(); nextDevices.shutdown(); await nextAPI.shutdown()
+        }
+    }
+    @Test("Failed confirmation ends the write; shared polling uses standard backoff and recovers without manual unlocking")
+    func backoffAndRecovery() async throws {
+        let suite = "curtain-retry-" + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        defaults.set([String](), forKey: "curtain.daily.enabled")
-        let network = CountedPreview(), (curtains, devices, api) = make(defaults, transport: network)
-        #expect(!curtains.includes(device().did))
-        for _ in 0..<12 { await devices.refreshNow() }
-        #expect(await network.count == 0) // Repeated rounds/panel wakes do not bypass the switch.
-        #expect(!curtains.send(device().did, .position(64)))
-        curtains.setEnabled(device(), true)
-        #expect(await network.count == 0)
-        await devices.refreshNow()
-        #expect(curtains.states[device().did]?.position == 29)
-        #expect(!api.curtainEvents.snapshot().contains { $0.kind == .write || $0.kind == .action })
-        let before = await network.count
-        await devices.refreshNow()
-        #expect(await network.count == before + 1)
-        devices.setPollingIntervals(.init(foregroundSeconds: 8, backgroundSeconds: 45))
-        #expect(await network.count == before + 1)
+        var now = Date(timeIntervalSince1970: 1000)
+        let network = CountedPreview(failReadback: true)
+        let (curtains, devices, api) = make(defaults, transport: network, now: { now })
         #expect(curtains.send(device().did, .position(64)))
-        let deadline = Date().addingTimeInterval(3)
-        while curtains.isWorking(device().did), Date() < deadline { try await Task.sleep(for: .milliseconds(2)) }
-        #expect(curtains.states[device().did]?.position == 64)
-        #expect(defaults.stringArray(forKey: "curtain.daily.enabled") == [device().did])
-        curtains.shutdown(); devices.shutdown(); await api.shutdown()
-        let next = CountedPreview(), (restored, restoredDevices, restoredAPI) = make(defaults, transport: next)
-        #expect(restored.includes(device().did))
-        #expect(restoredDevices.pollingIntervals == .init(foregroundSeconds: 8, backgroundSeconds: 45))
-        #expect(await next.count == 0)
-        await restoredDevices.refreshNow()
-        #expect(restored.states[device().did]?.position == 29)
-        restored.shutdown(); restoredDevices.shutdown(); await restoredAPI.shutdown()
-    }
-    @Test("A failed readback pauses automatic polls across restart, and an explicit successful manual read restores them")
-    func persistedPauseAndRecovery() async throws {
-        let suite = "curtain-paused-" + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let network = CountedPreview(failReadback: true), (curtains, devices, api) = make(defaults, transport: network)
-        curtains.setEnabled(device(), true)
-        curtains.send(device().did, .position(64))
-        for _ in 0..<5_000 { if !curtains.isWorking(device().did) { break }; await Task.yield() }
-        #expect(curtains.pausedPolling[device().did] == .propertyError)
-        let count = await network.count
-        for _ in 0..<3 { await devices.refreshNow() }
-        #expect(await network.count == count)
-        curtains.shutdown(); devices.shutdown(); await api.shutdown()
-        let next = CountedPreview(), (restored, restoredDevices, restoredAPI) = make(defaults, transport: next)
-        #expect(restored.pausedPolling[device().did] == .propertyError)
-        restored.setEnabled(device(), false)
-        restored.setEnabled(device(), true)
-        #expect(restored.pausedPolling[device().did] == .propertyError)
-        #expect(await next.count == 0) // Toggling cannot recover a failed device implicitly.
-        await restoredDevices.refreshNow()
-        #expect(await next.count == 0)
-        restored.read(device().did)
-        for _ in 0..<5_000 { if !restored.isWorking(device().did) { break }; await Task.yield() }
-        #expect(restored.pausedPolling[device().did] == nil)
-        let afterManual = await next.count
-        await restoredDevices.refreshNow()
-        #expect(await next.count == afterManual + 1)
-        restored.shutdown(); restoredDevices.shutdown(); await restoredAPI.shutdown()
-    }
-    @Test("Missing legacy preference defaults off; a read while disabled does not opt into polling or writes")
-    func missingPreferenceAndManualRead() async throws {
-        let suite = "curtain-default-off-" + UUID().uuidString
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let network = CountedPreview(), (curtains, devices, api) = make(defaults, transport: network)
-        #expect(!curtains.includes(device().did))
-        await devices.refreshNow()
-        #expect(await network.count == 0)
-        #expect(curtains.read(device().did))
-        let deadline = Date().addingTimeInterval(3)
-        while curtains.isWorking(device().did), Date() < deadline { try await Task.sleep(for: .milliseconds(1)) }
-        #expect(curtains.states[device().did]?.position == 29)
-        let count = await network.count
+        try await idle(curtains)
+        #expect(curtains.readFailures[device().did] == .propertyError)
+        #expect(curtains.states[device().did]?.position == nil && curtains.errors[device().did] != nil)
+        let before = await network.count
         for _ in 0..<12 { await devices.refreshNow() }
-        #expect(await network.count == count)
-        #expect(!curtains.send(device().did, .open))
-        #expect(await network.count == count)
-        #expect(defaults.stringArray(forKey: "curtain.daily.enabled") == nil)
+        #expect(await network.count == before)
+        #expect(curtains.retryStates[device().did]?.nextRetryAt == now.addingTimeInterval(20))
+        now.addTimeInterval(20)
+        await devices.refreshNow() // Still faulty: one bounded round, no write retry, then 40-second backoff.
+        #expect(curtains.retryStates[device().did]?.consecutiveFailures == 2)
+        #expect(curtains.retryStates[device().did]?.nextRetryAt == now.addingTimeInterval(40))
+        await network.recover(); now.addTimeInterval(40)
+        await devices.refreshNow()
+        #expect(curtains.readFailures[device().did] == nil && curtains.retryStates[device().did] == nil)
+        #expect(curtains.errors[device().did] == nil && curtains.states[device().did]?.message == nil)
+        #expect(curtains.states[device().did]?.position == 29)
+        #expect(api.curtainEvents.snapshot().filter { $0.kind == .write && $0.outcome == .attempt }.count == 1)
+        #expect(defaults.object(forKey: CurtainControlController.pausedKey) == nil)
         curtains.shutdown(); devices.shutdown(); await api.shutdown()
     }
 }

@@ -27,7 +27,7 @@ private final class PresentationClock: @unchecked Sendable {
         let controller = CurtainControlController(api: api, defaults: defaults, makeSession: {
             try await api.beginCurtainControl(did: $0, scheduler: scheduler, clock: clock.clock)
         })
-        controller.reconcile([device]); controller.setEnabled(device, true)
+        controller.reconcile([device])
         #expect(journal.snapshot().allSatisfy { $0.outcome == .noPacket })
         controller.send(device.did, .position(64))
         let deadline = Date().addingTimeInterval(3)

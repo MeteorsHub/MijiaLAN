@@ -24,6 +24,7 @@ private actor NormalProfileTransport: MiioTransport {
         // If a hidden normal path requests motor-reverse, it must fail rather than look healthy.
         fake.propertyErrors["2.5"] = -4004
     }
+    func setFault(_ failed: Bool) { fake.propertyErrors["2.9"] = failed ? -4004 : nil }
     func exchange(_ packet: Data, host: String, port: UInt16, timeout: Duration) async throws -> Data {
         fake.stamp = 5_000 + UInt32(clock.now.components.seconds)
         timeouts.append(timeout)
@@ -70,6 +71,30 @@ struct CurtainNormalProfileTests {
         #expect(reads.allSatisfy { !$0.contains(5) && Set($0).isSubset(of: Set([2,3,4,9,10])) })
         #expect(await network.timeouts.allSatisfy { $0 == .seconds(2) })
         #expect(journal.snapshot().filter { $0.kind == .read && $0.outcome == .sent }.allSatisfy { $0.packet?.curtainReadProfile == .normalFive && $0.packet?.addresses?.contains(where: { $0.piid == 5 }) == false })
+        await session.end()
+    }
+    @Test("Normal App recovery rechecks all five safety fields without unlocking or retrying an unsuccessful write")
+    func normalRecovery() async throws {
+        let time = NormalProfileClock(), network = NormalProfileTransport(clock: time), d = device()
+        let journal = DeviceEventLog(scope: .offlineTest)
+        let client = MiioClient(host: d.host, token: Data(repeating: 0, count: 16), transport: network,
+            knownModel: d.model, events: journal, time: .init(now: { time.now }))
+        let session = CurtainControlSession(device: d, client: client, scheduler: CurtainRequestScheduler(clock: time.clock),
+            clock: time.clock, isCurrent: { true }, journal: journal, automaticRecovery: true)
+        _ = try await session.poll()
+        await network.setFault(true)
+        await #expect(throws: (any Error).self) { try await session.manual(.position(64)) }
+        #expect(await session.snapshot().position == nil)
+        time.advance(.seconds(30))
+        await #expect(throws: (any Error).self) { try await session.poll() }
+        #expect(await network.reads.last == [2,3,4,9,10])
+        await network.setFault(false); time.advance(.seconds(40))
+        #expect(try await session.poll().position == 0)
+        #expect(await network.reads.last == [2,3,4,9,10])
+        #expect(!journal.snapshot().contains { $0.kind == .write })
+        #expect(try await session.manual(.position(64)).confirmed)
+        #expect(journal.snapshot().filter { $0.kind == .write && $0.outcome == .attempt }.count == 1)
+        #expect(await network.reads.allSatisfy { !$0.contains(5) })
         await session.end()
     }
     @Test("Legacy validation start/refresh/move keeps five-property preflight and unchanged two-property confirmation")

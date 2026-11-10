@@ -37,13 +37,13 @@ private final class PollTime: @unchecked Sendable {
         for _ in 0..<2_000 { if condition() { return }; await Task.yield() }
         #expect(condition())
     }
-    @Test("Defaults are 10 seconds visible and 30 hidden, persist independently, and reject invalid stored intervals")
+    @Test("Defaults are 5 seconds visible and 30 hidden, persist independently, and reject invalid stored intervals")
     func defaultsAndPersistence() throws {
         let name = "polling-" + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
         #expect(DevicePollingIntervals.load(from: defaults) == .init())
-        #expect(DevicePollingIntervals().interval(panelVisible: true) == .seconds(10))
+        #expect(DevicePollingIntervals().interval(panelVisible: true) == .seconds(5))
         #expect(DevicePollingIntervals().interval(panelVisible: false) == .seconds(30))
         DevicePollingIntervals(foregroundSeconds: 7, backgroundSeconds: 81).save(to: defaults)
         let reopened = try #require(UserDefaults(suiteName: name))
@@ -53,7 +53,9 @@ private final class PollTime: @unchecked Sendable {
         #expect(DevicePollingIntervals.load(from: reopened) == .init())
         reopened.removeObject(forKey: DevicePollingIntervals.foregroundKey)
         reopened.set(45, forKey: DevicePollingIntervals.backgroundKey)
-        #expect(DevicePollingIntervals.load(from: reopened) == .init(foregroundSeconds: 10, backgroundSeconds: 45))
+        #expect(DevicePollingIntervals.load(from: reopened) == .init(foregroundSeconds: 5, backgroundSeconds: 45))
+        reopened.set(10, forKey: DevicePollingIntervals.foregroundKey)
+        #expect(DevicePollingIntervals.load(from: reopened) == .init(foregroundSeconds: 10, backgroundSeconds: 45)) // No provenance: preserve a possible explicit 10.
         reopened.set(5, forKey: DevicePollingIntervals.foregroundKey)
         #expect(DevicePollingIntervals.load(from: reopened) == .init(foregroundSeconds: 5, backgroundSeconds: 45))
         DevicePollingIntervals(foregroundSeconds: 17, backgroundSeconds: 52).save(to: reopened)
@@ -86,7 +88,7 @@ private final class PollTime: @unchecked Sendable {
         await settle { time.deadlines == [.seconds(30)] }
         time.advance(.seconds(12))
         loop.setInterval(intervals.interval(panelVisible: true))
-        await settle { starts == [.zero, .seconds(12)] && time.deadlines == [.seconds(22)] }
+        await settle { starts == [.zero, .seconds(12)] && time.deadlines == [.seconds(17)] }
         time.advance(.seconds(1)); loop.setInterval(intervals.interval(panelVisible: false))
         await settle { time.deadlines == [.seconds(42)] }
         time.advance(.seconds(2)); loop.setInterval(.seconds(4))
@@ -113,7 +115,7 @@ private final class PollTime: @unchecked Sendable {
         await settle { starts == [.zero] && time.deadlines == [.seconds(30)] }
         time.advance(.seconds(12))
         await provider.setPollingContext(.init(panelVisible: true))
-        await settle { starts == [.zero, .seconds(12)] && time.deadlines == [.seconds(22)] }
+        await settle { starts == [.zero, .seconds(12)] && time.deadlines == [.seconds(17)] }
         controller.setPollingIntervals(.init(foregroundSeconds: 9, backgroundSeconds: 60))
         await settle { time.deadlines == [.seconds(21)] }
         #expect(DevicePollingIntervals.load(from: defaults) == .init(foregroundSeconds: 9, backgroundSeconds: 60))

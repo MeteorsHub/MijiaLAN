@@ -15,7 +15,7 @@ final class CurtainControlController {
     private let api: LANMiotAPI
     let events: CurtainEventLog
     @ObservationIgnored private let makeSession: @Sendable (String) async throws -> CurtainControlSession
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let readOnly: Bool
     @ObservationIgnored private var devices: [String: LocalDevice] = [:]
     @ObservationIgnored private var sessions: [String: CurtainControlSession] = [:]
@@ -33,27 +33,20 @@ final class CurtainControlController {
     private(set) var backgroundReading: Set<String> = []
     private(set) var stopping: Set<String> = []
     private(set) var submissions: [String: Submission] = [:]
-    private(set) var pausedPolling: [String: DeviceEventLog.Reason]
-    private(set) var enabledIDs: Set<String>
+    private(set) var readFailures: [String: DeviceEventLog.Reason] = [:]
+    private(set) var retryStates: [String: ProbeRetryState] = [:]
     static let preferenceKey = "curtain.daily.enabled"
     static let pausedKey = "curtain.polling.paused"
 
-    init(api: LANMiotAPI, defaults: UserDefaults, readOnly: Bool = false, makeSession: (@Sendable (String) async throws -> CurtainControlSession)? = nil) {
-        self.api = api; self.defaults = defaults; self.readOnly = readOnly; events = api.curtainEvents
+    init(api: LANMiotAPI, defaults: UserDefaults, readOnly: Bool = false, now: @escaping () -> Date = { Date() }, makeSession: (@Sendable (String) async throws -> CurtainControlSession)? = nil) {
+        self.api = api; self.now = now; self.readOnly = readOnly; events = api.curtainEvents
         self.makeSession = makeSession ?? { try await api.beginCurtainControl(did: $0) }
-        enabledIDs = Set(defaults.stringArray(forKey: Self.preferenceKey) ?? [])
-        pausedPolling = (defaults.dictionary(forKey: Self.pausedKey) as? [String: String] ?? [:]).compactMapValues(DeviceEventLog.Reason.init(rawValue:))
+        // Retire product-only gates. These keys contain no configuration, credentials or pairing data.
+        // An old false/empty opt-in or persisted failure must not disable normal operation after upgrade.
+        defaults.removeObject(forKey: Self.preferenceKey)
+        defaults.removeObject(forKey: Self.pausedKey)
     }
     func isWorking(_ did: String) -> Bool { working.contains(did) }
-    func includes(_ did: String) -> Bool { enabledIDs.contains(did) }
-    func setEnabled(_ device: LocalDevice, _ enabled: Bool) {
-        if enabled { enabledIDs.insert(device.did) } else { enabledIDs.remove(device.did) }
-        defaults.set(enabledIDs.sorted(), forKey: Self.preferenceKey)
-        // The policy is also recorded by the actual client; preference entries retain the opt-in boundary.
-        events.record(device.did, source: .preference, stage: .idle, outcome: .noPacket, reason: .configuration, valueType: .boolean, booleanValue: enabled)
-        if !enabled { let last = states[device.did]; end(device.did); states[device.did] = last }
-        // No query/control here and no pause reset. Only the shared timer may later read an enabled device.
-    }
     func setEditing(_ did: String, editor: UUID, active: Bool) {
         if active { editors[did, default: []].insert(editor) }
         else { editors[did]?.remove(editor); if editors[did]?.isEmpty == true { editors[did] = nil } }
@@ -63,9 +56,6 @@ final class CurtainControlController {
         guard next != devices else { return }
         for did in Set(sessionIDs.keys).union(actions.keys).union(reads.keys) where next[did] != devices[did] { end(did) }
         events.register(configured.filter { $0.model == CurtainValidationSession.model }.map(\.did))
-        for device in configured where device.model == CurtainValidationSession.model {
-            if let reason = pausedPolling[device.did] { events.record(device.did, source: .startup, stage: .idle, outcome: .noPacket, reason: reason) }
-        }
         devices = next
     }
     private func session(_ did: String) async throws -> CurtainControlSession {
@@ -100,6 +90,7 @@ final class CurtainControlController {
         observers.removeValue(forKey: did)?.cancel()
         sessionIDs[did] = nil; sessions[did] = nil; editors[did] = nil
         states[did] = nil; errors[did] = nil; submissions[did] = nil
+        readFailures[did] = nil; retryStates[did] = nil
         working.remove(did); stopping.remove(did); backgroundReading.remove(did)
         let previous = ends[did]
         ends[did] = Task {
@@ -118,7 +109,7 @@ final class CurtainControlController {
         for device in devices.values.sorted(by: { $0.did < $1.did }) where device.model == CurtainValidationSession.model {
             guard !Task.isCancelled, !shuttingDown else { return }
             let did = device.did
-            guard includes(did), pausedPolling[did] == nil, !isWorking(did), reads[did] == nil, editors[did]?.isEmpty != false else { continue }
+            guard (retryStates[did]?.nextRetryAt ?? .distantPast) <= now(), !isWorking(did), reads[did] == nil, editors[did]?.isEmpty != false else { continue }
             let id = UUID()
             backgroundReading.insert(did)
             let task = Task {
@@ -129,12 +120,13 @@ final class CurtainControlController {
                     guard reads[did]?.id == id, !Task.isCancelled else { return }
                     var display = states[did] ?? fresh
                     // Publish valid values once, keeping presentation stage and the last user result stable.
-                    if states[did] == nil { display.stage = .idle; display.message = nil }
+                    if states[did] == nil || readFailures[did] != nil { display.stage = .idle; display.message = nil }
                     display.phase = fresh.phase; display.position = fresh.position; display.motorStatus = fresh.motorStatus
                     display.sampledAt = fresh.sampledAt; display.lastKnownPosition = fresh.lastKnownPosition
                     display.lastKnownMotorStatus = fresh.lastKnownMotorStatus; display.lastKnownAt = fresh.lastKnownAt
                     display.canStop = fresh.canStop; display.failureReason = nil
                     states[did] = display
+                    clearFailure(did)
                 } catch {
                     // Stop may cancel the session's old read. That is not a device failure or retry signal.
                     let failed = await sessions[did]?.snapshot()
@@ -147,19 +139,9 @@ final class CurtainControlController {
             await task.value
         }
     }
-    private func savePauses() { defaults.set(pausedPolling.mapValues(\.rawValue), forKey: Self.pausedKey) }
-    func pollingPauseDescription(_ did: String) -> String? {
-        guard let reason = pausedPolling[did] else { return nil }
-        return switch reason {
-        case .timeout: L10n.tr("查询超时", "Query timed out")
-        case .identity: L10n.tr("设备身份未通过校验", "Device identity failed validation")
-        case .firmware: L10n.tr("型号或固件未通过验证", "Model or firmware not verified")
-        case .untrustedReading: L10n.tr("不可信读数", "Untrusted readings")
-        case .invalidReply: L10n.tr("应答缺值或校验失败", "Reply missing values or failed validation")
-        case .propertyError: L10n.tr("设备属性返回错误", "Device property error")
-        case .clockDiscontinuity: L10n.tr("设备时钟偏差超限", "Device clock difference exceeds tolerance")
-        default: L10n.tr("此前查询或操作未确认", "Previous query or operation unconfirmed")
-        }
+    private func clearFailure(_ did: String) {
+        if readFailures.removeValue(forKey: did) != nil { errors[did] = nil }
+        retryStates[did] = nil
     }
     private func source(_ command: CurtainControlSession.Command?) -> DeviceEventLog.Source {
         switch command { case .position: .manualPosition; case .open: .manualOpen; case .close: .manualClose; case .stop: .manualStop; case nil: .manualRead }
@@ -175,9 +157,6 @@ final class CurtainControlController {
         }
         guard !shuttingDown, devices[did]?.model == CurtainValidationSession.model else {
             return reject(did, command, reason: .configuration, message: L10n.tr("请求未接收：设备不再可用。", "Request not accepted: device is unavailable."))
-        }
-        if command != nil, !includes(did) {
-            return reject(did, command, reason: .configuration, message: L10n.tr("指令未接收：请先开启此卷帘的日常控制。", "Command not accepted: enable daily control for this curtain first."))
         }
         if let target = command?.target, !(0...100).contains(target) {
             return reject(did, command, reason: .configuration, message: L10n.tr("请求未接收：目标位置必须为 0–100%。", "Request not accepted: target must be 0–100%."))
@@ -195,9 +174,6 @@ final class CurtainControlController {
         } else if isWorking(did) {
             return reject(did, command, reason: .busy, message: L10n.tr("请求未接收：已有用户操作进行中，请等待结果；停止仍可用。", "Request not accepted: another user operation is active. Wait for its result; Stop remains available."))
         }
-        if command != nil, command != .stop, let reason = pausedPolling[did] {
-            return reject(did, command, reason: reason, message: L10n.tr("目标未接收：读取已暂停，请先手动读取并恢复。", "Target not accepted: reads are paused. Read manually to recover first."))
-        }
         let id = UUID(), precedingRead = command == .stop ? nil : reads[did]?.task
         working.insert(did); errors[did] = nil
         submissions[did] = Submission(id: id, command: command, phase: precedingRead == nil ? .running : .waiting)
@@ -208,9 +184,9 @@ final class CurtainControlController {
                 await precedingRead?.value
                 try Task.checkCancellation()
                 guard actions[did]?.id == id else { return }
-                if precedingRead != nil, command != nil, let reason = pausedPolling[did] {
+                if precedingRead != nil, command != nil, let reason = readFailures[did] {
                     submissions[did]?.phase = .failed
-                    errors[did] = L10n.tr("已提交的请求未发送：前一读取失败，请手动读取并恢复。", "Submitted request was not sent: the preceding read failed. Read manually to recover.")
+                    errors[did] = L10n.tr("已提交的请求未发送：前一读取失败。状态将自动重新检查，请确认错误后再操作。", "Submitted request was not sent: the preceding read failed. State checks resume automatically; review the error before trying again.")
                     events.record(did, operation: id, source: source(command), stage: .waiting, outcome: .noPacket, reason: reason, target: command?.target, writeAttempted: false, writeSent: false)
                     return
                 }
@@ -220,7 +196,7 @@ final class CurtainControlController {
                 guard actions[did]?.id == id else { return }
                 result.stage = .finished; states[did] = result
                 submissions[did]?.phase = .succeeded
-                if command == nil, pausedPolling.removeValue(forKey: did) != nil { savePauses() }
+                clearFailure(did)
             } catch {
                 let failed = await sessions[did]?.snapshot()
                 guard actions[did]?.id == id, !Task.isCancelled else { return }
@@ -235,15 +211,18 @@ final class CurtainControlController {
     private func fail(_ did: String, id: UUID, command: CurtainControlSession.Command?, source: DeviceEventLog.Source, error: any Error) {
         events.record(did, operation: id, source: source, stage: states[did]?.stage ?? .requested, outcome: .paused,
                       reason: DeviceEventLog.reason(error), code: DeviceEventLog.code(error), target: command?.target)
-        errors[did] = states[did]?.message ?? L10n.tr("请求失败；已暂停自动读取，不会重试。", "Request failed; auto reads paused without retry.")
-        pausedPolling[did] = DeviceEventLog.reason(error); savePauses()
+        errors[did] = states[did]?.message ?? L10n.tr("请求失败；写入不会重发，状态读取将在退避后重新检查。", "Request failed; writes are not retried. State checks resume after backoff.")
+        readFailures[did] = DeviceEventLog.reason(error)
+        let count = min(ProbeRetryPolicy.maximumFailures, (retryStates[did]?.consecutiveFailures ?? 0) + 1)
+        retryStates[did] = ProbeRetryState(consecutiveFailures: count,
+            nextRetryAt: now().addingTimeInterval(ProbeRetryPolicy().interval(afterFailures: count, jitter: 1)))
     }
     func summary(_ did: String) -> String? {
         guard devices[did]?.model == CurtainValidationSession.model else { return nil }
         if isWorking(did) { return submissions[did]?.phase == .waiting ? L10n.tr("已提交 · 等待当前读取", "Submitted · Waiting for Read") : L10n.tr("用户请求进行中", "User Request Running") }
-        if pausedPolling[did] != nil { return L10n.tr("自动读取已暂停 · 请手动恢复", "Auto Reads Paused · Resume Manually") }
+        if readFailures[did] != nil { return L10n.tr("读取失败 · 将自动重试", "Read Failed · Will Retry Automatically") }
         guard let position = states[did]?.position else {
-            return includes(did) ? L10n.tr("等待统一轮询", "Awaiting Device Poll") : L10n.tr("日常控制未启用 · 可手动读取", "Daily Control Off · Read Once Available")
+            return L10n.tr("等待刷新", "Awaiting Refresh")
         }
         return L10n.tr("上次 \(position)%", "Last read \(position)%")
     }

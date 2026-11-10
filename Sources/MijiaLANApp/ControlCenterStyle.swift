@@ -78,11 +78,11 @@ struct ConnectionIssue {
     let message: String
     let needsAttention: Bool
 
-    init(health: LANDeviceHealth, pollingPaused: Bool = false) {
-        if pollingPaused {
+    init(health: LANDeviceHealth, readFailed: Bool = false) {
+        if readFailed {
             needsAttention = true
-            title = L10n.tr("自动读取已暂停", "Auto Reads Paused")
-            message = L10n.tr("上次查询未通过验证，已暂停该台自动读取。请打开详情查看原因，手动读取通过后恢复，无需启用控制。", "The last query failed validation; auto reads are paused for this device. Open details for the reason. A successful manual read resumes polling; controls can remain off.")
+            title = L10n.tr("读取失败", "Read Failed")
+            message = L10n.tr("上次读取失败，将在退避后自动检查。可打开详情查看原因和最近有效读数。", "The last read failed. State will be checked again after backoff. Open details for the error and last valid readings.")
             return
         }
         needsAttention = [.tokenRejected, .unsupported].contains(health.state)

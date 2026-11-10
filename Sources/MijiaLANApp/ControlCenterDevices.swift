@@ -26,7 +26,7 @@ struct ControlCenterDevices: View {
                     Image(systemName: "wifi.slash").font(.title3).foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(L10n.tr("暂时没有在线设备", "No Devices Online")).font(.system(size: 13, weight: .medium))
-                        Text(model.config.devices.contains { $0.model == CurtainValidationSession.model } ? L10n.tr("卷帘随统一轮询读取；暂停的设备请在详情中手动恢复", "Curtains follow device polling. Resume paused devices manually in their details.") : L10n.tr("设备连接后会自动出现在这里", "Devices appear here when they reconnect.")).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(L10n.tr("设备连接后会自动出现在这里", "Devices appear here when they reconnect.")).font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                 }
                 .padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -133,7 +133,7 @@ private struct OfflineDeviceTile: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let issue = ConnectionIssue(health: model.health[device.did] ?? LANDeviceHealth(), pollingPaused: model.curtains.pausedPolling[device.did] != nil)
+        let issue = ConnectionIssue(health: model.health[device.did] ?? LANDeviceHealth(), readFailed: model.curtains.readFailures[device.did] != nil)
         Button(action: action) {
             VStack(alignment: .leading, spacing: 7) {
                 if model.retryingDeviceIDs.contains(device.did) { ProgressView().controlSize(.mini).frame(width: 18, height: 18) }
@@ -168,7 +168,7 @@ struct OfflineDeviceCard: View {
 
     var body: some View {
         let health = model.health[device.did] ?? LANDeviceHealth()
-        let issue = ConnectionIssue(health: health, pollingPaused: model.curtains.pausedPolling[device.did] != nil)
+        let issue = ConnectionIssue(health: health, readFailed: model.curtains.readFailures[device.did] != nil)
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Text(DevicePresentation.name(device)).font(.system(size: 13, weight: .semibold)).foregroundStyle(.primary).lineLimit(2)

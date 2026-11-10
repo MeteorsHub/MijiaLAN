@@ -59,7 +59,7 @@ struct MiioPolicyTests {
         let device = LocalDevice(did: "123", name: "Synthetic", model: CurtainValidationSession.model, host: "192.0.2.12", token: String(repeating: "0", count: 32), specType: CurtainValidationSession.specification)
         let client = MiioClient(host: device.host, token: Data(repeating: 0, count: 16), transport: transport, knownModel: device.model,
             events: journal, eventIdentifier: device.did, policy: policy, expectedDeviceID: 123, time: .init(now: { time.now }))
-        return (CurtainControlSession(device: device, client: client, scheduler: CurtainRequestScheduler(clock: time.sessionClock), clock: time.sessionClock, isCurrent: { true }, journal: journal), transport, time, journal)
+        return (CurtainControlSession(device: device, client: client, scheduler: CurtainRequestScheduler(clock: time.sessionClock), clock: time.sessionClock, isCurrent: { true }, journal: journal, automaticRecovery: false), transport, time, journal)
     }
     @Test("Real, echo and delayed clock replies stay bounded across multiple independent hello periods", arguments: [ClockReplyTransport.Model.real, .echo, .delayed])
     fileprivate func manyHelloPeriods(_ model: ClockReplyTransport.Model) async throws {
