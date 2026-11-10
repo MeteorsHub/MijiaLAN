@@ -48,8 +48,8 @@ public actor MiioClient {
     static let clockMaxAge: Duration = .seconds(120)
     /// "User ack timeout": a request ID the device already used, or (pre-MIoT firmware) a method it does not know.
     static let userAckTimeoutCode = -9999
-    /// A shorter per-attempt wait for calls someone is waiting on, such as a write from Apple Home, which shows
-    /// "Updating" until it is answered: a lost packet is then retried sooner. Never lengthens the client's wait.
+    /// A shorter per-attempt wait for calls someone is waiting on, such as a write from Apple Home.
+    /// Never lengthens the client's wait or changes the call's retry policy.
     @TaskLocal public static var attemptTimeout: Duration?
     public init(
         host: String,

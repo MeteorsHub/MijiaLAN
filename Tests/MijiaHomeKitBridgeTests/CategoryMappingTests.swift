@@ -223,7 +223,7 @@ struct CategoryMappingTests {
     @Test("An airer's light is named for the light, and a repeated Pause option is one switch")
     func airerNames() throws {
         let (plan, names) = try L10n.$overrideLanguage.withValue(.zhHans) {
-            let plan = try plan(try snapshot("xiaomi-airer-0002", model: "test.airer.0002"))
+            let plan = try self.plan(try snapshot("xiaomi-airer-0002", model: "test.airer.0002"))
             return (plan, switchNames(plan))
         }
         #expect(names == ["电机控制·暂停", "电机控制·升高", "电机控制·降低", "电机控制·设限时上升", "电机控制·设限时降低", "照明", "夜灯开关"])
@@ -245,7 +245,7 @@ struct CategoryMappingTests {
         #expect(try commands(plan, up, "25", .bool(false), s) == [])
     }
 
-    @Test("A mode the spec does not list turns every mode switch off rather than making the fan unavailable")
+    @Test("An unlisted mode stays unavailable without disguising an invalid reading as every mode being off")
     func unlistedMode() throws {
         var s = try snapshot("dmaker-p220", model: "test.fan.p220")
         let plan = try plan(s)
@@ -257,8 +257,10 @@ struct CategoryMappingTests {
         s.health = LANDeviceHealth(state: .online)
         s.readings["p:2:1"] = DeviceReading(value: .bool(true), code: 0)
         s.readings["p:2:3"] = DeviceReading(value: .number(9), code: 0)
-        for mode in modes { #expect(value(plan, mode, "25", s) == .bool(false)) }
-        #expect(value(plan, fan, "BF", s) == .uint8(0))
+        for mode in modes { #expect(value(plan, mode, "25", s) == nil) }
+        #expect(value(plan, fan, "BF", s) == nil)
+        // Independently valid power remains available; strict mode validation does not downgrade the whole device.
+        #expect(value(plan, fan, "B0", s) == .uint8(1))
     }
 
     @Test("A bed without a power switch reaches Home as its positions, leaving out the mode list's None and its vendor motors")
@@ -292,7 +294,8 @@ struct CategoryMappingTests {
         let fixtures = try #require(Bundle.module.urls(forResourcesWithExtension: "json", subdirectory: "Specs"))
             .filter { $0.lastPathComponent != "rust-value-reference.json" }
         var snapshots: [DeviceSnapshot] = []
-        for url in fixtures {
+        for resource in fixtures {
+            let url = resource as URL
             let name = url.deletingPathExtension().lastPathComponent
             let schema = try JSONDecoder().decode(DeviceSchema.self, from: Data(contentsOf: url))
             snapshots.append(try snapshot(name, model: "test.\(schema.category).\(name)"))
@@ -427,7 +430,7 @@ struct CategoryMappingTests {
 
     @Test("A bath heater without any temperature keeps its heating switch, now the main control")
     func bathHeaterWithoutTemperature() throws {
-        let plan = try L10n.$overrideLanguage.withValue(.zhHans) { try plan(try snapshot("yeelink-bhf-v10", model: "test.bhf.v10")) }
+        let plan = try L10n.$overrideLanguage.withValue(.zhHans) { try self.plan(try snapshot("yeelink-bhf-v10", model: "test.bhf.v10")) }
         #expect(!plan.services.contains { $0.type.rawValue == "BC" })
         let heating = try #require(plan.services.first { $0.isPrimary })
         #expect(heating.type == .switch)

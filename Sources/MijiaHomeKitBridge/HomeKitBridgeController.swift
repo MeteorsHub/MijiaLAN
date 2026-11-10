@@ -121,7 +121,7 @@ public final class HomeKitBridgeController {
         var layoutWrites = 0
         var identifierWrites = 0
     }
-    private(set) var syncStatistics = SyncStatistics()
+    @ObservationIgnored private(set) var syncStatistics = SyncStatistics()
 
     private let vault: HomeKitBridgeVault
     private let defaults: UserDefaults
@@ -150,7 +150,7 @@ public final class HomeKitBridgeController {
     /// Wi-Fi power save delays answers by up to about 2 s, the same allowance as the reachability probe.
     static let writeAttemptTimeout: Duration = .milliseconds(2500)
     @ObservationIgnored private var secrets: HomeKitBridgeSecrets?
-    var bridge: HAPBridge?
+    @ObservationIgnored var bridge: HAPBridge?
     @ObservationIgnored private var service: AppleHAPService?
     @ObservationIgnored private var layout: Layout
     @ObservationIgnored private var serviceNames: [String: [String: String]]

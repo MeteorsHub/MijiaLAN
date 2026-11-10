@@ -52,6 +52,6 @@ CI 会编译真实 App/CLI，并运行 SDK、HomeKit、Matter RPC、卷帘交互
 
 ## 验证边界
 
-Linux 隔离 SDK/交互回归 152 项通过，包括真实 UDP 回环、512 轮卷帘正常路径无 PIID5、写入去重和日志滚动。该 harness 的 miIO 加密替身不等于 macOS 原生 AES/完整 App 验收。Matter 的 GitHub job 已通过；原生 macOS CI 结果以本分支最终提交的 Actions 为准。
+Linux 隔离回归 203 项通过：原有 SDK/交互回归及新数值/扫地机回归 152 项，HomeKit 映射、服务选择、值约束、帧顺序、写入来源及鉴权回归 51 项。包含真实 UDP 回环、512 轮卷帘正常路径无 PIID5、写入去重和日志滚动。HomeKit 使用真实 HAPTransport/Swift Crypto，Linux 测试仅适配系统锁及 CryptoKit 模块名；miIO harness 的加密替身不等于 macOS 原生 AES/完整 App 验收。HAPTransport 亦已通过独立实际编译。Matter 的 GitHub job 已通过；原生 macOS CI 结果以本分支最终提交的 Actions 为准。
 
 本轮没有部署 App、发布 Release 或联系家庭设备。原生界面、登录启动的系统授权状态、实际 HomeKit 配对/控制和长时间实机稳定性需在对应环境验收。正在运行的家庭旁读观察不受本分支影响。

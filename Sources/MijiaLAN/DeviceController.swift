@@ -55,18 +55,18 @@ public final class DeviceController {
         var specification: String?
         var language: AppLanguage
     }
-    private var schemaTemplates: [SchemaKey: DeviceSnapshot] = [:]
-    private var lastSlow: [String: Date] = [:]
-    private var refreshing = false
-    private var queues: [String: Task<Void, Error>] = [:]
-    private var queueIDs: [String: UUID] = [:]
-    private var actionsPending: Set<String> = []
-    private var continuations: [UUID: AsyncStream<HomeProviderEvent>.Continuation] = [:]
+    @ObservationIgnored private var schemaTemplates: [SchemaKey: DeviceSnapshot] = [:]
+    @ObservationIgnored private var lastSlow: [String: Date] = [:]
+    @ObservationIgnored private var refreshing = false
+    @ObservationIgnored private var queues: [String: Task<Void, Error>] = [:]
+    @ObservationIgnored private var queueIDs: [String: UUID] = [:]
+    @ObservationIgnored private var actionsPending: Set<String> = []
+    @ObservationIgnored private var continuations: [UUID: AsyncStream<HomeProviderEvent>.Continuation] = [:]
     private struct Pending {
         var command: CapabilityCommand
         var replies: [CheckedContinuation<Void, Error>]
     }
-    private var coalesced: [String: Pending] = [:]
+    @ObservationIgnored private var coalesced: [String: Pending] = [:]
 
     public convenience init(api: LANMiotAPI, config: @escaping @Sendable () -> LocalHomeConfig, pollingDefaults: UserDefaults? = nil) {
         self.init(api: api, config: config, pollingDefaults: pollingDefaults, pollingClock: .init())
