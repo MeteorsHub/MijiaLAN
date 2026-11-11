@@ -142,6 +142,8 @@ swift test --force-resolved-versions --filter "MatterRPCTests|MatterDevicePlanTe
 
 Matter 测试创建并启动真实 matter.js 服务端，用模拟设备控制进程验证回读、写入失败、
 离线、轮询不回写，以及重启并调整顺序后保留编号。它们不验证真实米家设备或 M200。
+App IPC 测试通过显式 `--app <临时目录> --port <临时端口>` 避开正式桥接的 5540；
+该用例会保持 5540 已被占用，确认无需停止正式桥接。正常 App 启动仍默认使用 5540，测试不会改动正式配对存储。
 Swift 测试检查设备映射、单位转换、桥接选项独立保存，以及 IPC 数据中不包含 LAN 密钥。
 `.github/workflows/matter-bridge.yml` 分别在 Linux 和 macOS 上运行这两部分；需要推送后才会执行。
 

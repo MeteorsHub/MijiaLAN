@@ -7,10 +7,45 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
+import { createSocket } from 'node:dgram';
+import { parseStartupOptions } from '../src/startup-options.js';
 
-test('App mode exchanges only JSON on stdout, reports pairing and exits with parent', { timeout: 15_000 }, async () => {
+function bind(socket, port) {
+  return new Promise((resolve, reject) => {
+    socket.once('error', reject);
+    socket.bind(port, '127.0.0.1', () => { socket.removeListener('error', reject); resolve(); });
+  });
+}
+
+function close(socket) {
+  try { socket.address(); } catch { return; }
+  return new Promise(resolve => socket.close(resolve));
+}
+
+test('Normal launches keep port 5540; only an explicit valid App port overrides it', () => {
+  assert.deepEqual(parseStartupOptions(['--app', '/tmp/fixture']), { appMode: true, port: 5540 });
+  assert.deepEqual(parseStartupOptions(['/tmp/cli', '/tmp/config']), { appMode: false, port: 5540 });
+  assert.deepEqual(parseStartupOptions(['--app', '/tmp/fixture', '--port', '15540']), { appMode: true, port: 15540 });
+  for (const port of ['0', '-1', '65536', '1.5', 'NaN', ' 5540', '5540extra', '']) {
+    assert.throws(() => parseStartupOptions(['--app', '/tmp/fixture', '--port', port]));
+  }
+  assert.throws(() => parseStartupOptions(['--app', '/tmp/fixture', '--port']));
+  assert.throws(() => parseStartupOptions(['/tmp/cli', '/tmp/config', '--port', '15540']));
+});
+
+test('App mode uses an isolated port with 5540 occupied, exchanges JSON and exits with parent', { timeout: 15_000 }, async t => {
+  const productionPort = createSocket('udp4');
+  t.after(() => close(productionPort));
+  try { await bind(productionPort, 5540); }
+  catch (error) { if (error.code !== 'EADDRINUSE') throw error; } // Keep any existing bridge untouched.
+  const reservation = createSocket('udp4');
+  t.after(() => close(reservation));
+  await bind(reservation, 0);
+  const port = reservation.address().port;
+  assert.notEqual(port, 5540);
+  await close(reservation);
   const storage = await mkdtemp(join(tmpdir(), 'mijia-app-'));
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/main.js', import.meta.url)), '--app', storage],
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/main.js', import.meta.url)), '--app', storage, '--port', String(port)],
     { stdio: ['pipe', 'pipe', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-8192); });
