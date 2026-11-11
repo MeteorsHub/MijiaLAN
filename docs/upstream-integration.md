@@ -52,7 +52,7 @@ CI 会编译真实 App/CLI，并运行 SDK、HomeKit、Matter RPC、卷帘交互
 
 ## 验证边界
 
-Linux 隔离回归 206 项通过：原有 SDK/交互回归及新数值/扫地机回归 152 项，HomeKit 映射、服务选择、值约束、帧顺序、写入来源、鉴权及接口报告回归 54 项。包含真实 UDP 回环、512 轮卷帘正常路径无 PIID5、写入去重和日志滚动。HomeKit 使用真实 HAPTransport/Swift Crypto，Linux 测试仅适配系统锁及 CryptoKit 模块名；miIO harness 的加密替身不等于 macOS 原生 AES/完整 App 验收。HAPTransport 亦已通过独立实际编译。Matter 的 GitHub job 已通过；原生 macOS CI 结果以本分支最终提交的 Actions 为准。
+Linux 隔离回归 211 项通过：原有 SDK/交互回归及新数值/扫地机回归 152 项，HomeKit 映射、服务选择、值约束、帧顺序、写入来源、鉴权、接口报告及 Observation 回归 59 项。包含真实 UDP 回环、512 轮卷帘正常路径无 PIID5、写入去重和日志滚动。HomeKit 使用真实 HAPTransport/Swift Crypto，Linux 测试仅适配系统锁及 CryptoKit 模块名；miIO harness 的加密替身不等于 macOS 原生 AES/完整 App 验收。HAPTransport 亦已通过独立实际编译。Matter 的 GitHub job 已通过；原生 macOS CI 结果以本分支最终提交的 Actions 为准。
 
 本轮没有部署 App、发布 Release 或联系家庭设备。原生界面、登录启动的系统授权状态、实际 HomeKit 配对/控制和长时间实机稳定性需在对应环境验收。正在运行的家庭旁读观察不受本分支影响。
 
@@ -61,3 +61,9 @@ Linux 隔离回归 206 项通过：原有 SDK/交互回归及新数值/扫地机
 家庭 Mac 在 `0efbfa3` 上报告 MijiaCore 独立测试 313 项通过，但主 App/CLI 编译被 `DeviceInterfaceReport` 的旧 API 引用阻塞，其余 Swift 测试未执行。报告生成器现按 `Property.write` 的全部转换类型生成旧 miIO 参数，识别状态聚合读取和 cleaning 绑定，删除已退役的 `format`/`adjust` 引用。新增报告回归，并将真实报告文件纳入 Linux 检查，不再只检查两份 mapper。
 
 Matter IPC 测试现显式选择临时 UDP 端口，并在 5540 已被占用时验证正常 ready/退出。生产默认 5540 保留；不需停止家庭正式桥接。本次修正不涉及设备协议、轮询或控制调度。完整 macOS 构建、测试和打包需在修正提交上重新验证。
+
+### HomeStore 的 Observation 适配
+
+家庭 Mac 在 `5afe00a` 上确认 Node 22.22.0 的 Matter 测试 8/8 通过（正式 5540 桥接未停），MijiaCore 独立测试 313 项通过；主编译随后被 `HomeStore` 上不存在的 Combine 投影阻塞，App/CLI 原生测试和打包尚未执行。桥接现在直接跟踪 `@Observable` 的 HomeStore 与 DeviceController，不修改内置核心库。
+
+Observation 在 MainActor setter 中登记待处理工作，待赋值完成后读取当前缓存并重新注册；一批连续变化合并通知。重新绑定、关闭和重启会更新观察代次并取消旧通知，`waitUntilIdle` 同时等待观察通知与桥接同步。新增 5 项可离线运行的观察回归，以及一项桥接关闭/重启后仍只读缓存的原生集成回归；后者需在 Mac 编译完成后执行。设备协议、轮询、控制及配对存储保持原有实现。

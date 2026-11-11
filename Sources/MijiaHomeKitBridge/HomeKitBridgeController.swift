@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import Combine
 import os
 import HAPApple
 import HAPCore
@@ -53,8 +52,10 @@ public final class HomeKitBridgeController {
             guard isEnabled != oldValue else { return }
             defaults.set(isEnabled, forKey: Self.enabledKey)
             if isEnabled {
+                observeStore()
                 enqueue { await $0.startIfReady() }
             } else {
+                storeObservation.stop()
                 enqueue { await $0.stopNow() }
             }
         }
@@ -130,8 +131,7 @@ public final class HomeKitBridgeController {
     private let logger = os.Logger(subsystem: "com.mijialan.MijiaLAN", category: "HomeKitBridge")
 
     @ObservationIgnored private weak var store: HomeStore?
-    @ObservationIgnored private var capabilityObservationGeneration = UUID()
-    @ObservationIgnored private var storeObservation: AnyCancellable?
+    @ObservationIgnored private let storeObservation = HomeKitStateObservation()
     @ObservationIgnored private var capabilities: DeviceController?
     @ObservationIgnored private var capabilityPlans: [String: CapabilityAccessory] = [:]
     @ObservationIgnored private var publishedCapabilityValues: [String: [UInt64: PublishedValue]] = [:]
@@ -181,10 +181,15 @@ public final class HomeKitBridgeController {
     }
 
     public func attach(to store: HomeStore, capabilities: DeviceController? = nil) {
+        storeObservation.stop()
         self.store = store
         self.capabilities = capabilities
-        observeStore()
-        if isEnabled { enqueue { await $0.startIfReady() } }
+        capabilityStructureDirty = true
+        if isEnabled {
+            observeStore()
+            if service != nil { scheduleSync() }
+            else { enqueue { await $0.startIfReady() } }
+        }
     }
 
     /// Keeps these services of a device out of Apple Home from the next sync on; an empty set publishes them all. Home
@@ -220,6 +225,7 @@ public final class HomeKitBridgeController {
     /// Waits for pending start/stop and sync work (tests).
     public func waitUntilIdle() async {
         while true {
+            await storeObservation.waitUntilIdle()
             let pendingLifecycle = lifecycle
             let pendingSync = syncTask
             if pendingLifecycle == nil && pendingSync == nil { return }
@@ -248,6 +254,7 @@ public final class HomeKitBridgeController {
 
     private func startIfReady() async {
         guard isEnabled, service == nil, let store else { return }
+        observeStore()
         guard store.hasReceivedInitialSnapshot, store.connectionStatus.isConnected else {
             status = .waitingForDevices
             return
@@ -334,6 +341,7 @@ public final class HomeKitBridgeController {
     }
 
     private func stopNow() async {
+        storeObservation.stop()
         let running = service
         service = nil
         bridge = nil
@@ -400,35 +408,19 @@ public final class HomeKitBridgeController {
 
     private func observeStore() {
         guard let store else { return }
-        let deviceChanges: AnyPublisher<Void, Never>
-        if let capabilities {
-            // DeviceController advances valuesRevision for structural changes as well.
-            capabilityObservationGeneration = UUID()
-            observeCapabilityRevision(capabilities, generation: capabilityObservationGeneration)
-            deviceChanges = Just(()).eraseToAnyPublisher()
-        } else {
-            deviceChanges = store.$devices.map { _ in () }.eraseToAnyPublisher()
-        }
-        storeObservation = Publishers.CombineLatest4(
-            deviceChanges, store.$hiddenDeviceIds.removeDuplicates(),
-            store.$hasReceivedInitialSnapshot.removeDuplicates(), store.$connectionStatus.removeDuplicates()
-        )
-        .dropFirst()
-        // Register pending work before the publisher returns. The main-actor tasks
-        // read the store after has saved the new values.
-        .sink { [weak self] _ in self?.storeChanged() }
-    }
-
-    private func observeCapabilityRevision(_ controller: DeviceController, generation: UUID) {
-        withObservationTracking {
-            _ = controller.valuesRevision
-        } onChange: { [weak self, weak controller] in
-            Task { @MainActor [weak self, weak controller] in
-                guard let self, let controller, self.capabilityObservationGeneration == generation else { return }
-                self.observeCapabilityRevision(controller, generation: generation)
-                self.storeChanged()
+        let capabilities = self.capabilities
+        storeObservation.start(read: { [weak store, weak capabilities] in
+            guard let store else { return }
+            if let capabilities {
+                _ = capabilities.structureRevision
+                _ = capabilities.valuesRevision
+            } else {
+                _ = store.devices
             }
-        }
+            _ = store.hiddenDeviceIds
+            _ = store.hasReceivedInitialSnapshot
+            _ = store.connectionStatus
+        }, changed: { [weak self] in self?.storeChanged() })
     }
 
     private func storeChanged() {

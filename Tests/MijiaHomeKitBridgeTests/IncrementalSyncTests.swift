@@ -8,6 +8,33 @@ import MijiaCore
 
 @MainActor
 struct IncrementalSyncTests {
+    @Test("Stopping and restarting bridge observations uses current cached state without extra LAN reads")
+    func observationRestart() async throws {
+        let fixture = try await Fixture.make()
+        let uri = fixture.bridge.setupURI
+        fixture.bridge.isEnabled = false
+        await fixture.bridge.waitUntilIdle()
+        #expect(fixture.bridge.status == .stopped)
+        #expect(fixture.bridge.bridge == nil)
+        await fixture.transport.set("8.1", .number(62))
+        await fixture.devices.refreshNow() // Only this explicit fixture refresh may query its fake device.
+        fixture.store.hideDevice("123")
+        await fixture.bridge.waitUntilIdle()
+        let before = await fixture.transport.methods
+        #expect(fixture.bridge.bridge == nil)
+        fixture.bridge.isEnabled = true
+        await fixture.bridge.waitUntilIdle()
+        let hap = try #require(fixture.bridge.bridge)
+        #expect(await hap.accessoryDatabase().count == 1)
+        fixture.store.unhideDevice("123")
+        await fixture.bridge.waitUntilIdle()
+        let iid = try #require(await hap.accessoryDatabase().first { $0.aid == 2 }?.services.flatMap(\.characteristics).first { $0.type == .rotationSpeed }?.iid)
+        #expect(await hap.readCharacteristic(aid: 2, iid: iid) == .float(62))
+        #expect(fixture.bridge.setupURI == uri)
+        #expect(await fixture.transport.methods == before)
+        await fixture.stop()
+    }
+
     @Test("HomeKit reads use saved bridge state without LAN queries, while a changed control still writes and reads back immediately")
     func cachedReadsAndImmediateWrite() async throws {
         let fixture = try await Fixture.make()
