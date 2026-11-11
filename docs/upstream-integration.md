@@ -52,7 +52,7 @@ CI 会编译真实 App/CLI，并运行 SDK、HomeKit、Matter RPC、卷帘交互
 
 ## 验证边界
 
-Linux 隔离回归 211 项通过：原有 SDK/交互回归及新数值/扫地机回归 152 项，HomeKit 映射、服务选择、值约束、帧顺序、写入来源、鉴权、接口报告及 Observation 回归 59 项。包含真实 UDP 回环、512 轮卷帘正常路径无 PIID5、写入去重和日志滚动。HomeKit 使用真实 HAPTransport/Swift Crypto，Linux 测试仅适配系统锁及 CryptoKit 模块名；miIO harness 的加密替身不等于 macOS 原生 AES/完整 App 验收。HAPTransport 亦已通过独立实际编译。Matter 的 GitHub job 已通过；原生 macOS CI 结果以本分支最终提交的 Actions 为准。
+Linux 隔离回归 212 项通过：原有 SDK/交互回归及新数值/扫地机回归 152 项，HomeKit 映射、服务选择、值约束、帧顺序、写入来源、鉴权、接口报告及 Observation 回归 60 项。包含真实 UDP 回环、512 轮卷帘正常路径无 PIID5、写入去重和日志滚动。HomeKit 使用真实 HAPTransport/Swift Crypto，Linux 测试仅适配系统锁及 CryptoKit 模块名；miIO harness 的加密替身不等于 macOS 原生 AES/完整 App 验收。HAPTransport 亦已通过独立实际编译。Matter 的 GitHub job 已通过；原生 macOS CI 结果以本分支最终提交的 Actions 为准。
 
 本轮没有部署 App、发布 Release 或联系家庭设备。原生界面、登录启动的系统授权状态、实际 HomeKit 配对/控制和长时间实机稳定性需在对应环境验收。正在运行的家庭旁读观察不受本分支影响。
 
@@ -67,3 +67,9 @@ Matter IPC 测试现显式选择临时 UDP 端口，并在 5540 已被占用时�
 家庭 Mac 在 `5afe00a` 上确认 Node 22.22.0 的 Matter 测试 8/8 通过（正式 5540 桥接未停），MijiaCore 独立测试 313 项通过；主编译随后被 `HomeStore` 上不存在的 Combine 投影阻塞，App/CLI 原生测试和打包尚未执行。桥接现在直接跟踪 `@Observable` 的 HomeStore 与 DeviceController，不修改内置核心库。
 
 Observation 在 MainActor setter 中登记待处理工作，待赋值完成后读取当前缓存并重新注册；一批连续变化合并通知。重新绑定、关闭和重启会更新观察代次并取消旧通知，`waitUntilIdle` 同时等待观察通知与桥接同步。新增 5 项可离线运行的观察回归，以及一项桥接关闭/重启后仍只读缓存的原生集成回归；后者需在 Mac 编译完成后执行。设备协议、轮询、控制及配对存储保持原有实现。
+
+### 同值写入的 ACK 与事件语义
+
+家庭 Mac 在 `dbec688` 上完成原生 App/CLI 编译，主测试 341 项中 340 项通过（包括原面板动画、新服务选择、缓存诊断、Observation 和线级 HomeKit 回环），核心库另有 313 项通过。唯一失败来自旧的同值强制 EVENT 预期。当前适配器会执行控制并确认回读，HAP PUT 成功返回 204；确认值未变时不需要额外值变化事件。值变化、错误恢复和修正仍按已有规则通知订阅者。
+
+此次仅更新测试：保留无来源连接的直接写入路径，并增加经鉴权的 PUT 路径；检查既有风扇方案的速度/电源各写一次且各自回读、GET 只读缓存，以及后续外部变化通知原写入者与另一订阅者。用独立订阅者的 FIFO 初始快照作为完成标记，先排除订阅初始事件，再证明无重复 EVENT，不依赖等待一段时间来推断无事件。HAP 协议层同值/后续变化回归已在 Linux 真实 HAPTransport/Swift Crypto 下通过；完整原生适配器用例仍需本地复验。生产源代码、ACK-before-event、零亮度保护和错误恢复策略未改。

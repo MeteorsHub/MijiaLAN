@@ -7,6 +7,30 @@ import Testing
 @testable import MijiaLAN
 
 struct HAPWriteOriginTests {
+    @Test("An unchanged managed value needs no EVENT; protocol writes acknowledge it and later changes reach both subscribers", arguments: [false, true])
+    func unchangedValue(protocolRequest: Bool) async throws {
+        let fixture = await Fixture.make()
+        await fixture.bridge.registerWriteHandler(aid: 2, iid: 10, managesValue: true) { value in
+            await fixture.bridge.updateCharacteristic(aid: 2, iid: 10, value: value)
+        }
+        if protocolRequest {
+            let handler = try await fixture.protocolHandler(connectionID: 11)
+            let response = try await handler.handleRequest(write(iid: 10, value: 50))
+            #expect(response.statusCode == 204 && response.body.isEmpty)
+        } else {
+            try await fixture.bridge.writeCharacteristic(aid: 2, iid: 10, value: .int32(50))
+        }
+        let unchanged = try await fixture.drain().filter { $0.iid == 10 }
+        #expect(unchanged.isEmpty)
+        #expect(await fixture.bridge.readStatus(aid: 2, iid: 10) == .success)
+        #expect(await fixture.bridge.readCharacteristic(aid: 2, iid: 10) == .int32(50))
+        await fixture.bridge.updateCharacteristic(aid: 2, iid: 10, value: .int32(64))
+        let external = try await fixture.drain().filter { $0.iid == 10 }
+        #expect(external.count == 1)
+        #expect(external.first?.value == .number(64))
+        #expect(external.first?.subscribers == [11, 22])
+    }
+
     @Test("A write acknowledges its origin while other controllers and linked characteristics still get events")
     func writeEcho() async throws {
         let fixture = await Fixture.make()
