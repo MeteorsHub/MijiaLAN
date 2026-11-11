@@ -12,7 +12,8 @@ import Testing
         let device = LocalDevice(did: "private-fixture-did", name: "private-fixture-name", model: "yeelink.light.lamp4",
                                  host: "192.0.2.245", token: String(repeating: "c", count: 32))
         let caps = DeviceCapabilityCatalog.capabilities(schema: schema, model: device.model)
-        let property = try #require(caps.first(where: \.readable))
+        let candidate = caps.first(where: \.readable)
+        let property = try #require(candidate)
         var snapshot = DeviceSnapshot(device: device, schema: schema, capabilities: caps)
         snapshot.readings[property.id] = DeviceReading(code: -4004, error: "private-error", rawValue: .string("private-payload"))
         let failures = [HomeKitBridgeController.ReadFailure(deviceID: device.did, service: "43", characteristic: "25",
