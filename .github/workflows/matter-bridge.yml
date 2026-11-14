@@ -26,9 +26,16 @@ jobs:
       - run: npm test
   swift:
     runs-on: macos-15
+    # The image defaults to Xcode 16.4, whose Swift 6.1.2 crashes in SwiftUI actor-binding IRGen.
+    # Pin an installed toolchain; keep the deployment target at macOS 15.
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
-      - run: swift --version
+      - name: Verify selected Xcode and Swift
+        run: |
+          xcodebuild -version
+          swift --version
       - run: swift build --product mijia-lan --force-resolved-versions
       - run: swift build --product MijiaLANApp --force-resolved-versions
       - name: Verify vendored MijiaCore behavior
