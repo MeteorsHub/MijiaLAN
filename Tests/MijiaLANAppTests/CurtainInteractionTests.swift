@@ -20,6 +20,7 @@ private actor InteractionTransport: MiioTransport {
     private var externalPosition: Int?
     private(set) var methods: [String] = []
     private(set) var writes: [JSONValue] = []
+    private(set) var reads: [JSONValue] = []
     var isHeld: Bool { held != nil }
     func holdNextRead(poison: Bool = false, position: Int? = nil) {
         holdRead = true; self.poison = poison; externalPosition = position
@@ -33,6 +34,7 @@ private actor InteractionTransport: MiioTransport {
         let method = request["method"]?.stringValue ?? ""
         methods.append(method)
         if method == "set_properties", case .array(let values) = request["params"] { writes += values }
+        if method == "get_properties", case .array(let values) = request["params"] { reads += values }
         let wasHeld = method == "get_properties" && holdRead
         if wasHeld { holdRead = false; await withCheckedContinuation { held = $0 } }
         let response = try await preview.exchange(packet, host: host, port: port, timeout: timeout)
@@ -60,6 +62,7 @@ private actor InteractionTransport: MiioTransport {
         let transport: InteractionTransport
         let defaults: UserDefaults
         let suite: String
+        let config: LocalHomeConfig
         func stop() async { controller.shutdown(); await api.shutdown(); defaults.removePersistentDomain(forName: suite) }
     }
     private func make() async throws -> Fixture {
@@ -76,7 +79,7 @@ private actor InteractionTransport: MiioTransport {
         controller.reconcile([device]); controller.read(did)
         try await idle(controller)
         #expect(controller.states[did]?.position == 29)
-        return Fixture(controller: controller, api: api, transport: transport, defaults: defaults, suite: suite)
+        return Fixture(controller: controller, api: api, transport: transport, defaults: defaults, suite: suite, config: config)
     }
     private func idle(_ controller: CurtainControlController) async throws {
         let deadline = Date().addingTimeInterval(3)
@@ -87,6 +90,73 @@ private actor InteractionTransport: MiioTransport {
         let deadline = Date().addingTimeInterval(3)
         while !(await transport.isHeld), Date() < deadline { try await Task.sleep(for: .milliseconds(1)) }
         #expect(await transport.isHeld)
+    }
+    @Test("Matter covering snapshots are cache-only and a command shares verified control, confirmation and provenance")
+    func matterCacheAndControl() async throws {
+        let f = try await make()
+        let catalog = DeviceController(api: f.api, config: { f.config }, pollingDefaults: f.defaults)
+        let bridge = MatterBridgeController(defaults: f.defaults, ephemeral: true)
+        bridge.attach(catalog, curtains: f.controller)
+        defer { bridge.shutdown(); catalog.shutdown() }
+        let before = await f.transport.methods
+        for _ in 0..<20 {
+            let devices = try await bridge.handleRPC(method: "snapshot")
+            let entry = try #require(devices.first)
+            #expect(entry.kind == "windowCovering" && entry.reachable)
+            #expect(entry.attributes["position"] == .number(29) && entry.attributes["movement"] == .number(0))
+        }
+        #expect(await f.transport.methods == before)
+        let devices = try await bridge.handleRPC(method: "set", did: did, value: .number(34), property: "position")
+        #expect(devices.first?.attributes["position"] == .number(34))
+        #expect(f.controller.states[did]?.confirmed == true)
+        let writes = await f.transport.writes
+        #expect(writes.count == 1)
+        if case .object(let fields) = try #require(writes.first) {
+            #expect(fields["siid"] == .number(2) && fields["piid"] == .number(4) && fields["value"] == .number(34))
+        } else { Issue.record("Missing position write") }
+        #expect(await f.transport.reads.allSatisfy { row in
+            guard case .object(let fields) = row else { return false }
+            return fields["piid"] != .number(5)
+        })
+        #expect(f.controller.events.snapshot().contains { $0.source == .matter && $0.outcome == .confirmed })
+        let after = await f.transport.methods
+        await #expect(throws: DeviceControlError.self) {
+            _ = try await bridge.handleRPC(method: "set", did: did, value: .number(101), property: "position")
+        }
+        bridge.include(did, false)
+        await #expect(throws: DeviceControlError.self) {
+            _ = try await bridge.handleRPC(method: "set", did: did, value: .bool(true), property: "open")
+        }
+        #expect(await f.transport.methods == after)
+        await f.stop()
+    }
+    @Test("A failed in-flight poll rejects a queued Matter movement without any write or false reachable state")
+    func matterFailedPreflight() async throws {
+        let f = try await make()
+        let catalog = DeviceController(api: f.api, config: { f.config }, pollingDefaults: f.defaults)
+        let bridge = MatterBridgeController(defaults: f.defaults, ephemeral: true)
+        bridge.attach(catalog, curtains: f.controller)
+        defer { bridge.shutdown(); catalog.shutdown() }
+        await f.transport.holdNextRead(poison: true)
+        let poll = Task { await f.controller.pollConfigured() }
+        try await held(f.transport)
+        let movement = Task {
+            await #expect(throws: DeviceControlError.self) {
+                _ = try await bridge.handleRPC(method: "set", did: did, value: .number(64), property: "position")
+            }
+        }
+        let deadline = Date().addingTimeInterval(3)
+        while f.controller.submissions[did]?.phase != .waiting, Date() < deadline { await Task.yield() }
+        #expect(f.controller.submissions[did]?.phase == .waiting)
+        await f.transport.release(); await poll.value; _ = await movement.value
+        #expect(await f.transport.writes.isEmpty)
+        #expect(f.controller.readFailures[did] == .untrustedReading)
+        let before = await f.transport.methods
+        let cached = try await bridge.handleRPC(method: "snapshot")
+        #expect(cached.first?.reachable == false)
+        #expect(await f.transport.methods == before)
+        #expect(f.controller.events.snapshot().contains { $0.source == .matter && $0.writeAttempted == false && $0.outcome == .noPacket })
+        await f.stop()
     }
     @Test("A read finishing during a drag updates actual state quietly, preserves the gesture and sends one released target")
     func finishDuringDrag() async throws {

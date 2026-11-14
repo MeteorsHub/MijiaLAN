@@ -22,7 +22,9 @@ export class AppRPC {
   request(method, params = {}) {
     const id = this.#next++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.#pending.delete(id); reject(new Error('App RPC timed out')); }, 30_000);
+      // Native covering readback is bounded at 120 s, plus identity/preflight. Each request remains single-shot.
+      const covering = method === 'set' && ['position', 'open', 'close', 'stop'].includes(params.property);
+      const timer = setTimeout(() => { this.#pending.delete(id); reject(new Error('App RPC timed out')); }, covering ? 150_000 : 30_000);
       this.#pending.set(id, { resolve, reject, timer });
       process.stdout.write(JSON.stringify({ id, method, ...params }) + '\n');
     });

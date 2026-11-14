@@ -210,7 +210,7 @@ struct SettingsMatterManagement: View {
                         }
                     }
                 }
-                Text(L10n.tr("设备选择独立于 HomeKit。移除设备会影响目标平台中的场景和自动化。当前支持开关、调光、色温、风扇、空气净化器、温湿度、光照、人体及接触传感器；以设备实际提供的能力为准。M200 兼容性尚待实测。", "Device selection is independent of HomeKit. Removing a device affects scenes and automations. Supported mappings include power, brightness, color temperature, fans, air purifiers, temperature, humidity, light, occupancy and contact sensors, subject to device capabilities. M200 compatibility awaits hardware testing."))
+                Text(L10n.tr("设备选择独立于 HomeKit。移除设备会影响目标平台中的场景和自动化。当前支持开关、调光、色温、风扇、空气净化器、受支持的卷帘、加热温控及多种传感器；按实际能力开放。通用电源可能显示为插座；模式、档位和目标湿度等未桥接能力会另行标注。M200 兼容性尚待实测。", "Device selection is independent of HomeKit. Removing a device affects scenes and automations. Supported mappings include power, brightness, color temperature, fans, air purifiers, supported coverings, heating thermostats and sensors. Generic power may appear as a plug; unmapped controls such as modes, levels and target humidity are listed separately. M200 compatibility awaits hardware testing."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }.padding(.horizontal, 16).padding(.vertical, 8)
@@ -235,6 +235,16 @@ private struct SettingsMatterDeviceRow: View {
             .filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
+    private var unavailable: String {
+        guard let snapshot = model.devices.snapshots[device.did] else {
+            return L10n.tr("设备规格尚未加载", "Device specification not loaded yet")
+        }
+        if ["pet-feeder", "pet-drinking-fountain"].contains(snapshot.schema.category), snapshot.primaryPower == nil {
+            return L10n.tr("喂食或饮水能力暂未适配；规格未定义主电源，不能作为电源开关接入。", "Feeding or watering controls are not mapped yet. The specification has no main power switch to bridge.")
+        }
+        return L10n.tr("当前设备能力暂未适配 Matter", "This device's capabilities are not mapped to Matter yet")
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -242,12 +252,16 @@ private struct SettingsMatterDeviceRow: View {
                 if !context.isEmpty {
                     Text(context).font(.caption).foregroundStyle(.secondary)
                 }
-                Text(DeviceLANPolicy.restriction(for: device.model) ?? (plans.isEmpty
-                     ? (model.devices.snapshots[device.did] == nil
-                        ? L10n.tr("设备规格尚未加载", "Device specification not loaded yet")
-                        : L10n.tr("当前设备能力暂未适配 Matter", "This device's capabilities are not mapped to Matter yet"))
-                     : plans.map { MatterDevicePlan.title($0.device.kind) }.joined(separator: " · ")))
+                Text(plans.isEmpty ? unavailable
+                     : plans.map { MatterDevicePlan.title($0.device.kind) }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
+                if !plans.isEmpty, let snapshot = model.devices.snapshots[device.did] {
+                    let unmapped = MatterDevicePlan.unmappedControls(snapshot, entries: plans)
+                    if !unmapped.isEmpty {
+                        Text(L10n.tr("尚未桥接：", "Not bridged: ") + unmapped.prefix(3).joined(separator: "、") + (unmapped.count > 3 ? "…" : ""))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -858,7 +872,7 @@ private struct LaunchAtLoginSettings: View {
         SettingsSection(L10n.tr("启动", "Startup")) {
             SettingsGroup {
                 SettingsToggleRow(L10n.tr("登录时启动", "Launch at Login"), symbol: "power",
-                                  isOn: Binding(get: { registered == true }, set: setRegistered),
+                                  isOn: Binding(get: { registered == true }, set: { requested in setRegistered(requested) }),
                                   subtitle: subtitle, statusColor: status == .requiresApproval ? .orange : nil)
                     .disabled(registered == nil)
             }

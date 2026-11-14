@@ -105,29 +105,74 @@ struct PanelMemoryTests {
         #expect(state.expansion(deviceID: "kept", section: "information").wrappedValue)
     }
 
-    @Test("Content eviction starts after the exit completes; reversed exit cannot evict an open panel")
-    func exitCompletion() async throws {
+    @Test("Content eviction starts after the exit completes; reversed exit cannot evict an open panel", arguments: [false, true])
+    func exitCompletion(reducedMotion: Bool) async throws {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: -2000, y: -2000, width: 20, height: 20),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let presentation = PanelPresentation(window: window, reduceMotion: { true })
+        let animations = ControlledPanelAnimations()
+        let presentation = PanelPresentation(window: window, reduceMotion: { reducedMotion }, windowAnimation: animations.animate)
+        let clock = SuspendedIdleClock()
+        let lifetime = PanelContentLifetime(sleep: { _ in await clock.sleep() })
+        var unloads = 0
+        lifetime.unload = { unloads += 1 }
+        lifetime.prepare()
+        defer { presentation.stop(); lifetime.stop(); window.close() }
+        var closes = 0
+        presentation.didClose = { closes += 1; lifetime.didHide() }
+        presentation.show()
+        presentation.hide()
+        #expect(closes == 0)
+        presentation.show()
+        try #require(animations.targets == [1, 0, 1])
+        #expect(presentation.phase == .opening)
+        animations.complete(1) // A late closing completion belongs to the reversed exit.
+        animations.complete(0) // The original opening completion is obsolete too.
+        #expect(presentation.phase == .opening && presentation.isPresented)
+        #expect(await clock.sleepCount == 0 && unloads == 0 && lifetime.isLoaded)
+        animations.complete(2)
+        #expect(presentation.phase == .open)
+        #expect(closes == 0)
+        #expect(presentation.isPresented)
+        presentation.hide()
+        #expect(presentation.phase == .closing && closes == 0 && lifetime.isLoaded)
+        #expect(await clock.sleepCount == 0 && unloads == 0)
+        try #require(animations.targets == [1, 0, 1, 0])
+        #expect(animations.durations.allSatisfy { $0 == (reducedMotion ? 0.12 : PanelMotion.duration) })
+        animations.complete(3)
+        try #require(presentation.phase == .closed && closes == 1)
+        #expect(!window.isVisible)
+        await clock.waitForSleeps(1)
+        #expect(lifetime.isLoaded && unloads == 0)
+        await clock.resume(0)
+        await settle { !lifetime.isLoaded }
+        #expect(!lifetime.isLoaded && unloads == 1)
+    }
+
+    @Test("Stopping invalidates both pending animation completions and a new presentation remains usable")
+    func stoppedAnimationCompletions() {
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let animations = ControlledPanelAnimations()
+        let presentation = PanelPresentation(window: window, reduceMotion: { true }, windowAnimation: animations.animate)
         defer { presentation.stop(); window.close() }
         var closes = 0
         presentation.didClose = { closes += 1 }
         presentation.show()
         presentation.hide()
-        #expect(closes == 0)
+        presentation.stop()
+        animations.complete(1)
+        animations.complete(0)
+        #expect(presentation.phase == .closed && !presentation.isPresented && !window.isVisible)
+        #expect(presentation.progress == 0 && window.alphaValue == 0 && closes == 0)
         presentation.show()
-        let reopened = try await waitForAppKit { presentation.phase == .open }
-        try #require(reopened, "Reopened animation did not complete within the fixture deadline")
-        #expect(closes == 0)
-        #expect(presentation.isPresented)
+        animations.complete(2)
+        #expect(presentation.phase == .open && presentation.isPresented)
         presentation.hide()
-        let closed = try await waitForAppKit { presentation.phase == .closed && closes == 1 && !window.isVisible }
-        #expect(closed, "Exit did not complete: phase=\(presentation.phase.rawValue), closes=\(closes), visible=\(window.isVisible)")
-        #expect(closes == 1)
-        #expect(!window.isVisible)
+        animations.complete(3)
+        #expect(presentation.phase == .closed && closes == 1)
     }
 
     @Test("Native scroll offsets restore in either coordinate system and teardown cannot overwrite them")
@@ -162,25 +207,32 @@ struct PanelMemoryTests {
         }
     }
 
-    /// Animation duration is not a completion guarantee, especially with a locked WindowServer.
-    /// Service AppKit's default run loop, then yield the main actor so queued completions can run.
-    private func waitForAppKit(timeout: Duration = .seconds(5), _ condition: () -> Bool) async throws -> Bool {
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        while !condition(), ContinuousClock.now < deadline {
-            pumpAppKitTurn()
-            try await Task.sleep(for: .milliseconds(5))
-        }
-        return condition()
-    }
-    private func pumpAppKitTurn() {
-        _ = RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
-    }
-
     private func settle(_ condition: () -> Bool) async {
         for _ in 0..<200 {
             if condition() { return }
             try? await Task.sleep(for: .milliseconds(1))
         }
+    }
+}
+
+/// The lifecycle test controls delivery order; it does not depend on a WindowServer animation clock.
+@MainActor
+private final class ControlledPanelAnimations {
+    private(set) var targets: [CGFloat] = []
+    private(set) var durations: [TimeInterval] = []
+    private var completions: [(@MainActor () -> Void)?] = []
+
+    func animate(_ window: NSWindow, _ target: CGFloat, _ duration: TimeInterval, _ completion: @escaping @MainActor () -> Void) {
+        targets.append(target)
+        durations.append(duration)
+        completions.append(completion)
+        window.alphaValue = target
+    }
+
+    func complete(_ index: Int) {
+        let completion = completions[index]
+        completions[index] = nil
+        completion?()
     }
 }
 
@@ -196,6 +248,7 @@ private actor SuspendedIdleClock {
     private var waits: [Int: CheckedContinuation<Void, Never>] = [:]
     private var nextID = 0
     private var registrations: [(Int, CheckedContinuation<Void, Never>)] = []
+    var sleepCount: Int { nextID }
 
     func sleep() async {
         let id = nextID

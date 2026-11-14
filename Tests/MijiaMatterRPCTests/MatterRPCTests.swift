@@ -12,12 +12,24 @@ struct MatterRPCTests {
                               capabilities: DeviceCapabilityCatalog.capabilities(schema: schema, model: model))
     }
 
-    @Test("Reviewed device families expose independent primary endpoints", arguments: DeviceSchema.bundledModels)
+    @Test("Reviewed device families expose standard or genuine power-only primary endpoints", arguments: DeviceSchema.bundledModels)
     func supportedModels(_ model: String) throws {
         let s = try snapshot(model)
-        let expected = ["light", "outlet", "fan", "air-purifier"].contains(s.schema.category)
+        let expected = ["light", "outlet", "fan", "air-purifier", "air-conditioner"].contains(s.schema.category)
         #expect(MatterRPC.devices([s]).contains { $0.did == "123" } == expected)
         #expect(MatterRPC.devices([s]).allSatisfy { !$0.did.isEmpty })
+    }
+
+    @Test("The AC companion exports its genuine power only, without claiming climate modes or setpoints")
+    func powerOnlyClimate() throws {
+        let s = try snapshot("lumi.acpartner.mcn02")
+        let candidate = MatterDevicePlan.entries([s]).first { $0.device.did == s.id }
+        let entry = try #require(candidate)
+        #expect(entry.device.kind == "power")
+        #expect(Set(entry.bindings.keys) == ["on"])
+        #expect(entry.bindings["on"]?.id == "p:2:1")
+        #expect(!entry.device.reachable)
+        #expect(MatterDevicePlan.unmappedControls(s, entries: [entry]).contains { !$0.isEmpty })
     }
 
     @Test("RPC projection contains no LAN credentials; missing readings are unreachable")

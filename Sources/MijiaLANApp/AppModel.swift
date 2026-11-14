@@ -114,7 +114,7 @@ final class AppModel {
 
         matter = MatterBridgeController(defaults: bridgeDefaults, ephemeral: ephemeral)
         if ephemeral { matter.isEnabled = false }
-        matter.attach(controller)
+        matter.attach(controller, curtains: curtains)
 
         if preview || (ephemeral && environment["MIJIALAN_SNAPSHOT"] != nil) { bridge.isEnabled = false }
         curtains.prepare = { [weak self] in
