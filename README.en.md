@@ -126,7 +126,7 @@ MIJIALAN_UI_PREVIEW=1 "$(swift build --show-bin-path)/MijiaLANApp"
 
 Original project code is licensed under the [MIT License](LICENSE), copyright iPocket-APP. Third party components retain their own licenses:
 
-- [MenuBarMijia](https://github.com/jryang1997/MenuBarMijia)'s `MijiaCore` (MIT) provides QR login, MIoT specification parsing, device synthesis and HomeStore.
+- [MenuBarMijia](Vendor/MenuBarMijia)'s `MijiaCore` (MIT) provides QR login, MIoT specification parsing, device synthesis and HomeStore.
 - [hap-swift](https://github.com/acumen-dev/hap-swift) (Apache-2.0) provides HomeKit Accessory Protocol support; the vendored copy includes local fixes.
 - Apple Swift libraries and other transitive dependencies are listed in [third party notices](THIRD_PARTY_NOTICES.md).
 

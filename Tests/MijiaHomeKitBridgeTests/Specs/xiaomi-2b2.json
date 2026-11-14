@@ -1,0 +1,331 @@
+{
+ "type": "urn:miot-spec-v2:device:switch:0000A003:xiaomi-2b2:1:0000C809",
+ "description": "xiaomi switch 2b2",
+ "services": [
+  {
+   "iid": 2,
+   "type": "urn:miot-spec-v2:service:switch:0000780C:xiaomi-2b2:1:0000C809",
+   "description": "Left Switch Service",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:on:00000006:xiaomi-2b2:1:0000C809",
+     "description": "Switch Status",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "左键"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:mode:00000008:xiaomi-2b2:1:0000C809",
+     "description": "Mode",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Wired And Wireless",
+       "comment": "有线和无线开关"
+      },
+      {
+       "value": 1,
+       "description": "Wireless",
+       "comment": "无线开关"
+      }
+     ],
+     "gatt-access": [],
+     "comment": "模式"
+    },
+    {
+     "iid": 3,
+     "type": "urn:miot-spec-v2:property:fault:00000009:xiaomi-2b2:1:0000C809",
+     "description": "Device Fault",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "No Faults",
+       "comment": "正常"
+      },
+      {
+       "value": 1,
+       "description": "Over Temperature",
+       "comment": "开关温度过高，已关闭。"
+      },
+      {
+       "value": 2,
+       "description": "Overload",
+       "comment": "开关工作功率过载，已关闭。"
+      },
+      {
+       "value": 3,
+       "description": "Overheat And Overload",
+       "comment": "开关温度过高且功率过载，已关闭。"
+      },
+      {
+       "value": 4,
+       "description": "Low Voltage",
+       "comment": "负载电流低，部分功能异常。"
+      }
+     ],
+     "source": 1,
+     "gatt-access": [],
+     "comment": "异常状态"
+    },
+    {
+     "iid": 4,
+     "type": "urn:miot-spec-v2:property:anti-flicker:00000202:xiaomi-2b2:1:0000C809",
+     "description": "Anti Flicker",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "防闪烁模式"
+    },
+    {
+     "iid": 5,
+     "type": "urn:miot-spec-v2:property:wiring-method:000002EA:xiaomi-2b2:1",
+     "description": "Wiring Method",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "No Neutral",
+       "comment": "单火"
+      },
+      {
+       "value": 1,
+       "description": "Neutral Wire",
+       "comment": "零火"
+      }
+     ],
+     "source": 1,
+     "gatt-access": [],
+     "comment": "接线方式"
+    }
+   ],
+   "actions": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:action:toggle:00002811:xiaomi-2b2:1:0000C809",
+     "description": "Toggle",
+     "in": [],
+     "out": [],
+     "comment": "开关状态切换"
+    }
+   ],
+   "comment": "开关左键"
+  },
+  {
+   "iid": 3,
+   "type": "urn:miot-spec-v2:service:switch:0000780C:xiaomi-2b2:1:0000C809",
+   "description": "Right Switch Service",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:on:00000006:xiaomi-2b2:1:0000C809",
+     "description": "Switch Status",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "右键"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:mode:00000008:xiaomi-2b2:1:0000C809",
+     "description": "Mode",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Wired And Wireless",
+       "comment": "有线和无线开关"
+      },
+      {
+       "value": 1,
+       "description": "Wireless",
+       "comment": "无线开关"
+      }
+     ],
+     "gatt-access": [],
+     "comment": "模式"
+    }
+   ],
+   "actions": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:action:toggle:00002811:xiaomi-2b2:1:0000C809",
+     "description": "Toggle",
+     "in": [],
+     "out": [],
+     "comment": "开关状态切换"
+    }
+   ],
+   "comment": "开关右键"
+  },
+  {
+   "iid": 4,
+   "type": "urn:miot-spec-v2:service:switch-sensor:00007828:xiaomi-2b2:1:0000C809",
+   "description": "Left Switch Sensor",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:mode:00000008:xiaomi-2b2:1",
+     "description": "Mode",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Quick Single Click",
+       "comment": "极速单击模式"
+      },
+      {
+       "value": 1,
+       "description": "Multiple Click",
+       "comment": "多功能模式"
+      }
+     ],
+     "source": 1,
+     "gatt-access": [],
+     "comment": "模式"
+    }
+   ],
+   "events": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:event:click:00005007:xiaomi-2b2:1:0000C809",
+     "description": "Click",
+     "arguments": [],
+     "comment": "单击左键"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:event:double-click:00005008:xiaomi-2b2:1",
+     "description": "Double Click",
+     "arguments": [],
+     "comment": "双击左键"
+    },
+    {
+     "iid": 3,
+     "type": "urn:miot-spec-v2:event:long-press:00005009:xiaomi-2b2:1",
+     "description": "Long Press",
+     "arguments": [],
+     "comment": "长按左键"
+    }
+   ],
+   "comment": "左键"
+  },
+  {
+   "iid": 5,
+   "type": "urn:miot-spec-v2:service:switch-sensor:00007828:xiaomi-2b2:1:0000C809",
+   "description": "Right Switch Sensor",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:mode:00000008:xiaomi-2b2:1",
+     "description": "Mode",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Quick Single Click",
+       "comment": "极速单击模式"
+      },
+      {
+       "value": 1,
+       "description": "Multiple Click",
+       "comment": "多功能模式"
+      }
+     ],
+     "source": 1,
+     "gatt-access": [],
+     "comment": "模式"
+    }
+   ],
+   "events": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:event:click:00005007:xiaomi-2b2:1:0000C809",
+     "description": "Click",
+     "arguments": [],
+     "comment": "单击右键"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:event:double-click:00005008:xiaomi-2b2:1",
+     "description": "Double Click",
+     "arguments": [],
+     "comment": "双击右键"
+    },
+    {
+     "iid": 3,
+     "type": "urn:miot-spec-v2:event:long-press:00005009:xiaomi-2b2:1",
+     "description": "Long Press",
+     "arguments": [],
+     "comment": "长按右键"
+    }
+   ],
+   "comment": "右键"
+  },
+  {
+   "iid": 7,
+   "type": "urn:miot-spec-v2:service:indicator-light:00007803:xiaomi-2b2:1:0000C809",
+   "description": "Indicator Light",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:on:00000006:xiaomi-2b2:1:0000C809",
+     "description": "Switch Status",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "开关"
+    }
+   ],
+   "comment": "指示灯"
+  }
+ ]
+}

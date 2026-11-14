@@ -38,7 +38,7 @@ public struct CharacteristicProtocol: Sendable {
     }
 
     public func handleRequest(_ request: HTTPRequest) async throws -> HTTPResponse {
-        logger.debug("\(request.method) \(request.path) (\(request.body.count) bytes)")
+        logger.debug("Connection \(connectionID): \(request.method) \(request.path) (\(request.body.count) bytes)")
         let isPairingHandshake = request.method == "POST" && ["/pair-setup", "/pair-verify"].contains(request.path)
         if !isPairingHandshake {
             guard let identifier = await pairVerifyStateMachine.verifiedControllerIdentifier,
@@ -211,9 +211,9 @@ public struct CharacteristicProtocol: Sendable {
     private func handleGetAccessories() async throws -> HTTPResponse {
         let accessories = await bridge.accessoryDatabase()
         let json = await encodeAccessoryDatabase(accessories)
-        logger.debug("GET /accessories (\(accessories.count) accessories)")
-        if logger.logLevel <= .trace, let str = String(data: json, encoding: .utf8) {
-            logger.trace("GET /accessories body:\n\(str)")
+        logger.debug("Connection \(connectionID): GET /accessories (\(accessories.count) accessories)")
+        if logger.logLevel <= .debug, let str = String(data: json, encoding: .utf8) {
+            logger.debug("Connection \(connectionID): GET accessories response: \(str)")
         }
         return HTTPProtocol.okResponse(body: json, contentType: HTTPProtocol.hapJSON)
     }
@@ -254,9 +254,19 @@ public struct CharacteristicProtocol: Sendable {
             characteristics.append(charDict)
         }
 
+        let hasError = characteristics.contains { $0["status"] != nil }
+        if hasError {
+            // HAP §6.7.4.4: in a 207 every characteristic carries a status. iOS treats a successful read
+            // without one as failed, so one unreachable accessory would mark the whole bridge No Response.
+            for i in characteristics.indices where characteristics[i]["status"] == nil {
+                characteristics[i]["status"] = HAPStatus.success.rawValue
+            }
+        }
         let responseDict: [String: Any] = ["characteristics": characteristics]
         let json = try JSONSerialization.data(withJSONObject: responseDict)
-        let hasError = characteristics.contains { $0["status"] != nil }
+        if logger.logLevel <= .debug {
+            logger.debug("Connection \(connectionID): GET characteristics response \(hasError ? 207 : 200): \(String(decoding: json, as: UTF8.self))")
+        }
         return HTTPResponse(statusCode: hasError ? 207 : 200, statusMessage: hasError ? "Multi-Status" : "OK",
             headers: [("Content-Type", HTTPProtocol.hapJSON)], body: json)
     }
@@ -271,24 +281,47 @@ public struct CharacteristicProtocol: Sendable {
         }
 
         logger.debug("PUT /characteristics: \(characteristics.count) characteristic(s)")
+        if logger.logLevel <= .debug {
+            logger.debug("Connection \(connectionID): PUT characteristics body: \(String(decoding: request.body, as: UTF8.self))")
+        }
 
-        var results: [[String: Any]] = []
+        var targets: [(aid: UInt64, iid: UInt64)] = []
+        var ranks: [Int] = []
         for charDict in characteristics {
             guard let aid = (charDict["aid"] as? NSNumber)?.uint64Value,
                   let iid = (charDict["iid"] as? NSNumber)?.uint64Value else {
                 return HTTPProtocol.errorResponse(status: 400, message: "Missing aid/iid")
             }
+            targets.append((aid, iid))
+            ranks.append(await powerRank(charDict["value"], aid: aid, iid: iid))
+        }
+        // Home sends a slider moved on a switched-off light as [Brightness, On=true]. A device that ignores
+        // brightness while off would fail the first write and show No Response, so turning on goes first and
+        // turning off goes last: every other value in the request reaches a powered device.
+        let order = characteristics.indices.sorted { (ranks[$0], $0) < (ranks[$1], $1) }
+
+        var results = [[String: Any]](repeating: [:], count: characteristics.count)
+        for index in order {
+            let charDict = characteristics[index]
+            let (aid, iid) = targets[index]
             var status = HAPStatus.success
             do {
                 if let raw = charDict["value"] {
                     guard let value = decodeValue(raw) else { throw HAPError.invalidValue }
-                    try await bridge.writeCharacteristic(aid: aid, iid: iid, value: value)
+                    try await bridge.writeCharacteristic(aid: aid, iid: iid, value: value,
+                                                         originatingConnectionID: connectionID)
                 }
                 if let ev = charDict["ev"] as? Bool {
+                    let subscriptionStatus = await bridge.subscriptionStatus(aid: aid, iid: iid)
+                    if subscriptionStatus != .success {
+                        results[index] = ["aid": aid, "iid": iid, "status": subscriptionStatus.rawValue]
+                        continue
+                    }
                     if ev { await bridge.subscribe(connectionID: connectionID, aid: aid, iid: iid) }
                     else { await bridge.unsubscribe(connectionID: connectionID, aid: aid, iid: iid) }
                 }
             } catch {
+                logger.debug("Connection \(connectionID): write aid=\(aid) iid=\(iid) failed: \(error)")
                 switch error as? HAPError {
                 case .notFound: status = .resourceDoesNotExist
                 case .readOnly: status = .readOnly
@@ -299,11 +332,29 @@ public struct CharacteristicProtocol: Sendable {
                 default: status = .communicationFailure
                 }
             }
-            results.append(["aid": aid, "iid": iid, "status": status.rawValue])
+            results[index] = ["aid": aid, "iid": iid, "status": status.rawValue]
         }
         guard results.contains(where: { ($0["status"] as? Int) != 0 }) else { return HTTPProtocol.noContentResponse() }
         let body = try JSONSerialization.data(withJSONObject: ["characteristics": results])
+        if logger.logLevel <= .debug {
+            logger.debug("Connection \(connectionID): PUT characteristics response 207: \(String(decoding: body, as: UTF8.self))")
+        }
         return HTTPResponse(statusCode: 207, statusMessage: "Multi-Status", headers: [("Content-Type", HTTPProtocol.hapJSON)], body: body)
+    }
+
+    /// 0 for a write turning an On or Active characteristic on, 2 for one turning it off, 1 for anything else.
+    private func powerRank(_ raw: Any?, aid: UInt64, iid: UInt64) async -> Int {
+        guard let raw, let value = decodeValue(raw),
+              let type = await bridge.characteristicType(aid: aid, iid: iid), type == .on || type == .active else { return 1 }
+        switch value {
+        case .bool(let on): return on ? 0 : 2
+        case .uint8(let n): return n != 0 ? 0 : 2
+        case .uint16(let n): return n != 0 ? 0 : 2
+        case .uint32(let n): return n != 0 ? 0 : 2
+        case .int32(let n): return n != 0 ? 0 : 2
+        case .float(let n): return n != 0 ? 0 : 2
+        default: return 1
+        }
     }
 
     // MARK: - JSON Encoding
@@ -339,11 +390,13 @@ public struct CharacteristicProtocol: Sendable {
                     charList.append(charDict)
                 }
 
-                serviceList.append([
+                var serviceDict: [String: Any] = [
                     "iid": service.iid,
                     "type": service.type.rawValue,
                     "characteristics": charList,
-                ])
+                ]
+                if service.isPrimary { serviceDict["primary"] = true }
+                serviceList.append(serviceDict)
             }
 
             accessoryList.append([

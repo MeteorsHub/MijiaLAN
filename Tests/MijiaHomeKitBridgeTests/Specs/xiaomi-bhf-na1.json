@@ -1,0 +1,455 @@
+{
+ "type": "urn:miot-spec-v2:device:bath-heater:0000A028:xiaomi-na1:3",
+ "description": "Bath Heater",
+ "services": [
+  {
+   "iid": 2,
+   "type": "urn:miot-spec-v2:service:light:00007802:xiaomi-na1:1",
+   "description": "Light",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:on:00000006:xiaomi-na1:1",
+     "description": "Switch Status",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "照明"
+    },
+    {
+     "iid": 3,
+     "type": "urn:miot-spec-v2:property:brightness:0000000D:xiaomi-na1:1",
+     "description": "Brightness",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "percentage",
+     "value-range": [
+      1,
+      100,
+      1
+     ],
+     "gatt-access": [],
+     "comment": "亮度（日光时可调亮度）"
+    },
+    {
+     "iid": 22,
+     "type": "urn:miot-spec-v2:property:flex-switch:000000EC:xiaomi-na1:1",
+     "description": "Flex Switch",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "智能夜灯开关（2.2.7_0012版本使用）"
+    },
+    {
+     "iid": 23,
+     "type": "urn:miot-spec-v2:property:enable-time-period:00000153:xiaomi-na1:1",
+     "description": "Enable Time Period",
+     "format": "string",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "智能夜灯启用时间段(格式为：'00:00:00-00:00:00')"
+    },
+    {
+     "iid": 24,
+     "type": "urn:miot-spec-v2:property:default-power-on-state:00000105:xiaomi-na1:1",
+     "description": "Default Power On State",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "On",
+       "comment": "上电打开"
+      },
+      {
+       "value": 1,
+       "description": "Off",
+       "comment": "上电关闭"
+      },
+      {
+       "value": 2,
+       "description": "Memory",
+       "comment": "记忆"
+      }
+     ],
+     "gatt-access": [],
+     "comment": "上电灯光状态"
+    },
+    {
+     "iid": 25,
+     "type": "urn:miot-spec-v2:property:night-light-switch:000002E9:xiaomi-na1:2",
+     "description": "Night Light Switch",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "智能夜灯开关（2.2.7_0012以上版本使用）"
+    }
+   ],
+   "actions": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:action:toggle:00002811:xiaomi-na1:1",
+     "description": "Toggle",
+     "in": [],
+     "out": [],
+     "comment": "开关状态切换"
+    }
+   ],
+   "comment": "灯"
+  },
+  {
+   "iid": 4,
+   "type": "urn:miot-spec-v2:service:ptc-bath-heater:0000783B:xiaomi-na1:1",
+   "description": "PTC Bath Heater",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:fault:00000009:xiaomi-na1:1",
+     "description": "Device Fault",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "No Faults",
+       "comment": "null"
+      },
+      {
+       "value": 1,
+       "description": "TEMP ERR",
+       "comment": "温度传感器异常，停止暖风功能"
+      },
+      {
+       "value": 2,
+       "description": "MOTOR ERR",
+       "comment": "马达故障"
+      }
+     ],
+     "gatt-access": [],
+     "comment": "故障"
+    },
+    {
+     "iid": 4,
+     "type": "urn:miot-spec-v2:property:target-temperature:00000021:xiaomi-na1:1",
+     "description": "Target Temperature",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "celsius",
+     "value-range": [
+      25,
+      35,
+      1
+     ],
+     "gatt-access": [],
+     "comment": "设定温度"
+    },
+    {
+     "iid": 6,
+     "type": "urn:miot-spec-v2:property:heating:000000C7:xiaomi-na1:1",
+     "description": "Heating",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "暖风"
+    },
+    {
+     "iid": 7,
+     "type": "urn:miot-spec-v2:property:blow:000000CD:xiaomi-na1:1",
+     "description": "Blow",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "吹风"
+    },
+    {
+     "iid": 8,
+     "type": "urn:miot-spec-v2:property:ventilation:000000CE:xiaomi-na1:1",
+     "description": "Ventilation",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "换气"
+    },
+    {
+     "iid": 10,
+     "type": "urn:miot-spec-v2:property:heat-level:00000047:xiaomi-na1:1",
+     "description": "Heat Level",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 1,
+       "description": "Low",
+       "comment": "弱暖(低热、暖风)"
+      },
+      {
+       "value": 2,
+       "description": "High",
+       "comment": "强暖(高热、热风)"
+      },
+      {
+       "value": 0,
+       "description": "AUTO",
+       "comment": "恒温"
+      }
+     ],
+     "gatt-access": [],
+     "comment": "暖风档位"
+    },
+    {
+     "iid": 14,
+     "type": "urn:miot-spec-v2:property:room-size:000001F9:xiaomi-na1:1",
+     "description": "Room Size",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Less Than Four Square Meters",
+       "comment": "面积小于4平方米"
+      },
+      {
+       "value": 1,
+       "description": "Four-Six Square Meters",
+       "comment": "面积4-6平方米"
+      },
+      {
+       "value": 2,
+       "description": "Six-Eight Square Meters",
+       "comment": "面积6-8平米"
+      },
+      {
+       "value": 3,
+       "description": "More Than Eight Square Meters",
+       "comment": "面积大于8平方米"
+      }
+     ],
+     "gatt-access": [],
+     "comment": "房间面积(默认4-6平米）"
+    },
+    {
+     "iid": 15,
+     "type": "urn:miot-spec-v2:property:off-delay:00000053:xiaomi-na1:1",
+     "description": "Power Off Delay",
+     "format": "bool",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "gatt-access": [],
+     "comment": "延时停止开关"
+    },
+    {
+     "iid": 16,
+     "type": "urn:miot-spec-v2:property:off-delay-time:00000054:xiaomi-na1:1",
+     "description": "Power Off Delay Time",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "minutes",
+     "value-range": [
+      5,
+      60,
+      5
+     ],
+     "gatt-access": [],
+     "comment": "设置延时停止时间"
+    }
+   ],
+   "actions": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:action:stop-working:00002825:xiaomi-na1:1",
+     "description": "Stop Working",
+     "in": [],
+     "out": [],
+     "comment": "停止浴霸"
+    }
+   ],
+   "comment": "浴霸风暖"
+  },
+  {
+   "iid": 5,
+   "type": "urn:miot-spec-v2:service:fan-control:00007809:xiaomi-na1:1",
+   "description": "Fan Control",
+   "properties": [
+    {
+     "iid": 4,
+     "type": "urn:miot-spec-v2:property:vertical-swing:00000018:xiaomi-na1:1",
+     "description": "Vertical Swing",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "OFF",
+       "comment": "固定角度"
+      },
+      {
+       "value": 1,
+       "description": "ON",
+       "comment": "循环摆风"
+      }
+     ],
+     "gatt-access": [],
+     "comment": "摆风模式"
+    },
+    {
+     "iid": 6,
+     "type": "urn:miot-spec-v2:property:vertical-angle:0000001A:xiaomi-na1:1",
+     "description": "Vertical Angle",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "unit": "arcdegrees",
+     "value-range": [
+      60,
+      120,
+      1
+     ],
+     "gatt-access": [],
+     "comment": "摆风固定角度(摆叶闭合位置为0度)"
+    },
+    {
+     "iid": 7,
+     "type": "urn:miot-spec-v2:property:fan-level:00000016:xiaomi-na1:1",
+     "description": "Fan Level",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Low",
+       "comment": "低档"
+      },
+      {
+       "value": 1,
+       "description": "High",
+       "comment": "高档"
+      }
+     ],
+     "gatt-access": [],
+     "comment": "风机档位（吹风）"
+    },
+    {
+     "iid": 8,
+     "type": "urn:miot-spec-v2:property:fan-level:00000016:xiaomi-na1:1",
+     "description": "Fan Level",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Low",
+       "comment": "低档"
+      },
+      {
+       "value": 1,
+       "description": "High",
+       "comment": "高档"
+      }
+     ],
+     "gatt-access": [],
+     "comment": "风机档位（换气）"
+    }
+   ],
+   "comment": "风向控制"
+  },
+  {
+   "iid": 11,
+   "type": "urn:miot-spec-v2:service:environment:0000780A:xiaomi-na1:1",
+   "description": "Environment",
+   "properties": [
+    {
+     "iid": 7,
+     "type": "urn:miot-spec-v2:property:temperature:00000020:xiaomi-na1:1",
+     "description": "Temperature",
+     "format": "int16",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "unit": "celsius",
+     "value-range": [
+      -30,
+      100,
+      1
+     ],
+     "gatt-access": [],
+     "comment": "温度"
+    }
+   ],
+   "comment": "环境参数"
+  }
+ ]
+}

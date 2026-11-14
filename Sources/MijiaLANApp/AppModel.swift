@@ -56,6 +56,7 @@ final class AppModel {
     @ObservationIgnored private var discoverySuspendedForCurtains = false
     @ObservationIgnored private var rediscoveryTask: Task<Void, Never>?
     @ObservationIgnored private var bridgeAttached = false
+    @ObservationIgnored private var homeKitServiceLists: (revision: UInt64, names: Int, devices: [String: [CapabilityHomeKitService]]) = (0, 0, [:])
     @ObservationIgnored private let usesPreviewDevices: Bool
     @ObservationIgnored private let logger = Logger(subsystem: "com.mijialan.MijiaLAN", category: "App")
 
@@ -175,13 +176,46 @@ final class AppModel {
     func isInHomeKit(_ device: LocalDevice) -> Bool { !store.hiddenDeviceIds.contains(device.did) }
 
     func setInHomeKit(_ device: LocalDevice, _ included: Bool) {
-        if included { store.unhideDevice(device.did) } else { store.hideDevice(device.did) }
+        if included {
+            // A device that left Home with its last service comes back whole.
+            if homeKitServices(device).allSatisfy({ !isInHomeKit(device, service: $0) }) { bridge.setExcludedServices([], for: device.did) }
+            store.unhideDevice(device.did)
+        } else {
+            store.hideDevice(device.did)
+        }
+    }
+
+    /// What the device can publish to Apple Home, service by service and under the names Home shows, the main service
+    /// first. Excluded services are listed too.
+    func homeKitServices(_ device: LocalDevice) -> [CapabilityHomeKitService] {
+        guard let snapshot = devices.snapshots[device.did] else { return [] }
+        // Called for every row on every render, like `homeKitSupports`; renaming a service in Home changes the names.
+        let revision = devices.structureRevision, names = bridge.serviceNamesRevision
+        if homeKitServiceLists.revision != revision || homeKitServiceLists.names != names { homeKitServiceLists = (revision, names, [:]) }
+        if let known = homeKitServiceLists.devices[device.did] { return known }
+        let legacy = devices.synthesizedHome().devices.first { $0.id == device.did }
+        let services = bridge.homeServices(for: snapshot, legacyDevice: legacy)
+        homeKitServiceLists.devices[device.did] = services
+        return services
+    }
+
+    func isInHomeKit(_ device: LocalDevice, service: CapabilityHomeKitService) -> Bool {
+        bridge.excludedServices[device.did]?.contains(service.key) != true
+    }
+
+    /// Leaves one service out of Apple Home, or brings it back. An accessory needs a service, so leaving out the last
+    /// one keeps the whole device out instead.
+    func setInHomeKit(_ device: LocalDevice, service: CapabilityHomeKitService, _ included: Bool) {
+        var excluded = bridge.excludedServices[device.did] ?? []
+        if included { excluded.remove(service.key) } else { excluded.insert(service.key) }
+        bridge.setExcludedServices(excluded, for: device.did)
+        if !included, homeKitServices(device).allSatisfy({ excluded.contains($0.key) }) { store.hideDevice(device.did) }
     }
 
     /// Whether Apple Home has an accessory type for this device at all.
     func homeKitSupports(_ device: LocalDevice) -> Bool {
         guard DeviceLANPolicy.allowsPropertyRequests(for: device.model) else { return false }
-        return devices.snapshots[device.did]?.controls.isEmpty == false
+        return devices.snapshots[device.did].map(CapabilityHomeKitMapper.mapsToHome) ?? false
     }
 
     func remove(_ device: LocalDevice) {

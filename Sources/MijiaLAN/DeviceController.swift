@@ -1,6 +1,6 @@
 import Foundation
-import MijiaCore
 import Observation
+import MijiaCore
 
 public enum CapabilityCommand: Equatable, Sendable {
     case set(String, JSONValue)
@@ -41,6 +41,7 @@ public final class DeviceController {
     /// The App's verified curtain reader joins this round, never its own timer or generic probes.
     @ObservationIgnored public var refreshCurtains: @MainActor @Sendable () async -> Void = {}
     @ObservationIgnored private var context = PollingContext()
+    @ObservationIgnored private var publicationTask: Task<Void, Never>?
     @ObservationIgnored private var healthTask: Task<Void, Never>?
     @ObservationIgnored private var startedProbing = false
     @ObservationIgnored private var lastConfiguration: LocalHomeConfig?
@@ -80,6 +81,7 @@ public final class DeviceController {
     }
 
     deinit {
+        publicationTask?.cancel()
         healthTask?.cancel()
         for read in readTasks.values { read.task.cancel() }
     }
@@ -93,7 +95,7 @@ public final class DeviceController {
         let devices = next.devices
         let known = Set(devices.map(\.did))
         for (did, read) in readTasks where !devices.contains(where: { device in
-            snapshotStorage[did].map { ProbeScheduler.sameEndpoint($0.device, device) } == true
+            snapshots[did].map { ProbeScheduler.sameEndpoint($0.device, device) } == true
         }) {
             read.task.cancel(); readTasks[did] = nil
         }
@@ -143,7 +145,7 @@ public final class DeviceController {
     }
 
     private func preserveReadings(in next: inout DeviceSnapshot) {
-        guard let old = snapshotStorage[next.id], ProbeScheduler.sameEndpoint(old.device, next.device),
+        guard let old = snapshots[next.id], ProbeScheduler.sameEndpoint(old.device, next.device),
               old.schema.type == next.schema.type else { return }
         next.readings = old.readings.filter { next.capabilitiesByID[$0.key] != nil }
         next.prepared = old.prepared.filter { next.capabilitiesByID[$0.key] != nil }
@@ -174,6 +176,7 @@ public final class DeviceController {
     }
     public func shutdown() {
         pollingLoop.stop()
+        publicationTask?.cancel(); publicationTask = nil
         healthTask?.cancel(); healthTask = nil
         for read in readTasks.values { read.task.cancel() }; readTasks = [:]
         for c in continuations.values { c.finish() }; continuations = [:]
@@ -200,7 +203,11 @@ public final class DeviceController {
     public func refreshNow() async {
         guard !refreshing else { return }
         refreshing = true
-        defer { refreshing = false; publish() }
+        defer {
+            refreshing = false
+            publicationTask?.cancel(); publicationTask = nil
+            publish()
+        }
         reconcileConfiguration()
         observeHealthIfNeeded()
         await api.startProbing()
@@ -218,8 +225,21 @@ public final class DeviceController {
                 let caps = snapshot.capabilities.filter { $0.readable && (slow || !$0.lowFrequency) }
                 group.addTask { await self.refresh(did: did, capabilities: caps, joinExisting: true) }
             }
+            // Publish completed devices without waiting for an unrelated slow
+            // request. Nearby completions share one coherent HomeKit/UI update.
+            for await _ in group { schedulePublication() }
         }
         if !Task.isCancelled { await refreshCurtains() }
+    }
+
+    private func schedulePublication() {
+        guard publicationTask == nil, !Task.isCancelled else { return }
+        publicationTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(25))
+            guard !Task.isCancelled, let self else { return }
+            self.publicationTask = nil
+            self.publish()
+        }
     }
 
     private func observeHealthIfNeeded() {
@@ -229,9 +249,9 @@ public final class DeviceController {
             for await update in await api.healthEvents() {
                 guard !Task.isCancelled, let self else { return }
                 var recovered: [String] = []
-                for did in self.snapshotStorage.keys {
-                    if update.health[did]?.state == .online && self.snapshotStorage[did]?.isOnline != true { recovered.append(did) }
-                    self.snapshotStorage[did]?.health = update.health[did] ?? LANDeviceHealth()
+                for did in self.snapshots.keys {
+                    if update.health[did]?.state == .online && self.snapshots[did]?.isOnline != true { recovered.append(did) }
+                    self.snapshots[did]?.health = update.health[did] ?? LANDeviceHealth()
                 }
                 if self.retryStates != update.retries { self.retryStates = update.retries }
                 if !self.refreshing || !recovered.isEmpty { self.publish() }
@@ -416,13 +436,15 @@ public final class DeviceController {
                 throw error
             }
             snapshots[did]?.lastCommand = L10n.tr("设备已接受动作，正在确认状态", "Action accepted. Confirming device state.")
+            let status = snapshot.capability(snapshot.schema.category, "status")
+            let before = status.flatMap { snapshot.value($0.id)?.integer }
             var confirmed = false
-            for attempt in 0..<3 {
+            // A robot vacuum reports its new status only once it starts moving: allow it about two seconds.
+            for attempt in 0..<(snapshot.schema.category == "vacuum" ? 6 : 3) {
                 if attempt > 0 { try await Task.sleep(for: .milliseconds(350)) }
                 await refresh(did: did, capabilities: snapshot.capabilities.filter { $0.readable && !$0.lowFrequency })
-                if let status = snapshot.capability(snapshot.schema.category, "status"),
-                   let actual = snapshots[did]?.value(status.id)?.intValue,
-                   Self.actionConfirmed(cap.name, category: snapshot.schema.category, status: actual) {
+                if let status, let actual = snapshots[did]?.value(status.id)?.integer,
+                   Self.actionConfirmed(cap.name, category: snapshot.schema.category, status: actual, before: before, in: status) {
                     snapshots[did]?.lastCommand = L10n.tr("状态已确认：\(status.formatted(.number(Double(actual))))", "State confirmed: \(status.formatted(.number(Double(actual))))")
                     snapshots[did]?.commandReceipt?.confirmedAt = Date()
                     confirmed = true; break
@@ -438,7 +460,13 @@ public final class DeviceController {
         if let a = actual?.doubleValue, let b = requested.doubleValue { return abs(a - b) < 0.00001 }
         return false
     }
-    private static func actionConfirmed(_ action: String, category: String, status: Int) -> Bool {
+    /// `before` is the status read before the action; `capability` is the status property, whose option
+    /// descriptions say what a vacuum's numbers mean.
+    static func actionConfirmed(_ action: String, category: String, status: Int, before: Int?, in capability: DeviceCapability) -> Bool {
+        if category == "vacuum" {
+            func description(_ value: Int?) -> String? { capability.options.first { $0.value == value }?.description }
+            return VacuumStatus.confirms(action, status: description(status), before: description(before))
+        }
         switch (category, action) {
         case ("air-fryer", "start-cook"), ("air-fryer", "resume-cook"): return [3, 4, 5, 10, 13, 14].contains(status)
         case ("air-fryer", "pause"): return [2, 8, 9, 11].contains(status)
@@ -499,7 +527,12 @@ public final class DeviceController {
         for s in snapshots.values {
             specs[s.device.model] = s.coreSpec
             for c in s.capabilities where c.kind == .property {
-                if let value = s.value(c.id) { values[MiotPropKey(did: s.id, siid: c.siid, piid: c.iid)] = value }
+                // MijiaCore reads numbers, and numeric strings such as "nan", with `intValue`, which traps on a
+                // number Int cannot hold. Such a value is left out; the capability itself still shows it. So is an
+                // option the spec does not list, which MijiaCore's own tables have no meaning for.
+                if let value = s.value(c.id), c.lists(value), value.doubleValue == nil || value.integer != nil {
+                    values[MiotPropKey(did: s.id, siid: c.siid, piid: c.iid)] = value
+                }
             }
         }
         var home = MiotSynthesizer.synthesize(devices: records, rooms: rooms, specs: specs, values: values)
@@ -513,10 +546,10 @@ public final class DeviceController {
         return home
     }
     private func publish() {
-        let valuesChanged = snapshotStorage.count != publishedSnapshots.count || snapshotStorage.contains {
+        let valuesChanged = snapshots.count != publishedSnapshots.count || snapshots.contains {
             !$0.value.hasSameValues(as: publishedSnapshots[$0.key])
         }
-        let uiChanged = snapshotStorage.contains {
+        let uiChanged = snapshots.contains {
             $0.value.lastCommand != publishedSnapshots[$0.key]?.lastCommand ||
             $0.value.commandReceipt != publishedSnapshots[$0.key]?.commandReceipt
         }
@@ -529,10 +562,8 @@ public final class DeviceController {
             if structureChanged { structureRevision &+= 1 }
             valuesRevision &+= 1
         }
-        if structureChanged || valuesChanged || uiChanged || context.panelVisible {
-            withMutation(keyPath: \.snapshots) {}
-        }
-        publishedSnapshots = snapshotStorage
+        if structureChanged || valuesChanged || uiChanged || context.panelVisible { withMutation(keyPath: \.snapshots) {} }
+        publishedSnapshots = snapshots
     }
 }
 

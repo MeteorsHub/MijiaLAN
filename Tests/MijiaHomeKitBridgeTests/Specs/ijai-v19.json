@@ -1,0 +1,291 @@
+{
+ "type": "urn:miot-spec-v2:device:vacuum:0000A006:ijai-v19:1",
+ "services": [
+  {
+   "iid": 2,
+   "type": "urn:miot-spec-v2:service:vacuum:00007810:ijai-v19:1",
+   "description": "Robot Cleaner",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:status:00000007:ijai-v19:1",
+     "description": "Status",
+     "format": "uint8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Sleep",
+       "comment": "睡眠"
+      },
+      {
+       "value": 1,
+       "description": "Idle",
+       "comment": "待机"
+      },
+      {
+       "value": 2,
+       "description": "Paused",
+       "comment": "暂停"
+      },
+      {
+       "value": 3,
+       "description": "Go Charging",
+       "comment": "回充中"
+      },
+      {
+       "value": 4,
+       "description": "Charging",
+       "comment": "充电中"
+      },
+      {
+       "value": 5,
+       "description": "Sweeping",
+       "comment": "扫地中"
+      },
+      {
+       "value": 6,
+       "description": "Sweeping and Mopping",
+       "comment": "扫拖中"
+      },
+      {
+       "value": 7,
+       "description": "Mopping",
+       "comment": "拖地中"
+      },
+      {
+       "value": 8,
+       "description": "Upgrading",
+       "comment": "升级中..."
+      }
+     ],
+     "comment": "工作状态"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:property:fault:00000009:ijai-v19:1",
+     "description": "Device Fault",
+     "format": "uint32",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "value-range": [
+      0,
+      3000,
+      1
+     ],
+     "comment": "故障"
+    },
+    {
+     "iid": 4,
+     "type": "urn:miot-spec-v2:property:mode:00000008:ijai-v19:1",
+     "description": "Mode",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Sweep",
+       "comment": "扫地"
+      },
+      {
+       "value": 1,
+       "description": "Sweep And Mop",
+       "comment": "扫拖"
+      },
+      {
+       "value": 2,
+       "description": "Mop",
+       "comment": "拖地"
+      }
+     ],
+     "comment": "模式"
+    },
+    {
+     "iid": 8,
+     "type": "urn:miot-spec-v2:property:sweep-type:000000D3:ijai-v19:1",
+     "description": "Sweep Type",
+     "format": "uint8",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "value-list": [
+      {
+       "value": 0,
+       "description": "Global",
+       "comment": "全局"
+      },
+      {
+       "value": 1,
+       "description": "Mop",
+       "comment": "拖地"
+      },
+      {
+       "value": 2,
+       "description": "Edge",
+       "comment": "沿边"
+      },
+      {
+       "value": 3,
+       "description": "Area",
+       "comment": "区域"
+      },
+      {
+       "value": 4,
+       "description": "Point",
+       "comment": "定点"
+      },
+      {
+       "value": 5,
+       "description": "Remote",
+       "comment": "遥控"
+      },
+      {
+       "value": 6,
+       "description": "Explore",
+       "comment": "建图"
+      },
+      {
+       "value": 7,
+       "description": "Room",
+       "comment": "房间定制"
+      },
+      {
+       "value": 8,
+       "description": "Floor",
+       "comment": "地板定制"
+      }
+     ],
+     "comment": "清扫方式"
+    },
+    {
+     "iid": 9,
+     "type": "urn:miot-spec-v2:property:on:00000006:ijai-v19:1",
+     "description": "Switch Status",
+     "format": "string",
+     "access": [
+      "read",
+      "write",
+      "notify"
+     ],
+     "comment": "on"
+    },
+    {
+     "iid": 10,
+     "type": "urn:miot-spec-v2:property:room-ids:00000073:ijai-v19:1",
+     "description": "Room IDs",
+     "format": "string",
+     "access": [],
+     "comment": "米家房间id参数"
+    }
+   ],
+   "actions": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:action:start-sweep:00002804:ijai-v19:1",
+     "description": "Start Sweep",
+     "in": [],
+     "out": [],
+     "comment": "开始"
+    },
+    {
+     "iid": 2,
+     "type": "urn:miot-spec-v2:action:stop-sweeping:00002805:ijai-v19:1",
+     "description": "Stop Sweeping",
+     "in": [],
+     "out": [],
+     "comment": "停止"
+    },
+    {
+     "iid": 3,
+     "type": "urn:miot-spec-v2:action:start-only-sweep:0000283A:ijai-v19:1",
+     "description": "Start Only Sweep",
+     "in": [],
+     "out": [],
+     "comment": "开始"
+    },
+    {
+     "iid": 5,
+     "type": "urn:miot-spec-v2:action:start-sweep-mop:00002835:ijai-v19:1",
+     "description": "Start Sweep Mop",
+     "in": [],
+     "out": [],
+     "comment": "开始"
+    },
+    {
+     "iid": 6,
+     "type": "urn:miot-spec-v2:action:start-mop:00002834:ijai-v19:1",
+     "description": "Start Mop",
+     "in": [],
+     "out": [],
+     "comment": "开始"
+    },
+    {
+     "iid": 7,
+     "type": "urn:miot-spec-v2:action:start-room-sweep:00002826:ijai-v19:1",
+     "description": "Start Room Sweep",
+     "in": [
+      10
+     ],
+     "out": [],
+     "comment": "打扫房间"
+    }
+   ],
+   "comment": "扫地机"
+  },
+  {
+   "iid": 3,
+   "type": "urn:miot-spec-v2:service:battery:00007805:ijai-v19:1",
+   "description": "Battery",
+   "properties": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:property:battery-level:00000014:ijai-v19:1",
+     "description": "Battery Level",
+     "format": "int8",
+     "access": [
+      "read",
+      "notify"
+     ],
+     "unit": "percentage",
+     "value-range": [
+      -1,
+      100,
+      1
+     ],
+     "comment": "电池电量"
+    }
+   ],
+   "actions": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:action:start-charge:00002802:ijai-v19:1",
+     "description": "Start Charge",
+     "in": [],
+     "out": [],
+     "comment": "回充"
+    }
+   ],
+   "events": [
+    {
+     "iid": 1,
+     "type": "urn:miot-spec-v2:event:low-battery:00005003:ijai-v19:1",
+     "description": "Low Battery",
+     "arguments": [],
+     "comment": "电量低"
+    }
+   ],
+   "comment": "电池"
+  }
+ ]
+}

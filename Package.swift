@@ -15,8 +15,8 @@ let package = Package(
     ],
     dependencies: [
         // MIoT spec parsing, device synthesis, command mapping, the one-time QR login and `HomeStore`
-        // (optimistic updates, rollback). Pinned to the 1.1.4 release commit.
-        .package(url: "https://github.com/jryang1997/MenuBarMijia.git", revision: "c6a9db1c84fa30125ed4b642b6745487dec94e89"),
+        // (optimistic updates, rollback). Exact 1.1.4 sources and MIT notice recovered upstream.
+        .package(path: "Vendor/MenuBarMijia"),
         // HomeKit Accessory Protocol server: acumen-dev/hap-swift at 638001b plus one fix, see Vendor/hap-swift/README.md.
         .package(path: "Vendor/hap-swift"),
         // hap-swift's logging API; the app sends it to the unified log.
@@ -66,7 +66,7 @@ let package = Package(
         ),
         .testTarget(
             name: "MijiaLANAppTests",
-            dependencies: ["MijiaLANApp", "MijiaLAN", .product(name: "MijiaCore", package: "MenuBarMijia")],
+            dependencies: ["MijiaLANApp", "MijiaLAN", "MijiaHomeKitBridge", .product(name: "MijiaCore", package: "MenuBarMijia")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
@@ -85,6 +85,7 @@ let package = Package(
                 .product(name: "MijiaCore", package: "MenuBarMijia"),
                 .product(name: "HAPSwift", package: "hap-swift")
             ],
+            resources: [.copy("Specs")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         )
     ]

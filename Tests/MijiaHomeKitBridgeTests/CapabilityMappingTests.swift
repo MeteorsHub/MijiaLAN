@@ -88,8 +88,10 @@ struct CapabilityMappingTests {
         s.readings["p:8:1"] = DeviceReading(value: .number(8), code: 0)
         s.readings["p:2:2"] = DeviceReading(value: .number(4), code: 0)
         #expect(CapabilityHomeKitMapper.value(binding, snapshot: s, legacyValues: [:], names: [:]) == .float(8))
-        let presets = plan.bindings.values.filter { binding in if case .option("p:2:2", _) = binding { true } else { false } }
-        #expect(presets.count == 4)
+        // The gear list describes the same motor as the percentage slider; do not publish redundant switches.
+        #expect(!plan.bindings.values.contains { binding in
+            switch binding { case .property("p:2:2", _), .option("p:2:2", _): true; default: false }
+        })
     }
 
     @Test("Purifier current state uses actual motor speed instead of assuming power-on means purifying")

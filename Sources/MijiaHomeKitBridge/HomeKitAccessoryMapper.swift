@@ -122,7 +122,8 @@ public struct HomeKitAccessoryPlan: Sendable {
 /// | Climate (AC, heater) | Heater cooler: on, auto / heat / cool, target temperature, fan speed and swing (when the device has them); switches for dry and fan only |
 /// | Sensor | Temperature and humidity sensors, battery |
 ///
-/// Vacuums, speakers, TVs and fridges are not exposed: Apple Home has no matching HAP service.
+/// Vacuums, speakers, TVs and fridges are not exposed here: Apple Home has no matching HAP service.
+/// `CapabilityHomeKitMapper` gives vacuums a switch from their spec.
 public enum HomeKitAccessoryMapper {
     /// A bridge carries at most 150 accessories, itself included.
     public static let maxBridgedAccessories = 149
@@ -196,21 +197,24 @@ public enum HomeKitAccessoryMapper {
             return on == s.isOn ? nil : .power(on)
 
         case (.lightBrightness, .light(let s)):
-            let percent = min(100, max(0, Int(number.rounded())))
+            let percent = Int(min(100, max(0, number)).rounded())
             if percent == 0 { return s.isOn ? .power(false) : nil }
             return (s.isOn && s.brightnessPercent == percent) ? nil : .brightness(percent)
 
         case (.lightColorTemperature, .light(let s)):
             // Setting a colour temperature turns the light on; only follow it while the light is already on.
             guard s.isOn, number > 0 else { return nil }
-            let requestedMired = Int(number.rounded())
-            if let current = s.colorTempKelvin, mired(fromKelvin: current) == requestedMired { return nil }
-            let kelvin = min(s.maxKelvin, max(s.minKelvin, Int((1_000_000 / number).rounded())))
+            if let current = s.colorTempKelvin, Double(mired(fromKelvin: current)) == number.rounded() { return nil }
+            let kelvin = Int(min(Double(s.maxKelvin), max(Double(s.minKelvin), (1_000_000 / number).rounded())))
             return .colorTemperature(kelvin: kelvin)
 
         case (.outletOn, .plug(let s)):
             let on = number != 0
             return on == s.isOn ? nil : .power(on)
+
+        case (.outletOn, .climate(let s)):
+            let on = number != 0
+            return on == isActive(s) ? nil : .power(on)
 
         case (.fanActive, .fan(let s)):
             let on = number >= 1
@@ -222,7 +226,8 @@ public enum HomeKitAccessoryMapper {
 
         case (.climateTargetState, .climate(let s)):
             // Picking a mode also turns the device on, as it did with the thermostat.
-            guard let mode = hvacMode(forTargetState: Int(number.rounded()), availableModes: s.availableModes) else { return nil }
+            guard let state = Int(exactly: number.rounded()),
+                  let mode = hvacMode(forTargetState: state, availableModes: s.availableModes) else { return nil }
             return isActive(s) && s.hvacMode == mode ? nil : .climateMode(mode)
 
         case (.climateCoolingThreshold, .climate(let s)), (.climateHeatingThreshold, .climate(let s)):
@@ -234,7 +239,7 @@ public enum HomeKitAccessoryMapper {
         case (.climateFanSpeed, .climate(let s)):
             let levels = fanLevels(of: s)
             guard !levels.isEmpty else { return nil }
-            let index = min(levels.count, max(0, Int((number * Double(levels.count) / 100).rounded())))
+            let index = Int((min(100, max(0, number)) * Double(levels.count) / 100).rounded())
             // 0 % is the device's automatic speed, when it has one.
             let mode = index == 0 ? (s.availableFanModes.first(where: isAutoFan) ?? levels[0]) : levels[index - 1]
             return mode == s.fanMode ? nil : .climateFanMode(mode)
@@ -361,6 +366,13 @@ public enum HomeKitAccessoryMapper {
 
     private static func climateSpecs(_ s: ClimateSpec, configuredNames: [HomeKitRole: String]) -> [Spec] {
         let states = validTargetStates(for: s)
+        guard !states.isEmpty else {
+            // No auto, heat or cool capability: keep power and supported mode switches without inventing a mode.
+            return [
+                spec(.outletOn, .bool(isActive(s)), writable: true),
+                spec(.outletInUse, .bool(isActive(s))),
+            ] + climateModeSpecs(s, configuredNames: configuredNames)
+        }
         // The device's own range, kept within what Apple Home draws.
         let minTemp = max(0, s.minTemp)
         let maxTemp = min(38, max(minTemp, s.maxTemp))
@@ -393,6 +405,11 @@ public enum HomeKitAccessoryMapper {
         // Celsius; Apple Home converts for display.
         specs.append(spec(.climateDisplayUnits, .uint8(0), writable: true, min: 0, max: 1))
 
+        return specs + climateModeSpecs(s, configuredNames: configuredNames)
+    }
+
+    private static func climateModeSpecs(_ s: ClimateSpec, configuredNames: [HomeKitRole: String]) -> [Spec] {
+        var specs: [Spec] = []
         // Apple Home's heater cooler knows auto, heat and cool only.
         let extraModes: [(mode: String, role: HomeKitRole, nameRole: HomeKitRole, configuredRole: HomeKitRole, name: String, displayName: String)] = [
             ("dry", .climateDrySwitch, .climateDryName, .climateDryConfiguredName, L10n.tr("除湿", "Dry"), L10n.tr("除湿模式", "Dry Mode")),
@@ -419,7 +436,7 @@ public enum HomeKitAccessoryMapper {
         switch s.hvacMode {
         case "heat" where states.contains(1): return 1
         case "cool" where states.contains(2): return 2
-        default: return states.contains(0) ? 0 : states[0]
+        default: return states.contains(0) ? 0 : (states.first ?? 0)
         }
     }
 
@@ -438,8 +455,7 @@ public enum HomeKitAccessoryMapper {
         if s.availableModes.contains(where: autoModes.contains) { states.append(0) }
         if s.availableModes.contains("heat") { states.append(1) }
         if s.availableModes.contains("cool") { states.append(2) }
-        // HAP needs one; a device with none of these runs on Active and its mode switches.
-        return states.isEmpty ? [0] : states
+        return states
     }
 
     static func hvacMode(forTargetState state: Int, availableModes: [String]) -> String? {
@@ -507,7 +523,7 @@ public enum HomeKitAccessoryMapper {
         case .uint32(let v): return Double(v)
         case .int32(let v): return Double(v)
         case .float(let v): return v.isFinite ? v : nil
-        case .string(let v): return Double(v)
+        case .string(let v): return Double(v).flatMap { $0.isFinite ? $0 : nil }
         case .data, .tlv8: return nil
         }
     }

@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import HAPCore
+import HAPCrypto
 import HAPTransport
 import MijiaCore
 @testable import MijiaLAN
@@ -8,6 +9,33 @@ import MijiaCore
 
 @MainActor
 struct IncrementalSyncTests {
+    @Test("Stopping and restarting bridge observations uses current cached state without extra LAN reads")
+    func observationRestart() async throws {
+        let fixture = try await Fixture.make()
+        let uri = fixture.bridge.setupURI
+        fixture.bridge.isEnabled = false
+        await fixture.bridge.waitUntilIdle()
+        #expect(fixture.bridge.status == .stopped)
+        #expect(fixture.bridge.bridge == nil)
+        await fixture.transport.set("8.1", .number(62))
+        await fixture.devices.refreshNow() // Only this explicit fixture refresh may query its fake device.
+        fixture.store.hideDevice("123")
+        await fixture.bridge.waitUntilIdle()
+        let before = await fixture.transport.methods
+        #expect(fixture.bridge.bridge == nil)
+        fixture.bridge.isEnabled = true
+        await fixture.bridge.waitUntilIdle()
+        let hap = try #require(fixture.bridge.bridge)
+        #expect(await hap.accessoryDatabase().count == 1)
+        fixture.store.unhideDevice("123")
+        await fixture.bridge.waitUntilIdle()
+        let iid = try #require(await hap.accessoryDatabase().first { $0.aid == 2 }?.services.flatMap(\.characteristics).first { $0.type == .rotationSpeed }?.iid)
+        #expect(await hap.readCharacteristic(aid: 2, iid: iid) == .float(62))
+        #expect(fixture.bridge.setupURI == uri)
+        #expect(await fixture.transport.methods == before)
+        await fixture.stop()
+    }
+
     @Test("HomeKit reads use saved bridge state without LAN queries, while a changed control still writes and reads back immediately")
     func cachedReadsAndImmediateWrite() async throws {
         let fixture = try await Fixture.make()
@@ -96,20 +124,85 @@ struct IncrementalSyncTests {
         await fixture.stop()
     }
 
-    @Test("Same-value HomeKit writes still force a confirmation event after delta suppression")
-    func forcedConfirmation() async throws {
+    @Test("Same-value writes confirm device state without redundant events; later device changes notify both controllers", arguments: [false, true])
+    func forcedConfirmation(protocolRequest: Bool) async throws {
         let fixture = try await Fixture.make()
+        // Isolate packet-count assertions from the fixture's periodic timer; refreshes below are explicit.
+        fixture.devices.setPollingIntervals(.init(foregroundSeconds: 3600, backgroundSeconds: 3600))
         let events = CapturedEvents()
         let iid = try #require(await fixture.hap.accessoryDatabase().first { $0.aid == 2 }?.services.flatMap(\.characteristics).first { $0.type == .rotationSpeed }?.iid)
+        await fixture.hap.setCharacteristicChangeHandler { subscribers, data in await events.append(data, subscribers: subscribers) }
         await fixture.hap.subscribe(connectionID: 7, aid: 2, iid: iid)
-        await fixture.hap.setCharacteristicChangeHandler { _, data in await events.append(data) }
-        try await fixture.hap.writeCharacteristic(aid: 2, iid: iid, value: .float(50))
+        await fixture.hap.subscribe(connectionID: 22, aid: 2, iid: iid)
+        let initial = try await drain(events, bridge: fixture.hap, iid: iid, marker: 1000)
+        let recipients = Set(initial.map { $0.subscribers })
+        #expect(initial.count == 2 && recipients == Set([Set([7]), Set([22])]))
+
+        let identity = HAPIdentity(), pairings = InMemoryPairingStore()
+        let verify = PairVerifyStateMachine(identity: identity, pairingStore: pairings, deviceID: "test")
+        try await VerifiedTestController.authenticate(verify, store: pairings)
+        let handler = CharacteristicProtocol(bridge: fixture.hap,
+            pairingStateMachine: PairingStateMachine(setupCode: "031-45-154", identity: identity, pairingStore: pairings, deviceID: "test"),
+            pairVerifyStateMachine: verify, pairingStore: pairings, identity: identity, connectionID: 7)
+        let beforeWrites = await fixture.transport.writes.count
+        let beforeMethods = await fixture.transport.methods.count
+        if protocolRequest {
+            let request = HTTPRequest(method: "PUT", path: "/characteristics",
+                body: Data("{\"characteristics\":[{\"aid\":2,\"iid\":\(iid),\"value\":50}]}".utf8))
+            let response = try await handler.handleRequest(request)
+            #expect(response.statusCode == 204 && response.body.isEmpty)
+        } else {
+            // Retain the old fixture's direct-write path, which has no originating connection.
+            try await fixture.hap.writeCharacteristic(aid: 2, iid: iid, value: .float(50))
+        }
         await fixture.settle()
-        for _ in 0..<100 where await events.count == 0 { try await Task.sleep(for: .milliseconds(2)) }
-        #expect(await events.count >= 1)
+        let repeated = try await drain(events, bridge: fixture.hap, iid: iid, marker: 1001)
+        #expect(repeated.isEmpty)
+        let writes = Array(await fixture.transport.writes.dropFirst(beforeWrites))
+        let addresses = writes.map { "\($0["siid"]?.intValue ?? 0).\($0["piid"]?.intValue ?? 0)" }
+        let values = writes.compactMap { $0["value"] }
+        // The existing fan plan sends speed then power, each once; both writes must have their own readback.
+        #expect(addresses == ["8.1", "2.1"] && values == [.number(50), .bool(true)])
+        let methods = Array(await fixture.transport.methods.dropFirst(beforeMethods))
+        #expect(methods == ["set_properties", "get_properties", "set_properties", "get_properties"])
+        #expect(fixture.devices.snapshots["123"]?.commandReceipt?.confirmedAt != nil)
         #expect(await fixture.hap.readStatus(aid: 2, iid: iid) == .success)
         #expect(await fixture.hap.readCharacteristic(aid: 2, iid: iid) == .float(50))
+        let beforeRead = await fixture.transport.methods
+        let read = try await handler.handleRequest(HTTPRequest(method: "GET", path: "/characteristics?id=2.\(iid)"))
+        #expect(read.statusCode == 200)
+        let json = try JSONDecoder().decode(JSONValue.self, from: read.body)
+        #expect(json["characteristics"]?.arrayValue?.first?["value"] == .number(50))
+        #expect(await fixture.transport.methods == beforeRead)
+
+        // A subsequent external change must still reach the former writer as well as the other controller.
+        let writeCount = await fixture.transport.writes.count
+        await fixture.transport.set("8.1", .number(70))
+        await fixture.devices.refreshNow()
+        await fixture.settle()
+        let external = try await drain(events, bridge: fixture.hap, iid: iid, marker: 1002)
+        #expect(external.count == 1)
+        let event = try #require(external.first)
+        #expect(event.subscribers == [7, 22])
+        let boundary = try #require(event.data.range(of: Data("\r\n\r\n".utf8)))
+        let change = try JSONDecoder().decode(JSONValue.self, from: event.data[boundary.upperBound...])
+        #expect(change["characteristics"]?.arrayValue?.first?["value"] == .number(70))
+        #expect(await fixture.transport.writes.count == writeCount)
         await fixture.stop()
+    }
+
+    private func drain(_ events: CapturedEvents, bridge: HAPBridge, iid: UInt64, marker: Int) async throws -> [CapturedEvents.Delivery] {
+        // A fresh subscription queues a snapshot behind all earlier notifications in the same FIFO.
+        // Its unique recipient proves delivery completion without waiting for an absent duplicate event.
+        await bridge.subscribe(connectionID: marker, aid: 2, iid: iid)
+        for _ in 0..<200 {
+            if await events.hasMarker(marker) {
+                await bridge.unsubscribe(connectionID: marker, aid: 2, iid: iid)
+                return await events.take().filter { $0.subscribers != [marker] }
+            }
+            try await Task.sleep(for: .milliseconds(2))
+        }
+        throw WireHAPController.Failure.timedOut
     }
 
     @Test("Hiding and restoring a capability device reuses its reserved identifiers")
@@ -175,9 +268,15 @@ struct IncrementalSyncTests {
 }
 
 private actor CapturedEvents {
-    private var values: [Data] = []
+    struct Delivery: Sendable {
+        let subscribers: Set<Int>
+        let data: Data
+    }
+    private var values: [Delivery] = []
     var count: Int { values.count }
-    func append(_ data: Data) { values.append(data) }
+    func append(_ data: Data, subscribers: Set<Int> = []) { values.append(Delivery(subscribers: subscribers, data: data)) }
+    func hasMarker(_ marker: Int) -> Bool { values.contains { $0.subscribers == [marker] } }
+    func take() -> [Delivery] { defer { values.removeAll() }; return values }
 }
 
 private actor SyncTestTransport: MiioTransport {
@@ -185,6 +284,7 @@ private actor SyncTestTransport: MiioTransport {
     private var offline = false
     private var values: [String: JSONValue] = ["2.1": .bool(true), "8.1": .number(50)]
     private(set) var methods: [String] = []
+    private(set) var writes: [JSONValue] = []
     func set(_ key: String, _ value: JSONValue) { values[key] = value }
     func setOffline(_ value: Bool) { offline = value }
     func exchange(_ packet: Data, host: String, port: UInt16, timeout: Duration) async throws -> Data {
@@ -207,6 +307,7 @@ private actor SyncTestTransport: MiioTransport {
                     "code": values[key] == nil ? .number(-4003) : .number(0), "value": values[key] ?? .null])
             })
         case "set_properties":
+            writes.append(contentsOf: args)
             result = .array(args.map { p in
                 let key = "\(p["siid"]?.intValue ?? 0).\(p["piid"]?.intValue ?? 0)"
                 values[key] = p["value"]

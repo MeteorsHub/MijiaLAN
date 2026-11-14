@@ -1,5 +1,6 @@
 import Foundation
 import MijiaCore
+import os
 
 /// One miIO device on the LAN. Calls are serialized per device (the actor), which is also what the firmware expects.
 ///
@@ -47,7 +48,9 @@ public actor MiioClient {
     static let clockMaxAge: Duration = .seconds(120)
     /// "User ack timeout": a request ID the device already used, or (pre-MIoT firmware) a method it does not know.
     static let userAckTimeoutCode = -9999
-
+    /// A shorter per-attempt wait for calls someone is waiting on, such as a write from Apple Home.
+    /// Never lengthens the client's wait or changes the call's retry policy.
+    @TaskLocal public static var attemptTimeout: Duration?
     public init(
         host: String,
         token: Data,
@@ -222,6 +225,7 @@ public actor MiioClient {
     }
 
     private func performCall(_ method: String, params: JSONValue, timeout: Duration?, retryCount: Int?, validation: Bool, validationCheck: (@Sendable () -> Bool)? = nil, wire: (@Sendable (CurtainWireEvent) -> Void)? = nil) async throws -> JSONValue {
+        let timeout = timeout ?? Self.attemptTimeout.map { min($0, self.timeout) }
         let enqueuedAt = time.now()
         await acquire()
         defer { release() }
@@ -330,7 +334,7 @@ public actor MiioClient {
             guard diagnostic.clockAccepted != false else { self.deviceID = nil; throw MiioClockDiscontinuity() }
         } else { self.clock = (header.stamp, time.now()); clockBasis = .reply }
         if let error = json["error"] {
-            throw MiioError.deviceError(code: error["code"]?.intValue ?? 0, message: error["message"]?.stringValue ?? "")
+            throw MiioError.deviceError(code: error["code"]?.integer ?? 0, message: error["message"]?.stringValue ?? "")
         }
         return json["result"] ?? .null
     }
@@ -497,9 +501,9 @@ extension MiioClient {
                 values[MiotPropKey(did: did, siid: p.siid, piid: p.piid)] = DeviceReading(error: L10n.tr("设备未返回此属性", "The device did not return this property."))
             }
             for item in result.arrayValue ?? [] {
-                guard let siid = item["siid"]?.intValue, let piid = item["piid"]?.intValue,
+                guard let siid = item["siid"]?.integer, let piid = item["piid"]?.integer,
                       chunk.contains(where: { $0.siid == siid && $0.piid == piid }) else { continue }
-                let code = item["code"]?.intValue
+                let code = item["code"]?.integer
                 let value = item["value"]
                 values[MiotPropKey(did: did, siid: siid, piid: piid)] = DeviceReading(
                     value: code == 0 ? value : nil, updatedAt: Date(), code: code,
@@ -530,7 +534,7 @@ extension MiioClient {
     /// MIoT per-item codes: 0 done, 1 accepted; negatives are property/action errors.
     static func checkCodes(_ items: [JSONValue]) throws {
         for item in items {
-            guard let code = item["code"]?.intValue else { throw MiioError.badResponse(L10n.tr("响应缺少返回码", "The response is missing a result code.")) }
+            guard let code = item["code"]?.integer else { throw MiioError.badResponse(L10n.tr("响应缺少返回码", "The response is missing a result code.")) }
             if code != 0 && code != 1 { throw MiioError.deviceError(code: code, message: Self.propertyError(code)) }
         }
     }
@@ -558,8 +562,15 @@ extension JSONValue {
     var idString: String? {
         switch self {
         case .string(let s): return s
-        case .number(let n): return n == n.rounded() ? String(Int64(n)) : String(n)
+        case .number(let n): return Int64(exactly: n).map(String.init) ?? String(n)
         default: return nil
         }
+    }
+
+    /// The value as an integer, or nil when Int cannot hold it. MijiaCore's `intValue` traps on NaN, infinity or a
+    /// number past Int's range, and a device reply can contain any of them, including as a string such as "nan".
+    public var integer: Int? {
+        guard let d = doubleValue?.rounded(), d.isFinite else { return nil }
+        return Int(exactly: d)
     }
 }

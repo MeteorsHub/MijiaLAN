@@ -256,7 +256,11 @@ private struct PanelPage: View {
         case .settingsImport:
             SettingsImportFlow(model: model, navigate: navigate)
         case .settingsDiagnostics:
-            SettingsDiagnostics(journal: model.curtains.events)
+            SettingsDiagnostics(journal: model.curtains.events, cachedHomeKitSummary: {
+                let snapshots = Array(model.devices.snapshots.values)
+                let aliases = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, model.curtains.events.alias(for: $0.id)) })
+                return CachedHomeKitDiagnostics.data(snapshots: snapshots, failures: model.bridge.readFailures, aliases: aliases)
+            })
         case .settingsManualAdd:
             SettingsManualDevice(model: model, draft: session.manual)
         }

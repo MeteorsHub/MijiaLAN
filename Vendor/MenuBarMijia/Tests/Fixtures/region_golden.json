@@ -1,0 +1,4 @@
+{
+  "_comment": "米家云端服务器地区的双端共享语料（#37）。Windows: windows/tests/core.test.ts 断言 MI_CLOUD_REGIONS 与本文件一致；macOS: MijiaCoreTests.GoldenCorpusTests 由主代理在 macOS 侧补齐，断言 MiCloudRegion.allCases 的 code 与顺序一致。数组顺序就是登录设置里下拉框的顺序（cn / de / i2 / ru / sg / us），改这里必须同时改两端，否则用户登录到错误的服务器。",
+  "regions": ["cn", "de", "i2", "ru", "sg", "us"]
+}

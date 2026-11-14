@@ -14,8 +14,8 @@ import HAPTransport
 
 /// Per-connection state: own state machines, session, and receive buffer.
 ///
-/// Using an actor serialises buffer mutations and ensures the encrypted/plain
-/// transition happens atomically with respect to incoming data.
+/// The receive loop admits one processing call at a time, including across actor
+/// suspensions. Responses and events submit encrypted bytes through HAPSession.
 private actor HAPConnectionContext {
     var buffer = Data()
     private var closed = false
@@ -36,6 +36,12 @@ private actor HAPConnectionContext {
     let charProtocol: CharacteristicProtocol
     let pairVerifyStateMachine: PairVerifyStateMachine
     let connectionID: Int
+    let send: @Sendable (Data) -> Void
+    /// Keep EVENTs behind the HTTP response, including while a fragmented request is still arriving.
+    /// Actor isolation alone does not prevent an event from entering while a request handler awaits I/O.
+    private var responsePending = false
+    private var pendingEvents: [Data] = []
+    private var flushingEvents = false
     init(
         bridge: HAPBridge,
         setupCode: String,
@@ -43,9 +49,11 @@ private actor HAPConnectionContext {
         pairingStore: any PairingStore,
         deviceID: String,
         connectionID: Int,
+        send: @escaping @Sendable (Data) -> Void,
         onPairingChange: (@Sendable () async -> Void)? = nil
     ) {
         self.connectionID = connectionID
+        self.send = send
         let pairing = PairingStateMachine(
             setupCode: setupCode, identity: identity, pairingStore: pairingStore, deviceID: deviceID
         )
@@ -66,35 +74,45 @@ private actor HAPConnectionContext {
 
     // MARK: - Outgoing encryption (for event notifications)
 
-    /// Encrypt an outgoing EVENT payload using this connection's session keys.
-    /// Returns nil if the session is not yet encrypted (pre-pair-verify).
-    func encryptOutgoing(_ data: Data, logger: Logger, connectionID: Int) async -> Data? {
-        guard await session.isEncrypted else { return nil }
-        do {
-            return try await session.encrypt(data)
-        } catch {
-            logger.debug("Connection \(connectionID): event encryption failed: \(error)")
-            return nil
+    /// Submit EVENT bytes in the same actor-isolated order as response encryption.
+    func sendEvent(_ data: Data, logger: Logger, connectionID: Int) async {
+        guard await session.isEncrypted else { return }
+        pendingEvents.append(data)
+        logger.debug("Connection \(connectionID): queued event (\(data.count) bytes), response pending: \(responsePending)")
+        await flushEvents(logger: logger, connectionID: connectionID)
+    }
+
+    private func flushEvents(logger: Logger, connectionID: Int) async {
+        guard !responsePending, !flushingEvents else { return }
+        flushingEvents = true
+        defer { flushingEvents = false }
+        while !responsePending, !pendingEvents.isEmpty {
+            let data = pendingEvents.removeFirst()
+            do {
+                try await session.encryptAndSend(data, send: send)
+                logger.debug("Connection \(connectionID): submitted event (\(data.count) plaintext bytes)")
+            } catch {
+                logger.debug("Connection \(connectionID): event encryption failed: \(error)")
+                return
+            }
         }
     }
 
     // MARK: - Data processing
 
-    /// Append newly-received bytes to the buffer and process as many complete
-    /// frames as possible.  Returns a list of raw byte blobs to send back.
-    func process(incoming data: Data, logger: Logger, connectionID: Int) async -> [Data] {
-        guard !closed, data.count <= 128 * 1024 - buffer.count else { closed = true; return [] }
+    /// Process one TCP receive, submitting complete responses before queued events.
+    func process(incoming data: Data, logger: Logger, connectionID: Int) async -> Bool {
+        guard !closed, data.count <= 128 * 1024 - buffer.count else { closed = true; return false }
         if partialStarted == nil { partialStarted = .now }
+        responsePending = true
         buffer.append(data)
-        var outgoing: [Data] = []
 
         while !buffer.isEmpty {
             if await session.isEncrypted {
                 // --- Encrypted phase ---
-                // Snapshot the buffer into a local copy (required because actor-isolated
-                // properties cannot be passed inout across actor hops).  Only the consumed
-                // prefix is removed from self.buffer after the call, so any bytes appended
-                // by a concurrent task during the await are preserved.
+                // Actor-isolated properties cannot be passed inout across actor hops.
+                // The receive loop waits for processing, so this prefix remains owned
+                // by this request while the session actor decrypts it.
                 let bytesAvailable = buffer.count
                 logger.trace("Connection \(connectionID): encrypted data received (\(bytesAvailable) bytes buffered)")
                 var localBuffer = buffer
@@ -107,8 +125,7 @@ private actor HAPConnectionContext {
                     plaintext = decrypted
                 } catch {
                     logger.error("Connection \(connectionID): session decrypt failed (frame format or key mismatch): \(error)")
-                    closed = true
-                    break
+                    return false
                 }
                 let consumed = bytesAvailable - localBuffer.count
                 buffer.removeFirst(consumed)
@@ -118,20 +135,19 @@ private actor HAPConnectionContext {
                 // bridge at once, arrives in pieces: keep the decrypted bytes until the whole request is here.
                 pendingPlaintext.append(plaintext)
                 guard pendingPlaintext.count <= Self.maxPendingPlaintext else {
-                    logger.error("Connection \(connectionID): no complete request in \(pendingPlaintext.count) decrypted bytes, dropping them")
-                    pendingPlaintext.removeAll()
-                    closed = true
-                    break
+                    logger.error("Connection \(connectionID): no complete request in \(pendingPlaintext.count) decrypted bytes, closing connection")
+                    return false
                 }
-                if HTTPProtocol.requestBoundary(in: pendingPlaintext) == .invalid { closed = true; break }
+                if HTTPProtocol.requestBoundary(in: pendingPlaintext) == .invalid { closed = true; return false }
                 while let length = HTTPProtocol.requestLength(in: pendingPlaintext) {
                     let requestData = Data(pendingPlaintext.prefix(length))
                     pendingPlaintext.removeFirst(length)
                     guard let request = HTTPProtocol.parseRequest(from: requestData) else {
                         logger.debug("Connection \(connectionID): failed to parse decrypted request (\(requestData.count) bytes plaintext)")
-                        continue
+                        return false
                     }
 
+                    let started = ContinuousClock.now
                     let response: HTTPResponse
                     do {
                         response = try await charProtocol.handleRequest(request)
@@ -141,14 +157,15 @@ private actor HAPConnectionContext {
                     }
 
                     let responseData = HTTPProtocol.serializeResponse(response)
+                    logger.debug("Connection \(connectionID): response \(response.statusCode), \(response.body.count) body bytes after \(started.duration(to: .now))")
                     do {
-                        let encrypted = try await session.encrypt(responseData)
-                        outgoing.append(encrypted)
+                        try await session.encryptAndSend(responseData, send: send)
                     } catch {
                         logger.error("Connection \(connectionID): response encryption failed: \(error)")
+                        return false
                     }
                 }
-                if HTTPProtocol.requestBoundary(in: pendingPlaintext) == .invalid { closed = true; break }
+                if HTTPProtocol.requestBoundary(in: pendingPlaintext) == .invalid { closed = true; return false }
                 if !pendingPlaintext.isEmpty {
                     logger.debug("Connection \(connectionID): request incomplete (\(pendingPlaintext.count) bytes so far), waiting for the next frame")
                 }
@@ -175,7 +192,7 @@ private actor HAPConnectionContext {
                 }
 
                 let responseData = HTTPProtocol.serializeResponse(response)
-                outgoing.append(responseData)
+                send(responseData)
 
                 // If pair-verify just completed (M4 sent), promote this connection
                 // to encrypted mode.  All subsequent data from iOS will be encrypted.
@@ -187,7 +204,11 @@ private actor HAPConnectionContext {
         }
 
         if buffer.isEmpty && pendingPlaintext.isEmpty { partialStarted = nil }
-        return outgoing
+        // All complete HTTP responses have been submitted through HAPSession. A remaining partial frame or
+        // HTTP request still owns the next response slot; resume event delivery after its final fragment.
+        responsePending = !buffer.isEmpty || !pendingPlaintext.isEmpty
+        await flushEvents(logger: logger, connectionID: connectionID)
+        return true
     }
 }
 
@@ -237,7 +258,12 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     // MARK: - HAPServer
 
     public func start(port: UInt16) async throws {
+        try await start(port: port, loopbackOnly: false)
+    }
+
+    public func start(port: UInt16, loopbackOnly: Bool) async throws {
         let params = NWParameters.tcp
+        if loopbackOnly { params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(rawValue: port)!) }
         let listener: NWListener
         if port == 0 {
             listener = try NWListener(using: params)
@@ -256,20 +282,22 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
         // the first resume is valid.
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             // One-shot wrapper: the first resume() consumes the continuation;
-            // subsequent calls are no-ops.  Safe without a lock because
-            // stateUpdateHandler is always called on the listener's serial queue.
-            class ContinuationBox: @unchecked Sendable {
-                var continuation: CheckedContinuation<Void, Error>?
+            // subsequent calls are no-ops.  The listener starts on a global queue,
+            // which is concurrent, so two state updates can overlap: take the
+            // continuation under a lock, or both could resume it and trap.
+            final class ContinuationBox: @unchecked Sendable {
+                private let lock = NSLock()
+                private var continuation: CheckedContinuation<Void, Error>?
                 init(_ continuation: CheckedContinuation<Void, Error>) {
                     self.continuation = continuation
                 }
-                func resume() {
-                    continuation?.resume()
-                    continuation = nil
-                }
-                func resume(throwing error: Error) {
-                    continuation?.resume(throwing: error)
-                    continuation = nil
+                func resume() { take()?.resume() }
+                func resume(throwing error: Error) { take()?.resume(throwing: error) }
+                private func take() -> CheckedContinuation<Void, Error>? {
+                    lock.withLock {
+                        defer { continuation = nil }
+                        return continuation
+                    }
                 }
             }
             let box = ContinuationBox(continuation)
@@ -333,6 +361,13 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
                 pairingStore: pairingStore,
                 deviceID: deviceID,
                 connectionID: id,
+                send: { [logger = self.logger] data in
+                    let count = data.count
+                    connection.send(content: data, completion: .contentProcessed { error in
+                        if let error { logger.debug("Connection \(id) send error: \(error)") }
+                        else { logger.debug("Connection \(id): socket accepted \(count) bytes") }
+                    })
+                },
                 onPairingChange: self.onPairingChange
             )
             return id
@@ -373,32 +408,36 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     private func receiveData(connection: NWConnection, connectionID: Int) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
             guard let self else { return }
-            // Apply backpressure: one processing task per connection, rather than queueing unbounded tasks.
+
+            // One processing task at a time preserves TCP byte order across actor
+            // suspensions and prevents two tasks from decrypting the same buffer.
             Task {
                 if let data = content, !data.isEmpty {
-                    await self.processData(data: data, connection: connection, connectionID: connectionID)
+                    guard await self.processData(data: data, connection: connection, connectionID: connectionID) else {
+                        self.removeConnection(connectionID)
+                        return
+                    }
                 }
-                if isComplete || error != nil {
+
+                if isComplete {
+                    self.logger.debug("Connection \(connectionID): peer ended receive stream")
                     self.removeConnection(connectionID)
-                } else if self.lock.withLock({ self.contexts[connectionID] != nil }) {
+                } else if let error {
+                    self.logger.debug("Connection \(connectionID) receive error: \(error)")
+                    self.removeConnection(connectionID)
+                } else {
                     self.receiveData(connection: connection, connectionID: connectionID)
                 }
             }
         }
     }
 
-    private func processData(data: Data, connection: NWConnection, connectionID: Int) async {
-        guard let context = lock.withLock({ contexts[connectionID] }) else { return }
+    private func processData(data: Data, connection: NWConnection, connectionID: Int) async -> Bool {
+        guard let context = lock.withLock({ contexts[connectionID] }) else { return false }
 
-        let responses = await context.process(incoming: data, logger: logger, connectionID: connectionID)
-        if await context.mustClose() { removeConnection(connectionID); return }
-        for responseData in responses {
-            connection.send(content: responseData, completion: .contentProcessed { [weak self] error in
-                if let error {
-                    self?.logger.debug("Connection \(connectionID) send error: \(error)")
-                }
-            })
-        }
+        let accepted = await context.process(incoming: data, logger: logger, connectionID: connectionID)
+        let shouldClose = await context.mustClose()
+        return accepted && !shouldClose
     }
 
     private func removeConnection(_ connectionID: Int) {
@@ -420,19 +459,8 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     /// Send a pre-built EVENT/1.0 payload to a specific connection, encrypted
     /// with that connection's session keys.
     func sendEvent(_ eventData: Data, to connectionID: Int) async {
-        let (context, connection) = lock.withLock {
-            (contexts[connectionID], connections[connectionID])
-        }
-        guard let context, let connection else { return }
-
-        let encrypted = await context.encryptOutgoing(eventData, logger: logger, connectionID: connectionID)
-        guard let encrypted else { return }
-
-        connection.send(content: encrypted, completion: .contentProcessed { [weak self] error in
-            if let error {
-                self?.logger.debug("Connection \(connectionID) event send error: \(error)")
-            }
-        })
+        guard let context = lock.withLock({ contexts[connectionID] }) else { return }
+        await context.sendEvent(eventData, logger: logger, connectionID: connectionID)
     }
 }
 #endif

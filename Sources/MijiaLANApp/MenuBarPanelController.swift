@@ -119,23 +119,32 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
                         return
                     }
                 }
+                // The icon never got a place: a full menu bar hides it behind the notch, or the menu bar is
+                // hidden. Opening the app must still show something, so the panel opens at the menu bar's right end.
+                PanelTransitionDiagnostics.record("iconUnplaced", [:])
                 self?.pendingShow = nil
+                self?.present(below: nil)
             }
             return
         }
+        present(below: icon)
+    }
+
+    /// Opens the panel under the icon, or under the right end of the main screen's menu bar without one.
+    private func present(below icon: NSRect?) {
+        guard !presentation.isPresented else { return }
         let started = ProcessInfo.processInfo.systemUptime
         let wasUnloaded = contentLifetime.prepare()
         // Lay out at alpha zero before ordering onscreen. Initial discovery or
         // an appearance change must not expose an oversized first frame.
         panel.contentView?.layoutSubtreeIfNeeded()
-        if let button = statusItem.button, let owner = button.window {
-            let icon = owner.convertToScreen(button.convert(button.bounds, to: nil))
-            let visible = owner.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-            var frame = panel.frame
-            frame.origin.x = min(max(icon.midX - frame.width / 2, visible.minX + 8), max(visible.minX + 8, visible.maxX - 8 - frame.width))
-            frame.origin.y = icon.minY - 8 - frame.height
-            panel.setFrame(frame, display: false)
-        }
+        let screen = icon == nil ? NSScreen.main : statusItem.button?.window?.screen
+        let visible = screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        var frame = panel.frame
+        let midX = icon?.midX ?? visible.maxX
+        frame.origin.x = min(max(midX - frame.width / 2, visible.minX + 8), max(visible.minX + 8, visible.maxX - 8 - frame.width))
+        frame.origin.y = (icon?.minY ?? visible.maxY) - 8 - frame.height
+        panel.setFrame(frame, display: false)
         PanelTransitionDiagnostics.record("contentPrepared", ["cold": wasUnloaded,
             "durationMS": (ProcessInfo.processInfo.systemUptime - started) * 1000])
         presentation.show()
@@ -173,7 +182,9 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
     private var positionedIconFrame: NSRect? {
         guard let button = statusItem.button, let owner = button.window, let screen = owner.screen else { return nil }
         let icon = owner.convertToScreen(button.convert(button.bounds, to: nil))
-        guard owner.isVisible && icon.width > 0 && icon.midY >= screen.frame.maxY - 64 else { return nil }
+        // A full menu bar parks the icons that do not fit off screen; such an icon has no place to open under.
+        guard owner.isVisible && icon.width > 0 && icon.midY >= screen.frame.maxY - 64,
+              NSScreen.screens.contains(where: { $0.frame.intersects(icon) }) else { return nil }
         return icon
     }
 
@@ -230,10 +241,12 @@ final class MenuBarPanelController: NSObject, NSWindowDelegate {
         }
         // Mouse clicks only; no keyboard/accessibility permission or event data
         // collection is needed to dismiss when the user clicks another app.
+        // AppKit documents no thread for global events, so hop to the main actor rather than assert it.
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            MainActor.assumeIsolated {
+            let location = NSEvent.mouseLocation
+            Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.presentation.hideForOutsideMouseDown(at: NSEvent.mouseLocation,
+                self.presentation.hideForOutsideMouseDown(at: location,
                     statusItemFrame: self.positionedIconFrame ?? self.settledIconFrame)
             }
         }

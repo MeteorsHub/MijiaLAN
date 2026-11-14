@@ -1,0 +1,243 @@
+{
+  "devices": [
+    {
+      "id": "dev_ceiling",
+      "name": "书房吸顶灯",
+      "roomId": "study",
+      "roomName": "书房",
+      "model": "yeelink.light.ceiling20",
+      "isOnline": true,
+      "kind": {
+        "kind": "light",
+        "entityId": "miot:dev_ceiling:2",
+        "isOn": true,
+        "brightnessPercent": 80,
+        "colorTempKelvin": 4000,
+        "minKelvin": 2700,
+        "maxKelvin": 6500,
+        "currentEffect": "Day",
+        "availableEffects": ["Day", "Night"]
+      }
+    },
+    {
+      "id": "dev_desk",
+      "name": "书房台灯",
+      "roomId": "study",
+      "roomName": "书房",
+      "model": "yeelink.light.lamp4",
+      "isOnline": true,
+      "kind": {
+        "kind": "light",
+        "entityId": "miot:dev_desk:2",
+        "isOn": true,
+        "brightnessPercent": 50,
+        "colorTempKelvin": 4000,
+        "minKelvin": 2700,
+        "maxKelvin": 6500,
+        "currentEffect": null,
+        "availableEffects": []
+      }
+    },
+    {
+      "id": "dev_ac",
+      "name": "客厅空调",
+      "roomId": "living",
+      "roomName": "客厅",
+      "model": "xiaomi.aircondition.mc5",
+      "isOnline": true,
+      "kind": {
+        "kind": "climate",
+        "entityId": "miot:dev_ac:2",
+        "isOn": true,
+        "hvacMode": "cool",
+        "availableModes": ["cool", "heat", "dry", "fan_only", "off"],
+        "targetTemperature": 26,
+        "currentTemperature": 27.5,
+        "minTemp": 16,
+        "maxTemp": 31,
+        "step": 0.5,
+        "fanMode": "auto",
+        "availableFanModes": ["low", "medium", "high", "auto"],
+        "swingMode": "off",
+        "availableSwingModes": ["on", "off"]
+      }
+    },
+    {
+      "id": "dev_fan",
+      "name": "客厅风扇",
+      "roomId": "living",
+      "roomName": "客厅",
+      "model": "dmaker.fan.p5",
+      "isOnline": true,
+      "kind": {
+        "kind": "fan",
+        "entityId": "miot:dev_fan:2",
+        "isOn": true,
+        "percentage": null,
+        "presetMode": "Level1",
+        "availablePresetModes": ["Level1", "Level2", "Level3"],
+        "isOscillating": false
+      }
+    }
+  ],
+  "intentCases": [
+    {
+      "utterance": "关闭书房吸顶灯",
+      "expected": [
+        { "targetId": "dev_ceiling", "kind": "power", "value": false }
+      ]
+    },
+    {
+      "utterance": "书房灯月光模式",
+      "expected": [
+        { "targetId": "dev_ceiling", "kind": "lightEffect", "value": "Night" }
+      ]
+    },
+    {
+      "utterance": "再暗一点",
+      "expected": [
+        { "targetId": "dev_ceiling", "kind": "brightness", "value": 60 },
+        { "targetId": "dev_desk", "kind": "brightness", "value": 30 }
+      ]
+    },
+    {
+      "utterance": "客厅空调调到24度",
+      "expected": [
+        { "targetId": "dev_ac", "kind": "targetTemperature", "value": 24 }
+      ]
+    },
+    {
+      "utterance": "空调调高两度",
+      "expected": [
+        { "targetId": "dev_ac", "kind": "targetTemperature", "value": 28 }
+      ]
+    },
+    {
+      "utterance": "风扇调到高档",
+      "expected": [
+        { "targetId": "dev_fan", "kind": "fanSpeed", "value": "Level3" }
+      ]
+    },
+    {
+      "utterance": "风扇摇头",
+      "expected": [
+        { "targetId": "dev_fan", "kind": "oscillation", "value": true }
+      ]
+    },
+    {
+      "utterance": "turn off all lights",
+      "expected": [
+        { "targetId": "dev_ceiling", "kind": "power", "value": false },
+        { "targetId": "dev_desk", "kind": "power", "value": false }
+      ]
+    },
+    {
+      "utterance": "turn on study light",
+      "expected": [
+        { "targetId": "dev_ceiling", "kind": "power", "value": true },
+        { "targetId": "dev_desk", "kind": "power", "value": true }
+      ]
+    },
+    {
+      "utterance": "study light 40%",
+      "expected": [
+        { "targetId": "dev_ceiling", "kind": "brightness", "value": 40 },
+        { "targetId": "dev_desk", "kind": "brightness", "value": 40 }
+      ]
+    },
+    {
+      "utterance": "study light 4000K",
+      "expected": [
+        { "targetId": "dev_ceiling", "kind": "colorTemperature", "value": 4000 },
+        { "targetId": "dev_desk", "kind": "colorTemperature", "value": 4000 }
+      ]
+    },
+    {
+      "utterance": "study light warm light",
+      "expected": [
+        { "targetId": "dev_ceiling", "kind": "colorTemperature", "value": 2700 },
+        { "targetId": "dev_desk", "kind": "colorTemperature", "value": 2700 }
+      ]
+    },
+    {
+      "utterance": "study light moonlight mode",
+      "expected": [
+        { "targetId": "dev_ceiling", "kind": "lightEffect", "value": "Night" }
+      ]
+    },
+    {
+      "utterance": "dimmer",
+      "expected": [
+        { "targetId": "dev_ceiling", "kind": "brightness", "value": 60 },
+        { "targetId": "dev_desk", "kind": "brightness", "value": 30 }
+      ]
+    },
+    {
+      "utterance": "set living room ac to 24 degrees",
+      "expected": [
+        { "targetId": "dev_ac", "kind": "targetTemperature", "value": 24 }
+      ]
+    },
+    {
+      "utterance": "living room ac cooling mode",
+      "expected": [
+        { "targetId": "dev_ac", "kind": "hvacMode", "value": "cool" }
+      ]
+    },
+    {
+      "utterance": "living room ac increase by 2 degrees",
+      "expected": [
+        { "targetId": "dev_ac", "kind": "targetTemperature", "value": 28 }
+      ]
+    },
+    {
+      "utterance": "make living room ac 2 degrees warmer",
+      "expected": [
+        { "targetId": "dev_ac", "kind": "targetTemperature", "value": 28 }
+      ]
+    },
+    {
+      "utterance": "living room ac auto speed",
+      "expected": [
+        { "targetId": "dev_ac", "kind": "fanSpeed", "value": "auto" }
+      ]
+    },
+    {
+      "utterance": "fan high speed",
+      "expected": [
+        { "targetId": "dev_fan", "kind": "fanSpeed", "value": "Level3" }
+      ]
+    },
+    {
+      "utterance": "stop swing",
+      "expected": [
+        { "targetId": "dev_fan", "kind": "oscillation", "value": false }
+      ]
+    },
+    {
+      "utterance": "play some jazz in the study",
+      "expected": null
+    }
+  ],
+  "delayCases": [
+    { "utterance": "10分钟后关闭书房灯", "seconds": 600, "remainder": "关闭书房灯" },
+    { "utterance": "5 分钟后关灯", "seconds": 300, "remainder": "关灯" },
+    { "utterance": "半小时后打开空调", "seconds": 1800, "remainder": "打开空调" },
+    { "utterance": "关灯，30秒后", "seconds": 30, "remainder": "关灯" },
+    { "utterance": "关灯，30 秒后", "seconds": 30, "remainder": "关灯" },
+    { "utterance": "in 10 minutes turn off study light", "seconds": 600, "remainder": "turn off study light" },
+    { "utterance": "in 25 hours turn off study light", "seconds": null, "remainder": null }
+  ],
+  "cancelCases": [
+    { "utterance": "取消定时", "isCancel": true },
+    { "utterance": "cancel timer", "isCancel": true },
+    { "utterance": "打开空调", "isCancel": false }
+  ],
+  "undoCases": [
+    { "utterance": "撤销", "isUndo": true },
+    { "utterance": "刚才那个撤销", "isUndo": true },
+    { "utterance": "undo", "isUndo": true },
+    { "utterance": "revert", "isUndo": true },
+    { "utterance": "打开书房灯", "isUndo": false }
+  ]
+}

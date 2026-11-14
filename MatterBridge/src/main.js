@@ -6,15 +6,19 @@ import { randomInt } from 'node:crypto';
 import { Environment, Logger } from '@matter/main';
 import { DeviceRPC } from './rpc.js';
 import { createBridge } from './bridge.js';
+import { parseStartupOptions } from './startup-options.js';
 
 // Restrict all newly created Matter credentials and fabric state to the current user.
 process.umask(0o077);
 const args = process.argv.slice(2);
-if (args.length !== 2) {
-  console.error('Usage: npm start -- /absolute/path/mijia-lan /absolute/path/local-home.json');
+let startup;
+try {
+  startup = parseStartupOptions(args);
+} catch (error) {
+  console.error(error.message);
   process.exit(2);
 }
-const appMode = args[0] === '--app';
+const { appMode, port } = startup;
 if (appMode) {
   console.log = (...values) => console.error(...values);
   for (const destination of Object.values(Logger.destinations)) {
@@ -60,7 +64,7 @@ if (appMode) rpc.onClose = () => void stop();
 process.once('SIGINT', () => void stop());
 process.once('SIGTERM', () => void stop());
 try {
-  bridge = await createBridge(rpc, await rpc.request('snapshot'), credentials);
+  bridge = await createBridge(rpc, await rpc.request('snapshot'), { ...credentials, port });
   if (stopping) {
     await bridge.node.close();
   } else {

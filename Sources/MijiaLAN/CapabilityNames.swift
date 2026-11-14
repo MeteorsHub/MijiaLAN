@@ -20,8 +20,8 @@ public enum CapabilityNames {
             "vertical-angle": L10n.tr("上下摇头角度", "Vertical Angle"), "horizontal-swing-included-angle": L10n.tr("左右摇头角度", "Horizontal Angle"),
             "vertical-swing-included-angle": L10n.tr("上下摇头角度", "Vertical Angle"), "alarm": L10n.tr("提示音", "Sound"), "off-delay-time": L10n.tr("关机定时", "Sleep Timer"), "physical-controls-locked": L10n.tr("童锁", "Child Lock"),
             "temperature": L10n.tr("温度", "Temperature"), "relative-humidity": L10n.tr("湿度", "Humidity"), "swing-all": L10n.tr("循环摇头", "Circulating Oscillation"), "back-to-center": L10n.tr("回正", "Return to Center"),
-            "off-to-center": L10n.tr("关机回正", "Center on Power Off"), "brightness": service == "light" ? L10n.tr("亮度", "Brightness") : L10n.tr("屏幕亮度", "Display Brightness"),
-            "color-temperature": L10n.tr("色温", "Color Temperature"), "target-temperature": L10n.tr("设定温度", "Target Temperature"), "electric-power": L10n.tr("功率", "Power"),
+            "off-to-center": L10n.tr("关机回正", "Center on Power Off"), "brightness": service == "light" ? L10n.tr("亮度", "Brightness") : service == "indicator-light" ? L10n.tr("指示灯亮度", "Indicator Brightness") : L10n.tr("屏幕亮度", "Display Brightness"),
+            "color-temperature": L10n.tr("色温", "Color Temperature"), "target-temperature": L10n.tr("设定温度", "Target Temperature"), "electric-power": L10n.tr("功率", "Power Draw"),
             "power-consumption": L10n.tr("累计电量", "Energy Used"), "pm2.5-density": "PM2.5", "filter-life-level": L10n.tr("滤芯寿命", "Filter Life"),
             "filter-used-time": L10n.tr("滤芯已用时间", "Filter Usage"), "filter-left-time": L10n.tr("滤芯剩余时间", "Filter Time Remaining"), "favorite-level": L10n.tr("最爱档位", "Favorite Level"),
             "motor-speed": L10n.tr("电机转速", "Motor Speed"), "fault": L10n.tr("故障", "Fault"), "status": L10n.tr("运行状态", "Operating Status"), "target-time": L10n.tr("烹饪时间", "Cooking Time"),
@@ -36,8 +36,78 @@ public enum CapabilityNames {
         ]
         return names[name] ?? fallback
     }
+    /// The name in a spec comment: its first line, without the explanation or value list vendors append, as in
+    /// "电机反向 【 0: 正向（默认） 1: 反向】". Nil when nothing usable is left, such as the placeholder "null".
+    public static func comment(_ text: String?) -> String? {
+        guard var name = firstLine(text) else { return nil }
+        // A semicolon ends the name only before an explanation; "开启时长;关闭时长;日期" lists a compound value's parts.
+        if let cut = name.indices.first(where: { i in
+            "（(【[：:，,。".contains(name[i]) || "；;".contains(name[i])
+                && (name[i...].dropFirst().allSatisfy(\.isWhitespace) || name[i...].contains { $0.isNumber || "：:".contains($0) })
+        }), name[..<cut].contains(where: \.isLetter) {
+            name = String(name[..<cut])
+        }
+        let chinese = { (c: Character) in c.unicodeScalars.allSatisfy { (0x4E00...0x9FFF).contains($0.value) } }
+        // "地图类型 0:实时图 1:指哪图" explains itself after a space; "AI 识别开关" is still one name.
+        if let space = name.indices.first(where: { name[$0] == " " && name[..<$0].filter(chinese).count >= 2 }) {
+            name = String(name[..<space])
+        }
+        // "重置设备标志0云端待重置1设备待重置…" runs its value list into the name; "按摩力度1挡" is a name.
+        let values = name.indices.filter { i in
+            ("0"..."9").contains(name[i]) && name.index(after: i) < name.endIndex && chinese(name[name.index(after: i)])
+        }
+        if values.count >= 2, name.distance(from: name.startIndex, to: values[0]) >= 4, name[..<values[0]].allSatisfy(chinese) {
+            name = String(name[..<values[0]])
+        }
+        return firstLine(name)
+    }
+    /// A comment's first line, keeping any explanation; nil when empty or the placeholder "null".
+    public static func firstLine(_ text: String?) -> String? {
+        guard let line = text?.split(whereSeparator: \.isNewline).first?.trimmingCharacters(in: .whitespaces),
+              !line.isEmpty, line.lowercased() != "null" else { return nil }
+        return line
+    }
+    /// Names that say only that something switches or has a state; they tell no two controls apart.
+    public static let genericNames: Set<String> = ["开关", "电源", "开关状态", "状态", "switch", "switch status", "status", "on", "power"]
+    /// What sets a service apart from the device's others: "右键" for "Right Switch Service", "冷藏室" for a
+    /// refrigerating chamber, "照明" for a light. English uses the spec description; Chinese knows a fixed list.
+    public static func service(_ name: String, description: String?) -> String? {
+        let text = (description ?? "").trimmingCharacters(in: .whitespaces)
+        if L10n.isEnglish {
+            let label = text.hasSuffix(" Service") ? String(text.dropLast(8)) : text
+            return label.isEmpty ? nil : label
+        }
+        let words = text.lowercased().split(separator: " ")
+        let keys = ["left": "左键", "middle": "中键", "right": "右键", "first": "一键", "second": "二键", "third": "三键", "fourth": "四键"]
+        // A switch sensor configures the wireless click of the key with the same name.
+        if words.count >= 2, words[1] == "switch", let key = keys[String(words[0])] { return words.last == "sensor" ? key + "按键" : key }
+        let described = [
+            "air fresh fan control": "新风",
+            "refrigerating chamber": "冷藏室", "freezing chamber": "冷冻室", "change chamber": "变温室", "upper basket": "上锅", "lower basket": "下锅",
+            "main cleaning brush": "主", "side cleaning brush": "边", "light top": "上灯", "light bottom": "下灯", "left curtain": "左窗帘",
+            "right curtain": "右窗帘", "left induction cooker": "左灶", "right induction cooker": "右灶", "usb switch status": "USB",
+        ]
+        if let label = described[text.lowercased()] { return label }
+        // Filters are named by their kind: "Fresh Air Filter", "RO 400 Filter Service".
+        let filter = (text.hasSuffix(" Service") ? String(text.dropLast(8)) : text)
+        if filter.hasSuffix(" Filter") {
+            let kind = String(filter.dropLast(7))
+            if !kind.isEmpty, kind.allSatisfy({ $0.isUppercase || $0.isNumber || $0 == " " }) { return kind.replacingOccurrences(of: " ", with: "") }
+            if let label = ["fresh air": "新风", "formaldehyde removal": "除醛", "humidify": "加湿", "air purifier": "净化", "ifd electrostatic": "静电",
+                            "high efficiency": "高效", "medium efficiency": "中效", "composite": "复合", "mosquito repellent": "驱蚊"][kind.lowercased()] {
+                return label
+            }
+        }
+        return ["light": "照明", "night-light": "夜灯", "ambient-light": "氛围灯", "fan": "风扇", "heater": "加热", "air-fresh": "新风",
+                "air-conditioner": "空调", "ice-maker": "制冰", "sterilization": "杀菌", "focus-mode": "专注模式", "environment": "环境",
+                "electric-blanket": "电热毯", "curtain": "窗帘", "screen": "屏幕", "indicator-light": "指示灯", "clean": "清洁", "descale": "除垢",
+                "maintenance": "维护", "air-purifier-favorite": "最爱", "air-fresh-favorite": "最爱", "water-use-details": "用水", "ptc-bath-heater": "浴霸"][name]
+    }
     public static func action(_ name: String, fallback: String) -> String {
-        ["start-cook": L10n.tr("开始烹饪", "Start Cooking"), "cancel-cooking": L10n.tr("停止烹饪", "Stop Cooking"), "pause": L10n.tr("暂停", "Pause"), "resume-cook": L10n.tr("继续", "Resume")][name] ?? fallback
+        ["start-cook": L10n.tr("开始烹饪", "Start Cooking"), "cancel-cooking": L10n.tr("停止烹饪", "Stop Cooking"), "pause": L10n.tr("暂停", "Pause"), "resume-cook": L10n.tr("继续", "Resume"),
+         "start-sweep": L10n.tr("开始清扫", "Start Cleaning"), "start-only-sweep": L10n.tr("仅扫地", "Vacuum Only"), "start-mop": L10n.tr("仅拖地", "Mop Only"),
+         "start-sweep-mop": L10n.tr("扫拖", "Vacuum and Mop"), "stop-sweeping": L10n.tr("停止清扫", "Stop Cleaning"),
+         "pause-sweeping": L10n.tr("暂停清扫", "Pause Cleaning"), "start-charge": L10n.tr("回充", "Return to Dock")][name] ?? fallback
     }
     public static func option(_ text: String) -> String {
         // Some vendor schemas provide only Chinese descriptions, including in
@@ -52,7 +122,7 @@ public enum CapabilityNames {
             "normal": L10n.tr("正常", "Normal"), "abnormal": L10n.tr("异常", "Abnormal"), "yes": L10n.tr("是", "Yes"), "no": L10n.tr("否", "No"),
             "empty": L10n.tr("空", "Empty"), "maxschedule": L10n.tr("计划数量上限", "Maximum Schedule Count"), "leftgramdisplay": L10n.tr("余粮克数显示", "Remaining Food Weight Display"),
             "naturalwind": L10n.tr("自然风", "Natural Breeze"), "smart": L10n.tr("智能风", "Smart Airflow"), "off": L10n.tr("关闭", "Off"), "on": L10n.tr("开启", "On"), "idle": L10n.tr("待机", "Standby"),
-            "busy": L10n.tr("运行中", "Running"), "running": L10n.tr("运行中", "Running"), "paused": L10n.tr("已暂停", "Paused"), "delay": L10n.tr("预约中", "Scheduled"), "aptrunning": L10n.tr("预约中", "Scheduled"),
+            "busy": L10n.tr("运行中", "Running"), "running": L10n.tr("运行中", "Running"), "pause": L10n.tr("暂停", "Pause"), "paused": L10n.tr("已暂停", "Paused"), "delay": L10n.tr("预约中", "Scheduled"), "aptrunning": L10n.tr("预约中", "Scheduled"),
             "keepwarm": L10n.tr("保温中", "Keeping Warm"), "cooking": L10n.tr("烹饪中", "Cooking"), "completed": L10n.tr("已完成", "Completed"), "cookfinish": L10n.tr("烹饪完成", "Cooking Complete"),
             "error": L10n.tr("故障", "Fault"), "fault": L10n.tr("故障", "Fault"), "updating": L10n.tr("升级中", "Updating"), "finecook": L10n.tr("精煮饭", "Fine Rice"), "quickcook": L10n.tr("快煮饭", "Quick Rice"),
             "congee": L10n.tr("煮粥", "Congee"), "custom": L10n.tr("自定义", "Custom"), "soymilk": L10n.tr("豆浆", "Soy Milk"), "ricepaste": L10n.tr("米糊", "Rice Paste"), "juice": L10n.tr("果汁", "Juice"),
@@ -76,7 +146,8 @@ public enum CapabilityNames {
         case "days": return L10n.tr(" 天", " d")
         case "watt": return " W"
         case "arcdegrees": return "°"
-        case "micrograms-per-cubic-meter": return " µg/m³"
+        // Purifier specs spell it out with a Greek mu.
+        case "micrograms-per-cubic-meter", "μg/m3": return " µg/m³"
         case "grams": return " g"
         case "none", nil: return ""
         default: return " " + (unit ?? "")
