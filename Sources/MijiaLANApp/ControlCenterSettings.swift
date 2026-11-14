@@ -872,7 +872,7 @@ private struct LaunchAtLoginSettings: View {
         SettingsSection(L10n.tr("启动", "Startup")) {
             SettingsGroup {
                 SettingsToggleRow(L10n.tr("登录时启动", "Launch at Login"), symbol: "power",
-                                  isOn: Binding(get: { registered == true }, set: setRegistered),
+                                  isOn: Binding(get: { registered == true }, set: { requested in setRegistered(requested) }),
                                   subtitle: subtitle, statusColor: status == .requiresApproval ? .orange : nil)
                     .disabled(registered == nil)
             }
