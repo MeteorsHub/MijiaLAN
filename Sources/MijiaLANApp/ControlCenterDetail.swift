@@ -280,7 +280,7 @@ private struct LampColorTemperatureControl: View {
     private var temperatureSlider: some View {
         // Keep the native slider continuous: a 1 K step produces thousands of marks on macOS 27.
         // Quantization and submission remain in their original edit callbacks.
-        Slider(value: sliderValue, in: range, onEditingChanged: editingChanged) {
+        Slider(value: sliderValue, in: range, onEditingChanged: { editing in editingChanged(editing) }) {
             Text(L10n.tr("色温", "Color Temperature"))
         }
         .labelsHidden()
@@ -292,7 +292,7 @@ private struct LampColorTemperatureControl: View {
     }
 
     private var sliderValue: Binding<Double> {
-        Binding(get: { displayed ?? range.lowerBound }, set: updateDraft)
+        Binding(get: { displayed ?? range.lowerBound }, set: { raw in updateDraft(raw) })
     }
     private var sliderAccessibilityValue: String {
         if let target = draft ?? writer.pendingValue {
