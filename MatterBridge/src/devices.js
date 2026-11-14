@@ -14,13 +14,15 @@ import { LevelControlServer } from '@matter/main/behaviors/level-control';
 import { ColorControlServer } from '@matter/main/behaviors/color-control';
 import { FanControlServer } from '@matter/main/behaviors/fan-control';
 import { OccupancySensingServer } from '@matter/main/behaviors/occupancy-sensing';
+import { applianceTypes, applianceState, applianceControls } from './appliances.js';
 
-export const types = { light: OnOffLightDevice, outlet: OnOffPlugInUnitDevice,
+export const types = { ...applianceTypes, light: OnOffLightDevice, outlet: OnOffPlugInUnitDevice, power: OnOffPlugInUnitDevice,
   dimmableLight: DimmableLightDevice, colorTemperatureLight: ColorTemperatureLightDevice, fan: FanDevice, airPurifier: AirPurifierDevice,
   temperature: TemperatureSensorDevice, humidity: HumiditySensorDevice, illuminance: LightSensorDevice,
   contact: ContactSensorDevice, occupancy: OccupancySensorDevice };
 
 export function stateFor(d) {
+  if (Object.hasOwn(applianceTypes, d.kind)) return applianceState(d);
   const a = d.attributes ?? {};
   const v = a[d.kind];
   switch (d.kind) {
@@ -41,7 +43,7 @@ export function stateFor(d) {
 }
 
 export function controls(device, write, syncing) {
-  const result = [];
+  const result = applianceControls(device, write, syncing);
   if (['dimmableLight', 'colorTemperatureLight'].includes(device.kind)) {
     class DeviceLevel extends LevelControlServer.with('OnOff', 'Lighting') {
       moveToLevelLogic(level, _time, withOnOff) { return this.apply(level, withOnOff); }

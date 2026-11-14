@@ -19,6 +19,7 @@ final class MatterBridgeController {
     @ObservationIgnored private let ephemeral: Bool
     @ObservationIgnored private var isShuttingDown = false
     @ObservationIgnored private var controller: DeviceController?
+    @ObservationIgnored private weak var curtains: CurtainControlController?
     @ObservationIgnored private var process: Process?
     @ObservationIgnored private var input: FileHandle?
     @ObservationIgnored private var output: FileHandle?
@@ -50,8 +51,9 @@ final class MatterBridgeController {
         defaults.set(Array(excluded), forKey: "matter.excluded")
         restart()
     }
-    func attach(_ controller: DeviceController) {
+    func attach(_ controller: DeviceController, curtains: CurtainControlController? = nil) {
         self.controller = controller
+        self.curtains = curtains
         monitor = Task { [weak self] in
             while !Task.isCancelled {
                 self?.reconcile()
@@ -59,7 +61,9 @@ final class MatterBridgeController {
             }
         }
     }
-    var supported: [MatterDevicePlan.Entry] { controller.map { MatterDevicePlan.entries(Array($0.snapshots.values)) } ?? [] }
+    var supported: [MatterDevicePlan.Entry] {
+        controller.map { MatterDevicePlan.entries(Array($0.snapshots.values), managedCoverings: curtains?.matterCoverings ?? [:]) } ?? []
+    }
     var selected: [MatterDevicePlan.Device] { supported.filter { includes($0.sourceID) }.map(\.device) }
     func restart() { stop(); failed = false }
     private func reconcile() {
@@ -156,7 +160,22 @@ final class MatterBridgeController {
             guard let did, selected.contains(where: { $0.did == did }), let value else { throw DeviceControlError.unsupported("Matter") }
             try await DeviceCommunicationContext.$source.withValue(.matter) {
                 try await DeviceCommunicationContext.$operation.withValue(UUID()) {
-                    try await MatterDevicePlan.execute(controller: controller, endpoint: did, property: property ?? "on", value: value)
+                    if let entry = supported.first(where: { $0.device.did == did }), entry.device.kind == "windowCovering" {
+                        guard let curtains else { throw DeviceControlError.unsupported("Covering driver") }
+                        let command: CurtainControlSession.Command
+                        switch property {
+                        case "position":
+                            guard case .number(let n) = value, let position = Int(exactly: n), (0...100).contains(position) else { throw DeviceControlError.invalidValue("position") }
+                            command = .position(position)
+                        case "open", "close", "stop":
+                            guard value == .bool(true) else { throw DeviceControlError.invalidValue("Covering command") }
+                            command = property == "open" ? .open : property == "close" ? .close : .stop
+                        default: throw DeviceControlError.unsupported("Covering command")
+                        }
+                        _ = try await curtains.execute(entry.sourceID, command)
+                    } else {
+                        try await MatterDevicePlan.execute(controller: controller, endpoint: did, property: property ?? "on", value: value)
+                    }
                 }
             }
         default: throw DeviceControlError.unsupported("RPC")
