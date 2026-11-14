@@ -119,7 +119,7 @@ public enum MatterDevicePlan {
                 add("", "airPurifier", ["on": power, "percent": speed])
             }
             func celsius(_ capability: DeviceCapability) -> Bool {
-                capability.unit.map { ["celsius", "°C", "℃"].contains($0) } ?? true
+                capability.unit.map { ["celsius", "°C", "℃"].contains($0) } ?? false
             }
             if result.isEmpty, let power = s.primaryPower, power.readable, power.writable,
                power.format == "bool", power.control == .toggle, !power.prepared {
@@ -152,7 +152,8 @@ public enum MatterDevicePlan {
             var added: Set<String> = []
             for (name, kind) in sensors {
                 if let cap = s.capabilities.first(where: { $0.kind == .property && $0.name == name && $0.readable &&
-                    (kind == "occupancy" || kind == "contact" ? $0.format == "bool" : $0.isNumeric) }), added.insert(kind).inserted {
+                    (kind == "occupancy" || kind == "contact" ? $0.format == "bool" : $0.isNumeric) &&
+                    (kind != "temperature" || $0.unit == nil || celsius($0)) }), added.insert(kind).inserted {
                     add(":" + kind, kind, [kind: cap])
                 }
             }

@@ -50,6 +50,25 @@ struct MatterAppliancePlanTests {
         #expect(!entries.contains { $0.device.kind == "thermostat" })
     }
 
+    @Test("Unknown or Fahrenheit units cannot create an ambiguous thermostat or remove real appliance power", arguments: ["missing", "fahrenheit"])
+    func temperatureUnits(unit: String) throws {
+        let original = try snapshot("iot.tow_w.jd015", model: "test.unit.heater")
+        var schema = original.schema
+        for si in schema.services.indices {
+            for pi in schema.services[si].properties.indices {
+                if ["target-temperature", "temperature"].contains(schema.services[si].properties[pi].name) {
+                    schema.services[si].properties[pi].unit = unit == "missing" ? nil : unit
+                }
+            }
+        }
+        let s = DeviceSnapshot(device: original.device, schema: schema,
+            capabilities: DeviceCapabilityCatalog.capabilities(schema: schema, model: original.device.model))
+        let entries = MatterDevicePlan.entries([s])
+        #expect(entries.first?.device.kind == "power")
+        #expect(!entries.contains { $0.device.kind == "thermostat" })
+        if unit == "fahrenheit" { #expect(!entries.contains { $0.device.kind == "temperature" }) }
+    }
+
     @Test("Dehumidifier power and measurements are independent; unsupported humidity control is reported")
     func dehumidifier() throws {
         var s = try snapshot("xiaomi.derh.13l.v1", model: "test.generic.dehumidifier")
