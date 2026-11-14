@@ -7,3 +7,5 @@ CLI 使用 `@main struct MijiaLANCommand`，将文件重命名为 `MijiaLANComma
 云端用 Swift 6.1.3 编译器最小双文件例子复现「按脚本编译 main.swift + @main」诊断；相同内容改名后直接编译并运行成功。Linux SwiftPM 6.1.3 的最小包可自动处理原文件，因此不将这个例子称为对 Apple SwiftPM 6.1.2 的完整复现。完整工程以新的 macOS CI 和本机原生复验为准。
 
 CI 回归选择新增 `PanelMemoryTests|PanelToggleTests`，覆盖先前面板生命周期失败的确定性修复，而不是排除失败测试来得到绿色结果。
+
+后续运行 `43570171485` 的 CLI 已编译通过；App 首次继续编译时暴露 `LampColorTemperatureControl.body` 的 Swift 6.1 类型推断超时。该控件从 main 原样继承，本轮 Matter 修改未触及它。将其标题/输入、滑块，以及复杂 Binding、辅助功能字符串和编辑动作拆为具名小表达式；State、量化公式、松手提交、键盘步进、草稿清理与外层可用性逻辑保持一致。需要新的原生 CI 确认，不将 Linux 语法解析视为 SwiftUI 类型检查。
