@@ -31,6 +31,25 @@ struct MatterAppliancePlanTests {
         #expect(MatterDevicePlan.entries([s]).first?.device.reachable == false)
     }
 
+    @Test("Heating never combines one service instance's power with another instance's target or sensor", arguments: ["target-temperature", "temperature"])
+    func separateHeatingInstances(moved: String) throws {
+        let original = try snapshot("iot.tow_w.jd015", model: "test.multichannel.heater")
+        var schema = original.schema
+        let serviceIndex = schema.services.firstIndex { $0.iid == 2 }
+        let index = try #require(serviceIndex)
+        var other = schema.services[index]
+        other.iid = 20
+        other.properties = other.properties.filter { $0.name == moved }
+        schema.services[index].properties.removeAll { $0.name == moved }
+        schema.services.append(other)
+        let s = DeviceSnapshot(device: original.device, schema: schema,
+            capabilities: DeviceCapabilityCatalog.capabilities(schema: schema, model: original.device.model))
+        let entries = MatterDevicePlan.entries([s])
+        #expect(entries.first?.device.kind == "power")
+        #expect(entries.first?.bindings["on"]?.id == "p:2:1")
+        #expect(!entries.contains { $0.device.kind == "thermostat" })
+    }
+
     @Test("Dehumidifier power and measurements are independent; unsupported humidity control is reported")
     func dehumidifier() throws {
         var s = try snapshot("xiaomi.derh.13l.v1", model: "test.generic.dehumidifier")

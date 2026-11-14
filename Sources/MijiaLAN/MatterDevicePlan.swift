@@ -92,8 +92,8 @@ public enum MatterDevicePlan {
                     kind: kind, reachable: s.isOnline && valid, on: values["on"]?.boolValue, attributes: values),
                     sourceID: s.id, bindings: bindings))
             }
-            func writable(_ name: String, service: String? = nil) -> DeviceCapability? {
-                s.capabilities.first { $0.kind == .property && $0.name == name && (service == nil || $0.service == service) &&
+            func writable(_ name: String, service: String? = nil, siid: Int? = nil) -> DeviceCapability? {
+                s.capabilities.first { $0.kind == .property && $0.name == name && (service == nil || $0.service == service) && (siid == nil || $0.siid == siid) &&
                     $0.readable && $0.writable && !$0.prepared && ![.unsupported, .reading].contains($0.control) }
             }
             if ["light", "outlet"].contains(s.schema.category), let power = s.primaryPower,
@@ -125,11 +125,11 @@ public enum MatterDevicePlan {
                power.format == "bool", power.control == .toggle, !power.prepared {
                 // Infer heating from the service semantics, not a manufacturer's model string.
                 let thermal = ["heater", "towel-rack", "water-heater", "radiator", "thermostat"].contains(power.service)
-                if thermal, let target = writable("target-temperature", service: power.service),
+                if thermal, let target = writable("target-temperature", service: power.service, siid: power.siid),
                    target.isNumeric, let min = target.min, let max = target.max, min >= -273.15, max <= 327.67, min < max,
                    target.step >= 0.01, [min, max, target.step].allSatisfy({ ($0 * 100).isFinite && abs($0 * 100 - ($0 * 100).rounded()) < 0.00001 }),
                    celsius(target),
-                   let temperature = s.capabilities.first(where: { $0.kind == .property && $0.name == "temperature" && $0.service == power.service && $0.readable && $0.isNumeric && celsius($0) }) {
+                   let temperature = s.capabilities.first(where: { $0.kind == .property && $0.name == "temperature" && $0.siid == power.siid && $0.service == power.service && $0.readable && $0.isNumeric && celsius($0) }) {
                     add("", "thermostat", ["on": power, "temperature": temperature, "targetTemperature": target])
                 } else {
                     // A genuine idempotent on/off property is distinct from start/feed actions or mode presets.
