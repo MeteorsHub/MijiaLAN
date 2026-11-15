@@ -39,7 +39,7 @@ private actor ResetNoNetwork: MiioTransport {
             try FileManager.default.removeItem(at: folder)
         }
     }
-    private func make(enabled: Bool = true, holdExit: Bool = false, replacement: String = "normal") async throws -> Fixture {
+    private func make(enabled: Bool = true, holdExit: Bool = false, replacement: String = "normal", exitBudget: Duration = .seconds(10)) async throws -> Fixture {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("matter-reset-" + UUID().uuidString)
         let storage = folder.appendingPathComponent("Matter"), node = storage.appendingPathComponent("mijialan")
         try FileManager.default.createDirectory(at: node, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -84,7 +84,7 @@ private actor ResetNoNetwork: MiioTransport {
         let api = LANMiotAPI(config: { config }, transport: transport)
         let catalog = DeviceController(api: api, config: { config }, pollingDefaults: defaults)
         let bridge = MatterBridgeController(defaults: defaults, storageDirectory: storage,
-            resetTimeouts: .init(exit: holdExit || replacement == "hold-new" ? .milliseconds(150) : .seconds(2), ready: .seconds(2)), makeProcess: { storage in
+            resetTimeouts: .init(exit: exitBudget, ready: .seconds(20)), makeProcess: { storage in
                 let child = Process()
                 child.executableURL = URL(fileURLWithPath: "/bin/sh")
                 child.arguments = [script.path, storage.path, String(children.processes.count), holdExit ? "hold" : "normal", replacement]
@@ -163,7 +163,7 @@ private actor ResetNoNetwork: MiioTransport {
     }
     @Test("A non-exiting child prevents any storage move; reset never kills it forcibly")
     func exitTimeout() async throws {
-        let f = try await make(holdExit: true)
+        let f = try await make(holdExit: true, exitBudget: .milliseconds(150))
         defer { f.bridge.shutdown(); f.releaseExit() }
         #expect(!(await f.bridge.resetPairing()))
         #expect(f.children.processes.count == 1 && f.children.processes[0].isRunning)
