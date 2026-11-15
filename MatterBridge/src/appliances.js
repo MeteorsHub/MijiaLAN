@@ -41,7 +41,7 @@ export function applianceState(d) {
   } };
 }
 
-export function applianceControls(device, write, syncing) {
+export function applianceControls(device, write, syncing, isReachable = () => device.reachable) {
   if (device.kind === 'windowCovering') {
     let sequence = 0;
     class DeviceCovering extends Covering {
@@ -69,7 +69,7 @@ export function applianceControls(device, write, syncing) {
         // failing a new command on a synchronous lock; release it before waiting for native motion.
         await this.context.transaction.begin();
         await this.context.transaction.addResources(this);
-        if (!this.endpoint.state.bridgedDeviceBasicInformation.reachable) throw new Error('Device offline');
+        if (!isReachable()) throw new Error('Device offline');
         const current = ++sequence, endpoint = this.endpoint;
         if (target !== undefined) this.state.targetPositionLiftPercent100ths = closedPosition(target);
         // A Matter movement command acknowledges acceptance, not completion. Its worker releases the

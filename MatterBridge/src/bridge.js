@@ -1,7 +1,8 @@
 import { types, stateFor, controls } from './devices.js';
 import { createHash } from 'node:crypto';
-import { Endpoint, ServerNode, VendorId } from '@matter/main';
+import { Endpoint, ServerNode, ServerNodeStore, VendorId } from '@matter/main';
 import { AggregatorEndpoint } from '@matter/main/endpoints/aggregator';
+import { BridgedNodeEndpoint } from '@matter/main/endpoints/bridged-node';
 import { BridgedDeviceBasicInformationServer } from '@matter/main/behaviors/bridged-device-basic-information';
 import { OnOffServer } from '@matter/main/behaviors/on-off';
 
@@ -20,10 +21,36 @@ function truncateUtf8(name, byteLimit) {
   return name.slice(0, end);
 }
 
+const physicalID = device => device.sourceID ?? device.did;
+const endpointID = did => `device-${identity(did)}`;
+function names(name) {
+  name = name.trim() || 'MijiaLAN';
+  return { nodeLabel: truncateUtf8(name, 32), productName: truncateUtf8(name, 32), productLabel: truncateUtf8(name, 64) };
+}
+
+function physicalGroups(devices) {
+  const groups = new Map();
+  for (const device of devices) {
+    const id = physicalID(device);
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(device);
+  }
+  return [...groups].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([id, functions]) => ({ id, functions: functions.sort((a, b) => a.did < b.did ? -1 : a.did > b.did ? 1 : 0) }));
+}
+
 export function validateDevices(devices) {
   if (!Array.isArray(devices)) throw new Error('Invalid device snapshot');
   const ids = new Set();
+  const sourceNames = new Map();
   for (const d of devices) {
+    if ((d.sourceID !== undefined && (typeof d.sourceID !== 'string' || !d.sourceID)) ||
+        (d.sourceName !== undefined && typeof d.sourceName !== 'string')) throw new Error('Invalid physical device identity');
+    if (d.sourceName !== undefined) {
+      const source = physicalID(d);
+      if (sourceNames.has(source) && sourceNames.get(source) !== d.sourceName) throw new Error('Conflicting physical device names');
+      sourceNames.set(source, d.sourceName);
+    }
     if (typeof d.did !== 'string' || !d.did || ids.has(d.did) ||
         typeof d.name !== 'string' || !Object.hasOwn(types, d.kind) ||
         typeof d.reachable !== 'boolean' || !(d.on == null || typeof d.on === 'boolean') ||
@@ -59,65 +86,105 @@ export async function createBridge(rpc, devices, options = {}) {
     },
   });
   const endpoints = new Map();
+  const entities = new Map();
+  const available = new Map(devices.map(d => [d.did, d.reachable]));
+  const owners = new Map(devices.map(d => [d.did, physicalID(d)]));
   const syncing = new Set();
   try {
     const aggregator = new Endpoint(AggregatorEndpoint, { id: 'bridge' });
     await node.add(aggregator);
-    for (const device of devices) {
-      // Override commands, not attribute notifications: LAN polls must never write back to the device.
-      class DevicePower extends OnOffServer.with("Lighting") {
-        async on() { await write(this, true); return super.on(); }
-        async off() { await write(this, false); return super.off(); }
-        async toggle() { return this.state.onOff ? this.off() : this.on(); }
+    const stores = node.env.get(ServerNodeStore).endpointStores;
+    const aggregateStore = stores.storeForEndpoint(aggregator);
+    for (const group of physicalGroups(devices)) {
+      const entityId = `entity-${identity(group.id)}`;
+      const previousEntity = aggregateStore.existingChildStore(entityId);
+      // Keep the compound layout if a later schema exposes just one remaining function.
+      const compound = group.functions.length > 1 || previousEntity !== undefined;
+      let parent = aggregator;
+      const legacyNumbers = new Map(group.functions.map(d => [d.did, aggregateStore.existingChildStore(endpointID(d.did))?.number]));
+      if (compound) {
+        const primary = group.functions.find(d => d.did === group.id) ?? group.functions[0];
+        const info = names(primary.sourceName ?? primary.name);
+        if (!previousEntity) {
+          // Public store API; consume only the obsolete flat root's public label, never fabric state.
+          const old = aggregateStore.existingChildStore(endpointID(primary.did));
+          const label = old?.createStoreForBehavior('bridgedDeviceBasicInformation').initialValues?.nodeLabel;
+          if (typeof label === 'string' && label !== names(primary.name).nodeLabel) info.nodeLabel = truncateUtf8(label, 32);
+        }
+        parent = new Endpoint(BridgedNodeEndpoint, {
+          id: entityId,
+          bridgedDeviceBasicInformation: { ...info, uniqueId: identity(group.id), reachable: group.functions.some(d => d.reachable) },
+        });
+        await aggregator.add(parent);
+        entities.set(group.id, parent);
       }
-      async function set(property, value) {
-        const endpoint = endpoints.get(device.did);
-        if (endpoint && !endpoint.state.bridgedDeviceBasicInformation.reachable) throw new Error('Device offline');
-        const result = validateDevices(await rpc.request('set', property === 'on'
-          ? { did: device.did, on: value } : { did: device.did, property, value }));
-        const confirmed = result.find(d => d.did === device.did);
-        if (!confirmed?.reachable) throw new Error('Device state not confirmed');
-        if (device.kind === 'windowCovering') {
-          const a = confirmed.attributes;
-          const target = property === 'open' ? 100 : property === 'close' ? 0 : value;
-          if (a.movement !== 0 || (property !== 'stop' && a.position !== target)) throw new Error('Covering movement not confirmed');
+      for (const device of group.functions) {
+        // Override commands, not attribute notifications: LAN polls must never write back to the device.
+        class DevicePower extends OnOffServer.with("Lighting") {
+          async on() { await write(this, true); return super.on(); }
+          async off() { await write(this, false); return super.off(); }
+          async toggle() { return this.state.onOff ? this.off() : this.on(); }
+        }
+        async function set(property, value) {
+          if (!available.get(device.did)) throw new Error('Device offline');
+          const result = validateDevices(await rpc.request('set', property === 'on'
+            ? { did: device.did, on: value } : { did: device.did, property, value }));
+          const confirmed = result.find(d => d.did === device.did);
+          if (!confirmed?.reachable) throw new Error('Device state not confirmed');
+          if (device.kind === 'windowCovering') {
+            const a = confirmed.attributes;
+            const target = property === 'open' ? 100 : property === 'close' ? 0 : value;
+            if (a.movement !== 0 || (property !== 'stop' && a.position !== target)) throw new Error('Covering movement not confirmed');
+            return confirmed;
+          }
+          if (property === 'on' && confirmed.on !== value) throw new Error('Device state not confirmed');
+          if (property !== 'on' && !Number.isFinite(confirmed.attributes?.[property])) throw new Error('Device state not confirmed');
           return confirmed;
         }
-        if (property === 'on' && confirmed.on !== value) throw new Error('Device state not confirmed');
-        if (property !== 'on' && !Number.isFinite(confirmed.attributes?.[property])) throw new Error('Device state not confirmed');
-        return confirmed;
+        async function write(behavior, on) { await set('on', on); }
+        const type = types[device.kind];
+        const behaviors = controls(device, set, syncing, () => available.get(device.did) === true);
+        if (['light', 'outlet', 'power', 'dimmableLight', 'colorTemperatureLight'].includes(device.kind)) behaviors.push(DevicePower);
+        const nestedStore = compound ? stores.storeForEndpoint(parent).existingChildStore(endpointID(device.did)) : undefined;
+        const oldNumber = nestedStore?.number ?? legacyNumbers.get(device.did);
+        const endpoint = new Endpoint(type.with(...behaviors, ...(compound ? [] : [BridgedDeviceBasicInformationServer])), {
+          id: endpointID(device.did),
+          // Preserve existing application endpoint numbers when their storage path gains a parent.
+          ...(oldNumber === undefined ? {} : { number: oldNumber }),
+          ...stateFor(device),
+          ...(!compound ? { bridgedDeviceBasicInformation: {
+            // Some controllers use the product name or label when importing bridged endpoints.
+            ...names(device.sourceName ?? device.name),
+            uniqueId: identity(group.id), reachable: device.reachable,
+          } } : {}),
+        });
+        await parent.add(endpoint);
+        endpoints.set(device.did, endpoint);
+        if (!compound) entities.set(group.id, endpoint);
       }
-      async function write(behavior, on) { await set('on', on); }
-      const type = types[device.kind];
-      const behaviors = controls(device, set, syncing);
-      if (['light', 'outlet', 'power', 'dimmableLight', 'colorTemperatureLight'].includes(device.kind)) behaviors.push(DevicePower);
-      const name = device.name.trim() || 'MijiaLAN';
-      const shortName = truncateUtf8(name, 32);
-      const endpoint = new Endpoint(type.with(...behaviors, BridgedDeviceBasicInformationServer), {
-        id: `device-${identity(device.did)}`,
-        ...stateFor(device),
-        bridgedDeviceBasicInformation: {
-          // Some controllers use the product name or label when importing bridged endpoints.
-          nodeLabel: shortName,
-          productName: shortName,
-          productLabel: truncateUtf8(name, 64),
-          uniqueId: identity(device.did), reachable: device.reachable,
-        },
-      });
-      await aggregator.add(endpoint);
-      endpoints.set(device.did, endpoint);
     }
     const bridge = {
-      node, endpoints,
+      node, endpoints, entities,
       async sync(snapshot) {
         const byId = new Map(validateDevices(snapshot).map(d => [d.did, d]));
+        for (const [did, source] of owners) {
+          const d = byId.get(did);
+          if (d && physicalID(d) !== source) throw new Error('Physical device layout changed; restart the bridge');
+          available.set(did, d?.reachable ?? false);
+        }
+        for (const [source, entity] of entities) {
+          const reachable = [...owners].some(([did, owner]) => owner === source && available.get(did));
+          await entity.set({ bridgedDeviceBasicInformation: { reachable } });
+        }
         for (const [did, endpoint] of endpoints) {
           const d = byId.get(did);
           syncing.add(did);
-          try { await endpoint.set({
-            bridgedDeviceBasicInformation: { reachable: d?.reachable ?? false },
-            ...(d ? stateFor(d) : {}),
-          }); } finally { syncing.delete(did); }
+          try {
+            if (d?.reachable) await endpoint.set(stateFor(d));
+            else if (d && ['temperature', 'humidity', 'illuminance', 'windowCovering'].includes(d.kind)) {
+              await endpoint.set(stateFor({ ...d, attributes: {} }));
+            }
+          } finally { syncing.delete(did); }
         }
       },
     };

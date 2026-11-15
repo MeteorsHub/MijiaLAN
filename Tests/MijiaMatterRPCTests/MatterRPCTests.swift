@@ -42,7 +42,9 @@ struct MatterRPCTests {
         let data = try JSONEncoder().encode(MatterRPC.Reply(id: 7, devices: devices))
         let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let encoded = try #require((json["devices"] as? [[String: Any]])?.first)
-        #expect(Set(encoded.keys) == ["did", "name", "kind", "reachable", "attributes"])
+        #expect(Set(encoded.keys) == ["did", "name", "sourceID", "sourceName", "kind", "reachable", "attributes"])
+        #expect(encoded["sourceID"] as? String == s.id)
+        #expect(encoded["sourceName"] as? String == s.device.name)
         #expect(!String(decoding: data, as: UTF8.self).contains("private-token"))
         #expect(!String(decoding: data, as: UTF8.self).contains("192.0.2.1"))
     }

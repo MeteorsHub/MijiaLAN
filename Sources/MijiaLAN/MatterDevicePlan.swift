@@ -6,6 +6,9 @@ public enum MatterDevicePlan {
     public struct Device: Encodable, Sendable {
         public var did: String
         public var name: String
+        /// Stable physical device identity and its unsuffixed display name; logical function IDs remain unchanged.
+        public var sourceID: String? = nil
+        public var sourceName: String? = nil
         public var kind: String
         public var reachable: Bool
         public var on: Bool?
@@ -55,7 +58,7 @@ public enum MatterDevicePlan {
                 if let value = covering.target, (0...100).contains(value) { attributes["targetPosition"] = .number(Double(value)) }
                 if let value = covering.movement, (0...2).contains(value) { attributes["movement"] = .number(Double(value)) }
                 let valid = attributes["position"] != nil && attributes["movement"] != nil
-                return [Entry(device: Device(did: s.id, name: s.device.name, kind: "windowCovering",
+                return [Entry(device: Device(did: s.id, name: s.device.name, sourceID: s.id, sourceName: s.device.name, kind: "windowCovering",
                     reachable: covering.reachable && valid, attributes: attributes), sourceID: s.id, bindings: [:])]
             }
             guard DeviceLANPolicy.allowsPropertyRequests(for: s.device.model) else { return [] }
@@ -89,6 +92,7 @@ public enum MatterDevicePlan {
                 }
                 let valid = bindings.keys.allSatisfy { values[$0] != nil }
                 result.append(Entry(device: Device(did: s.id + suffix, name: s.device.name + (suffix.isEmpty ? "" : " · " + title(kind)),
+                    sourceID: s.id, sourceName: s.device.name,
                     kind: kind, reachable: s.isOnline && valid, on: values["on"]?.boolValue, attributes: values),
                     sourceID: s.id, bindings: bindings))
             }

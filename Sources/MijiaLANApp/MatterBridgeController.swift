@@ -91,7 +91,7 @@ final class MatterBridgeController {
         guard isEnabled, !isResetting, !isShuttingDown, resetError == nil else { return }
         pruneRetiring()
         guard retiring.isEmpty else { return }
-        let next = selected.map { $0.did + ":" + $0.kind }.joined(separator: "|")
+        let next = selected.map { ($0.sourceID ?? $0.did) + ":" + $0.did + ":" + $0.kind }.joined(separator: "|")
         if next != signature { stop(); signature = next; failed = false }
         guard process == nil, !failed else { return }
         guard !selected.isEmpty else { status = L10n.tr("等待可桥接设备", "Waiting for supported devices"); return }
@@ -288,7 +288,7 @@ final class MatterBridgeController {
             checkpoint = try store.archive()
             try Task.checkCancellation()
             if isEnabled {
-                signature = selected.map { $0.did + ":" + $0.kind }.joined(separator: "|")
+                signature = selected.map { ($0.sourceID ?? $0.did) + ":" + $0.did + ":" + $0.kind }.joined(separator: "|")
                 failed = false
                 start(duringReset: true)
                 try await waitForNewBridge()

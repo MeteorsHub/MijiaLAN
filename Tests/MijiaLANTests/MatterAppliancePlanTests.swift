@@ -77,6 +77,7 @@ struct MatterAppliancePlanTests {
         s.readings["p:3:2"] = DeviceReading(value: .number(22.1))
         let entries = MatterDevicePlan.entries([s])
         #expect(entries.map { $0.device.kind } == ["power", "temperature", "humidity"])
+        #expect(entries.allSatisfy { $0.sourceID == "123" && $0.device.sourceID == "123" && $0.device.sourceName == "Fixture" })
         #expect(entries.allSatisfy { $0.device.reachable })
         #expect(entries.first?.bindings["on"]?.id == "p:2:1")
         #expect(entries.first { $0.device.kind == "temperature" }?.device.attributes["temperature"] == .number(2210))
@@ -92,6 +93,7 @@ struct MatterAppliancePlanTests {
         let entries = MatterDevicePlan.entries([s])
         #expect(entries.map { $0.device.kind } == ["power", "light"])
         #expect(entries.map { $0.device.did } == ["123", "123:light:3"])
+        #expect(entries.allSatisfy { $0.device.sourceID == s.id && $0.device.sourceName == s.device.name })
         #expect(entries.first?.bindings["on"]?.id == "p:2:1")
         #expect(entries.last?.bindings["on"]?.id == "p:3:1")
         #expect(entries.first?.device.on == false && entries.last?.device.on == true)
@@ -149,5 +151,39 @@ struct MatterAppliancePlanTests {
             try await MatterDevicePlan.execute(controller: controller, endpoint: "123", property: "targetTemperature", value: .number(6100))
         }
         #expect(fake.receivedWrites.count == count)
+    }
+
+    @MainActor @Test("Grouped logical routes retain separate heater and illumination property addresses")
+    func groupedWriteRouting() async throws {
+        var s = try snapshot("giot.heater.v13daf", model: "test.generic.grouped-heater")
+        s.schema.type += ":group-test-\(UUID().uuidString)"
+        s.device.specType = s.schema.type
+        let folder = LocalHomeProvider.specCacheDirectory.appendingPathComponent("instances")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent(s.schema.type.replacingOccurrences(of: ":", with: "_") + ".json")
+        try JSONEncoder().encode(s.schema).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let network = FakeMiioNetwork()
+        let fake = network.add(host: s.device.host, token: s.device.token, deviceID: 123,
+            props: ["2.1": .bool(false), "2.2": .number(0), "2.3": .number(8), "3.1": .bool(true), "3.2": .number(4)])
+        fake.model = s.device.model
+        let config = LocalHomeConfig(devices: [s.device])
+        let api = LANMiotAPI(config: { config }, transport: network)
+        let controller = DeviceController(api: api, config: { config })
+        defer { controller.shutdown() }
+        await controller.refreshNow()
+        try await MatterDevicePlan.execute(controller: controller, endpoint: "123", property: "on", value: .bool(true))
+        #expect(controller.snapshots["123"]?.value("p:3:1") == .bool(true))
+        try await MatterDevicePlan.execute(controller: controller, endpoint: "123:light:3", property: "on", value: .bool(false))
+        #expect(controller.snapshots["123"]?.value("p:2:1") == .bool(true))
+        #expect(controller.snapshots["123"]?.value("p:3:1") == .bool(false))
+        #expect(fake.receivedWrites.count == 2)
+        let addresses = fake.receivedWrites.compactMap { row -> String? in
+            guard case .object(let fields) = row, let siid = fields["siid"]?.intValue, let piid = fields["piid"]?.intValue else { return nil }
+            return "\(siid).\(piid)"
+        }
+        #expect(addresses == ["2.1", "3.1"])
+        let entries = MatterDevicePlan.entries(Array(controller.snapshots.values))
+        #expect(entries.allSatisfy { $0.device.sourceID == "123" })
     }
 }

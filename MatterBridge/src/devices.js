@@ -42,8 +42,8 @@ export function stateFor(d) {
   }
 }
 
-export function controls(device, write, syncing) {
-  const result = applianceControls(device, write, syncing);
+export function controls(device, write, syncing, isReachable) {
+  const result = applianceControls(device, write, syncing, isReachable);
   if (['dimmableLight', 'colorTemperatureLight'].includes(device.kind)) {
     class DeviceLevel extends LevelControlServer.with('OnOff', 'Lighting') {
       moveToLevelLogic(level, _time, withOnOff) { return this.apply(level, withOnOff); }
