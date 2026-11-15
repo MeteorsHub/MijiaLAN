@@ -9,6 +9,17 @@ export function identity(did) {
   return createHash('sha256').update(did).digest('hex').slice(0, 32);
 }
 
+function truncateUtf8(name, byteLimit) {
+  let bytes = 0;
+  let end = 0;
+  for (const character of name) {
+    bytes += Buffer.byteLength(character);
+    if (bytes > byteLimit) break;
+    end += character.length;
+  }
+  return name.slice(0, end);
+}
+
 export function validateDevices(devices) {
   if (!Array.isArray(devices)) throw new Error('Invalid device snapshot');
   const ids = new Set();
@@ -80,11 +91,16 @@ export async function createBridge(rpc, devices, options = {}) {
       const type = types[device.kind];
       const behaviors = controls(device, set, syncing);
       if (['light', 'outlet', 'power', 'dimmableLight', 'colorTemperatureLight'].includes(device.kind)) behaviors.push(DevicePower);
+      const name = device.name.trim() || 'MijiaLAN';
+      const shortName = truncateUtf8(name, 32);
       const endpoint = new Endpoint(type.with(...behaviors, BridgedDeviceBasicInformationServer), {
         id: `device-${identity(device.did)}`,
         ...stateFor(device),
         bridgedDeviceBasicInformation: {
-          nodeLabel: Array.from(device.name).slice(0, 32).join(''),
+          // Some controllers use the product name or label when importing bridged endpoints.
+          nodeLabel: shortName,
+          productName: shortName,
+          productLabel: truncateUtf8(name, 64),
           uniqueId: identity(device.did), reachable: device.reachable,
         },
       });
