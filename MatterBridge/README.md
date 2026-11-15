@@ -24,6 +24,7 @@ Matter 子进程通过匿名管道请求操作，不接收米家 token，也不�
 
 Matter 默认关闭，开启后会记住选择；App 自动管理子进程，退出或关闭桥接时停止它。
 配对数据保存在 `~/Library/Application Support/MijiaLAN/Matter/`。
+需清除现有平台连接时，可在管理页明确确认「重置 Matter 配对…」；详见 [重置范围与恢复说明](../docs/matter-pairing-reset.md)。
 重新连接保留配对身份，禁止通过删除存储来排查一般离线问题。
 云端回归使用模拟设备、真实 matter.js 端点和离线控制器；macOS 原生编译、界面与 M200 配对需本地复验。不能把模拟确认当作实物动作成功。
 

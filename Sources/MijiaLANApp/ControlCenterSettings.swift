@@ -159,8 +159,9 @@ struct SettingsMatterManagement: View {
                     SettingsToggleRow(L10n.tr("启用 Matter 桥接", "Enable Matter Bridge"), symbol: "point.3.connected.trianglepath.dotted", isOn: $bridge.isEnabled, subtitle: bridge.status)
                     SettingsToggleRow(L10n.tr("保持 Mac 唤醒", "Keep Mac Awake"), symbol: "moon", isOn: $bridge.keepsMacAwake)
                     if bridge.isEnabled { Button(L10n.tr("重新连接", "Reconnect")) { bridge.restart() }.padding(10) }
-                }
+                }.disabled(bridge.isResetting)
             }
+            MatterPairingResetSection(bridge: bridge)
             if bridge.isRunning {
                 SettingsSection(L10n.tr("添加到 Aqara 或其他 Matter 平台", "Add to Aqara or Another Matter Platform")) {
                     SettingsGroup {
@@ -207,6 +208,7 @@ struct SettingsMatterManagement: View {
                             if index > 0 { SettingsDivider() }
                             SettingsMatterDeviceRow(model: model, bridge: bridge, device: device,
                                 plans: plansByDevice[device.did] ?? [])
+                                .disabled(bridge.isResetting)
                         }
                     }
                 }
@@ -214,6 +216,39 @@ struct SettingsMatterManagement: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }.padding(.horizontal, 16).padding(.vertical, 8)
+    }
+}
+
+private struct MatterPairingResetSection: View {
+    @Bindable var bridge: MatterBridgeController
+    @State private var confirming = false
+
+    var body: some View {
+        SettingsSection(L10n.tr("Matter 配对管理", "Matter Pairing")) {
+            Button(L10n.tr("重置 Matter 配对…", "Reset Matter Pairing…"), role: .destructive) { confirming = true }
+                .disabled(bridge.isResetting)
+            if bridge.isResetting {
+                ProgressView(L10n.tr("正在重置配对，请稍候…", "Resetting pairing, please wait…")).controlSize(.small)
+            }
+            if let error = bridge.resetError {
+                Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
+            if let message = bridge.resetMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if let backup = bridge.resetBackupURL {
+                Text(L10n.tr("本机配对备份：\(backup.path)", "Local pairing backup: \(backup.path)"))
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .alert(L10n.tr("重置 Matter 配对？", "Reset Matter Pairing?"), isPresented: $confirming) {
+            Button(L10n.tr("重置配对", "Reset Pairing"), role: .destructive) {
+                Task { await bridge.resetPairing() }
+            }
+            Button(L10n.tr("取消", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.tr("此操作会重置本桥接与所有 Matter 平台的连接，之后需重新添加桥接和设备。控制器中可能仍有旧条目，需要另行移除。旧 Matter 节点资料会保存在本机私有备份中。米家设备清单、其他设置、Matter 设备选择及 HomeKit 独立配对均保留。", "This resets this bridge's connections to all Matter platforms. You will need to add the bridge and devices again. Controllers may retain old entries that must be removed separately. Old Matter node data is kept in a private local backup. Mijia devices, other settings, Matter device selections and independent HomeKit pairing are retained."))
+        }
     }
 }
 
