@@ -79,7 +79,8 @@ final class MatterBridgeController {
         }
     }
     var supported: [MatterDevicePlan.Entry] {
-        controller.map { MatterDevicePlan.entries(Array($0.snapshots.values), managedCoverings: curtains?.matterCoverings ?? [:]) } ?? []
+        controller.map { MatterDevicePlan.entries(Array($0.snapshots.values), managedCoverings: curtains?.matterCoverings ?? [:],
+            cacheMaxAge: Double(max(120, 3 * max($0.pollingIntervals.foregroundSeconds, $0.pollingIntervals.backgroundSeconds)))) } ?? []
     }
     var selected: [MatterDevicePlan.Device] { supported.filter { includes($0.sourceID) }.map(\.device) }
     func restart() {

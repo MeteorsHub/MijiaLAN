@@ -17,6 +17,57 @@ private actor SnapshotTransport: MiioTransport {
 }
 
 @MainActor struct MatterSnapshotPollingTests {
+    @Test("Pet status endpoints share existing cached reads and physical selection; snapshots and rejected writes add no communication")
+    func petStatusCacheOnly() async throws {
+        let suite = "matter-pet-cache-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["existing-exclusion"], forKey: "matter.excluded")
+        var devices: [LocalDevice] = [], cacheFiles: [URL] = []
+        defer { for file in cacheFiles { try? FileManager.default.removeItem(at: file) } }
+        let folder = LocalHomeProvider.specCacheDirectory.appendingPathComponent("instances")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for (model, service, piid, property, format, options) in [
+            ("xiaomi.pet_waterer.70m2", "pet-drinking-fountain", 10, "water-shortage-status", "bool", ""),
+            ("xiaomi.feeder.pi2001", "pet-feeder", 6, "pet-food-left-level", "uint8", ",\"value-list\":[{\"value\":0,\"description\":\"Normal\"},{\"value\":1,\"description\":\"Low\"}]")
+        ] {
+            let type = "\(service):cache-test-\(UUID().uuidString)"
+            let json = """
+            {"type":"\(type)","services":[{"iid":2,"type":"\(service)","properties":[{"iid":\(piid),"type":"\(property)","format":"\(format)","access":["read","notify"]\(options)}]}]}
+            """
+            let file = folder.appendingPathComponent(type.replacingOccurrences(of: ":", with: "_") + ".json")
+            try Data(json.utf8).write(to: file); cacheFiles.append(file)
+            devices.append(LocalDevice(did: model, name: model, model: model, host: model, token: String(repeating: "0", count: 32), specType: type))
+        }
+        let config = LocalHomeConfig(devices: devices), network = PetCacheTransport()
+        let api = LANMiotAPI(config: { config }, transport: network)
+        let controller = DeviceController(api: api, config: { config }, pollingDefaults: defaults)
+        let bridge = MatterBridgeController(defaults: defaults, ephemeral: true)
+        bridge.attach(controller)
+        defer { bridge.shutdown(); controller.shutdown() }
+        await controller.refreshNow() // The existing ordinary device refresh populates the only state cache.
+        var before = await network.methods
+        for _ in 0..<8 {
+            let snapshot = try await bridge.handleRPC(method: "snapshot")
+            #expect(snapshot.count == 2 && snapshot.allSatisfy { $0.reachable })
+            #expect(snapshot.allSatisfy { $0.attributes[$0.kind] == .bool(false) && $0.on == nil })
+        }
+        #expect(await network.methods == before)
+        await network.showShortages()
+        await controller.refreshNow()
+        before = await network.methods
+        let changed = try await bridge.handleRPC(method: "snapshot")
+        #expect(changed.allSatisfy { $0.attributes[$0.kind] == .bool(true) })
+        for endpoint in changed {
+            await #expect(throws: DeviceControlError.self) {
+                _ = try await bridge.handleRPC(method: "set", did: endpoint.did, value: .bool(false), property: endpoint.kind)
+            }
+        }
+        #expect(await network.methods == before)
+        bridge.include(devices[0].did, false)
+        #expect(bridge.selected.count == 1 && bridge.selected.first?.sourceID == devices[1].did)
+        #expect(!bridge.includes("existing-exclusion"))
+    }
     @Test("Matter cache reads add no queries and a control still writes then reads back with the 30-second background cadence")
     func cachedReadsAndControl() async throws {
         let suite = "matter-cached-control-" + UUID().uuidString
@@ -62,6 +113,35 @@ private actor SnapshotTransport: MiioTransport {
         }
         #expect(await transport.calls == 0)
     }
+}
+
+private actor PetCacheTransport: MiioTransport {
+    private var shortage = false
+    private(set) var methods: [String] = []
+    func showShortages() { shortage = true }
+    func exchange(_ packet: Data, host: String, port: UInt16, timeout: Duration) async throws -> Data {
+        if packet == MiioPacket.hello {
+            return Data([0x21, 0x31, 0, 32, 0, 0, 0, 0, 0, 0, 0, 123, 0, 0, 0x13, 0x88] + [UInt8](repeating: 255, count: 16))
+        }
+        let token = Data(repeating: 0, count: 16)
+        let (_, payload) = try MiioPacket.decode(packet, token: token)
+        guard case .object(let request) = try JSONDecoder().decode(JSONValue.self, from: payload.prefix { $0 != 0 }) else { throw MiioError.malformedPacket }
+        let method = request["method"]?.stringValue ?? ""
+        methods.append(method)
+        let result: JSONValue
+        if method == "miIO.info" { result = .object(["model": .string(host)]) }
+        else if method == "get_properties", case .array(let rows) = request["params"] {
+            result = .array(rows.map { row in
+                guard case .object(var fields) = row else { return .null }
+                fields["code"] = .number(0)
+                fields["value"] = host == "xiaomi.pet_waterer.70m2" ? .bool(shortage) : .number(shortage ? 1 : 0)
+                return .object(fields)
+            })
+        } else { throw MiioError.unsupportedByLegacyDevice }
+        let reply = JSONValue.object(["id": request["id"] ?? .number(0), "result": result])
+        return try MiioPacket.encode(Data(reply.compactJSONString.utf8) + [0], token: token, deviceID: 123, stamp: 5000)
+    }
+    func broadcast(_ packet: Data, port: UInt16, duration: Duration, rounds: Int) async throws -> [MiioDatagram] { [] }
 }
 
 private actor CacheControlTransport: MiioTransport {

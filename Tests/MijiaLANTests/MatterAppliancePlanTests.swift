@@ -103,7 +103,10 @@ struct MatterAppliancePlanTests {
     func noInventedPower(model: String) throws {
         var s = try snapshot(model, model: model)
         for c in s.capabilities { s.readings[c.id] = DeviceReading(value: c.format == "bool" ? .bool(true) : .number(1)) }
-        #expect(MatterDevicePlan.entries([s]).isEmpty)
+        let entries = MatterDevicePlan.entries([s])
+        #expect(!entries.isEmpty)
+        #expect(entries.allSatisfy { ["waterShortage", "foodShortage"].contains($0.device.kind) && $0.device.on == nil })
+        #expect(!entries.contains { $0.bindings["on"] != nil })
     }
 
     @Test("A managed covering is exported only from the explicitly provided driver cache, including offline placeholders")

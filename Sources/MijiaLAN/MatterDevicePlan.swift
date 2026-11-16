@@ -47,10 +47,13 @@ public enum MatterDevicePlan {
         case "illuminance": L10n.tr("光照", "Illuminance")
         case "occupancy": L10n.tr("人体感应", "Occupancy")
         case "contact": L10n.tr("接触传感器", "Contact")
+        case "waterShortage": L10n.tr("缺水状态", "Water Shortage")
+        case "foodShortage": L10n.tr("缺粮状态", "Food Shortage")
         default: kind
         }
     }
-    public static func entries(_ snapshots: [DeviceSnapshot], managedCoverings: [String: Covering] = [:]) -> [Entry] {
+    public static func entries(_ snapshots: [DeviceSnapshot], managedCoverings: [String: Covering] = [:],
+                               now: Date = Date(), cacheMaxAge: TimeInterval = 120) -> [Entry] {
         snapshots.sorted { $0.id < $1.id }.flatMap { s -> [Entry] in
             if let covering = managedCoverings[s.id] {
                 var attributes: [String: JSONValue] = [:]
@@ -66,9 +69,17 @@ public enum MatterDevicePlan {
             func add(_ suffix: String, _ kind: String, _ bindings: [String: DeviceCapability]) {
                 var values: [String: JSONValue] = [:]
                 for (key, cap) in bindings {
+                    if kind == "waterShortage" || kind == "foodShortage" {
+                        guard let timestamp = s.readings[cap.id]?.updatedAt,
+                              cacheMaxAge.isFinite, cacheMaxAge > 0,
+                              (0...cacheMaxAge).contains(now.timeIntervalSince(timestamp)) else { continue }
+                    }
                     guard let value = s.value(cap.id), (try? cap.validatedReading(value)) != nil else { continue }
                     if let n = value.doubleValue {
                         switch key {
+                        case "foodShortage":
+                            // Reviewed uint8 enum, not an implicit numeric-to-Boolean conversion.
+                            if case .number = value, n == 0 || n == 1 { values[key] = .bool(n == 1) }
                         case "level", "percent":
                             if let max = cap.max, max > 0 { values[key] = .number(n / max * 100) }
                         case "colorTemperature": if n > 0 { values[key] = .number((1_000_000 / n).rounded()) }
@@ -161,6 +172,19 @@ public enum MatterDevicePlan {
                     add(":" + kind, kind, [kind: cap])
                 }
             }
+            // Model/address/semantic allowlist: these two read-only status meanings have field evidence.
+            // Do not infer shortages from fault, status, mode, lock, vendor fields or feeder 2.31.
+            if s.device.model == "xiaomi.pet_waterer.70m2",
+               let cap = s.capabilities.first(where: { $0.kind == .property && $0.siid == 2 && $0.iid == 10 &&
+                   $0.service == "pet-drinking-fountain" && $0.name == "water-shortage-status" && $0.format == "bool" && $0.readable && !$0.prepared }) {
+                add(":waterShortage", "waterShortage", ["waterShortage": cap])
+            }
+            if s.device.model == "xiaomi.feeder.pi2001",
+               let cap = s.capabilities.first(where: { $0.kind == .property && $0.siid == 2 && $0.iid == 6 &&
+                   $0.service == "pet-feeder" && $0.name == "pet-food-left-level" && $0.format == "uint8" && $0.readable && !$0.prepared &&
+                   Set($0.options.map(\.value)) == Set([0, 1]) }) {
+                add(":foodShortage", "foodShortage", ["foodShortage": cap])
+            }
             return result
         }
     }
@@ -168,6 +192,7 @@ public enum MatterDevicePlan {
 
     @MainActor public static func execute(controller: DeviceController, endpoint: String, property: String, value: JSONValue) async throws {
         guard let entry = entries(Array(controller.snapshots.values)).first(where: { $0.device.did == endpoint }),
+              !["waterShortage", "foodShortage"].contains(entry.device.kind),
               let cap = entry.bindings[property], cap.writable else { throw DeviceControlError.unsupported("Matter attribute") }
         var raw = value
         if let n = value.doubleValue {

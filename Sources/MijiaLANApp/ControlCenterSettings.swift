@@ -212,7 +212,7 @@ struct SettingsMatterManagement: View {
                         }
                     }
                 }
-                Text(L10n.tr("设备选择独立于 HomeKit。同一实体的功能组成一个桥接设备；平台呈现以实际导入为准。移除设备会影响目标平台中的场景和自动化。当前支持开关、调光、色温、风扇、空气净化器、受支持的卷帘、加热温控及多种传感器；按实际能力开放。通用电源可能显示为插座；模式、档位和目标湿度等未桥接能力会另行标注。M200 兼容性尚待实测。", "Device selection is independent of HomeKit. Functions of one physical device share a bridged identity; presentation depends on the controller. Removing a device affects scenes and automations. Supported mappings include power, brightness, color temperature, fans, air purifiers, supported coverings, heating thermostats and sensors. Generic power may appear as a plug; unmapped controls such as modes, levels and target humidity are listed separately. M200 compatibility awaits hardware testing."))
+                Text(L10n.tr("设备选择独立于 HomeKit。同一实体的功能组成一个桥接设备；平台呈现以实际导入为准。移除设备会影响目标平台中的场景和自动化。当前支持开关、调光、色温、风扇、空气净化器、受支持的卷帘、加热温控及多种传感器，含已适配型号的只读缺水、缺粮状态；按实际能力开放。通用电源可能显示为插座；模式、档位和目标湿度等未桥接能力会另行标注。新增端点的自动导入取决于目标平台。", "Device selection is independent of HomeKit. Functions of one physical device share a bridged identity; presentation depends on the controller. Removing a device affects scenes and automations. Supported mappings include power, brightness, color temperature, fans, air purifiers, supported coverings, heating thermostats and sensors, including read-only water/food shortage on reviewed models. Generic power may appear as a plug; unmapped controls such as modes, levels and target humidity are listed separately. Automatic import of added endpoints depends on the controller."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }.padding(.horizontal, 16).padding(.vertical, 8)

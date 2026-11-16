@@ -10,6 +10,8 @@ import { HumiditySensorDevice } from '@matter/main/devices/humidity-sensor';
 import { LightSensorDevice } from '@matter/main/devices/light-sensor';
 import { ContactSensorDevice } from '@matter/main/devices/contact-sensor';
 import { OccupancySensorDevice } from '@matter/main/devices/occupancy-sensor';
+import { OnOffSensorDevice } from '@matter/main/devices/on-off-sensor';
+import { BooleanStateServer } from '@matter/main/behaviors/boolean-state';
 import { LevelControlServer } from '@matter/main/behaviors/level-control';
 import { ColorControlServer } from '@matter/main/behaviors/color-control';
 import { FanControlServer } from '@matter/main/behaviors/fan-control';
@@ -19,13 +21,17 @@ import { applianceTypes, applianceState, applianceControls } from './appliances.
 export const types = { ...applianceTypes, light: OnOffLightDevice, outlet: OnOffPlugInUnitDevice, power: OnOffPlugInUnitDevice,
   dimmableLight: DimmableLightDevice, colorTemperatureLight: ColorTemperatureLightDevice, fan: FanDevice, airPurifier: AirPurifierDevice,
   temperature: TemperatureSensorDevice, humidity: HumiditySensorDevice, illuminance: LightSensorDevice,
-  contact: ContactSensorDevice, occupancy: OccupancySensorDevice };
+  contact: ContactSensorDevice, occupancy: OccupancySensorDevice,
+  waterShortage: OnOffSensorDevice.with(BooleanStateServer), foodShortage: OnOffSensorDevice.with(BooleanStateServer) };
 
 export function stateFor(d) {
   if (Object.hasOwn(applianceTypes, d.kind)) return applianceState(d);
   const a = d.attributes ?? {};
   const v = a[d.kind];
   switch (d.kind) {
+    // Boolean State is read-only. Do not synthesize a normal reading from an absent cache value.
+    case 'waterShortage':
+    case 'foodShortage': return typeof v === 'boolean' ? { booleanState: { stateValue: v } } : {};
     case 'temperature': return { temperatureMeasurement: { measuredValue: Number.isFinite(v) ? v : null } };
     case 'humidity': return { relativeHumidityMeasurement: { measuredValue: Number.isFinite(v) ? v : null } };
     case 'illuminance': return { illuminanceMeasurement: { measuredValue: Number.isFinite(v) ? v : null } };

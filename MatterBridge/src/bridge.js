@@ -58,6 +58,8 @@ export function validateDevices(devices) {
     if (d.kind === 'windowCovering' && d.reachable &&
         (!Number.isInteger(d.attributes?.position) || d.attributes.position < 0 || d.attributes.position > 100 ||
          !Number.isInteger(d.attributes?.movement) || d.attributes.movement < 0 || d.attributes.movement > 2)) throw new Error('Invalid covering cache');
+    if (['waterShortage', 'foodShortage'].includes(d.kind) &&
+        (d.reachable || d.attributes?.[d.kind] !== undefined) && typeof d.attributes?.[d.kind] !== 'boolean') throw new Error('Invalid shortage cache');
     if (d.kind === 'thermostat') {
       const a = d.attributes ?? {};
       if (!Number.isInteger(a.targetTemperatureMin) || !Number.isInteger(a.targetTemperatureMax) ||
@@ -126,6 +128,7 @@ export async function createBridge(rpc, devices, options = {}) {
           async toggle() { return this.state.onOff ? this.off() : this.on(); }
         }
         async function set(property, value) {
+          if (['waterShortage', 'foodShortage'].includes(device.kind)) throw new Error('Read-only sensor');
           if (!available.get(device.did)) throw new Error('Device offline');
           const result = validateDevices(await rpc.request('set', property === 'on'
             ? { did: device.did, on: value } : { did: device.did, property, value }));
