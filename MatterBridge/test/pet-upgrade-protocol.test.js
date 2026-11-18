@@ -1,20 +1,55 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Environment, Network, NetworkSimulator, MockStorageService, MemoryStorageDriver, Crypto, Entropy,
-  ServerNode, ControllerBehavior, Seconds, Logger } from '@matter/main';
+  ServerNode, ControllerBehavior, Seconds, Logger, Endpoint, VendorId } from '@matter/main';
+import { AggregatorEndpoint } from '@matter/main/endpoints/aggregator';
+import { BridgedNodeEndpoint } from '@matter/main/endpoints/bridged-node';
+import { BridgedDeviceBasicInformationServer } from '@matter/main/behaviors/bridged-device-basic-information';
+import { FixedLabel } from '@matter/main/clusters/fixed-label';
 import { Read, Subscribe, Write } from '@matter/protocol';
 import { TlvBoolean } from '@matter/types';
 import { createBridge, identity } from '../src/bridge.js';
+import { types, stateFor } from '../src/devices.js';
 
 Logger.level = 'error';
 
-const original = [{ did: 'old-lamp', sourceID: 'old-lamp', sourceName: '台灯', name: '台灯', kind: 'light', reachable: true, on: true }];
+const original = [
+  { did: 'old-lamp', sourceID: 'old-lamp', sourceName: '台灯', name: '台灯', kind: 'light', functionLabel: '照明', reachable: true, on: true },
+  { did: 'heater', sourceID: 'heater', sourceName: '壁炉', name: '壁炉', kind: 'power', functionLabel: '加热电源', reachable: true, on: false },
+  { did: 'heater:light:3', sourceID: 'heater', sourceName: '壁炉', name: '壁炉 · 灯光', kind: 'light', functionLabel: '照明', reachable: true, on: true },
+];
 const additions = () => [
   { did: 'pet-water:waterShortage', sourceID: 'pet-water', sourceName: '宠物饮水机', name: '缺水状态',
-    kind: 'waterShortage', reachable: true, attributes: { waterShortage: false } },
+    kind: 'waterShortage', functionLabel: '缺水状态', reachable: true, attributes: { waterShortage: false } },
   { did: 'pet-food:foodShortage', sourceID: 'pet-food', sourceName: '宠物喂食器', name: '缺粮状态',
-    kind: 'foodShortage', reachable: true, attributes: { foodShortage: false } },
+    kind: 'foodShortage', functionLabel: '缺粮状态', reachable: true, attributes: { foodShortage: false } },
 ];
+
+// Reproduce the previously deployed grouped layout without either function-label service.
+async function oldUnlabelledBridge(options) {
+  const node = await ServerNode.create({ id: 'mijialan', environment: options.environment, network: { port: options.port },
+    commissioning: { passcode: options.passcode, discriminator: options.discriminator },
+    basicInformation: { vendorName: 'MijiaLAN', vendorId: VendorId(0xfff1), productName: 'Matter Bridge', productId: 0x8000,
+      nodeLabel: 'MijiaLAN', serialNumber: 'mijialan-bridge' } });
+  const aggregator = new Endpoint(AggregatorEndpoint, { id: 'bridge' });
+  await node.add(aggregator);
+  const parent = new Endpoint(BridgedNodeEndpoint, { id: `entity-${identity('heater')}`,
+    bridgedDeviceBasicInformation: { nodeLabel: '壁炉', productName: '壁炉', productLabel: '壁炉', uniqueId: identity('heater'), reachable: true } });
+  await aggregator.add(parent);
+  await parent.set({ bridgedDeviceBasicInformation: { nodeLabel: '自定义壁炉' } });
+  const endpoints = new Map();
+  for (const d of original) {
+    const single = d.sourceID === 'old-lamp';
+    const endpoint = new Endpoint(types[d.kind].with(...(single ? [BridgedDeviceBasicInformationServer] : [])), {
+      id: `device-${identity(d.did)}`, ...stateFor(d), ...(single ? { bridgedDeviceBasicInformation: {
+        nodeLabel: d.sourceName, productName: d.sourceName, productLabel: d.sourceName, uniqueId: identity(d.sourceID), reachable: true,
+      } } : {}),
+    });
+    await (single ? aggregator : parent).add(endpoint);
+    endpoints.set(d.did, endpoint);
+  }
+  return { node, endpoints, parent };
+}
 async function collect(result) {
   const reports = [];
   for await (const chunk of result) for await (const report of chunk) reports.push(report);
@@ -57,7 +92,7 @@ test('a commissioned controller reconnects after upgrade, reads new Descriptor e
   let bridge, controller, subscription, calls = 0;
   const rpc = { request() { calls++; throw new Error('Sensor traffic must never reach device RPC'); } };
   try {
-    bridge = await createBridge(rpc, original, options());
+    bridge = await oldUnlabelledBridge(options());
     await bridge.node.start();
     controller = await createController();
     await controller.start();
@@ -66,6 +101,8 @@ test('a commissioned controller reconnects after upgrade, reads new Descriptor e
     assert.equal(Object.keys(fabrics).length, 1);
     const address = { ...peer.peerAddress };
     const oldNumber = bridge.endpoints.get('old-lamp').number;
+    const oldNumbers = new Map([...bridge.endpoints].map(([id, e]) => [id, e.number]));
+    const oldParentNumber = bridge.parent.number;
     const rootBefore = value(await read(peer, [{ endpointId: 0, clusterId: 0x1d, attributeId: 3 }]), 0, 0x1d, 3);
     assert.ok(rootBefore.includes(oldNumber));
     await controller.close();
@@ -75,6 +112,9 @@ test('a commissioned controller reconnects after upgrade, reads new Descriptor e
     bridge = await createBridge(rpc, upgraded, options());
     assert.deepEqual(bridge.node.state.commissioning.fabrics, fabrics);
     assert.equal(bridge.endpoints.get('old-lamp').number, oldNumber);
+    for (const [id, number] of oldNumbers) assert.equal(bridge.endpoints.get(id).number, number);
+    assert.equal(bridge.entities.get('heater').number, oldParentNumber);
+    assert.equal(bridge.entities.get('heater').state.bridgedDeviceBasicInformation.nodeLabel, '自定义壁炉');
     assert.equal(bridge.entities.get('old-lamp').state.bridgedDeviceBasicInformation.uniqueId, identity('old-lamp'));
     await bridge.node.start();
     // A controller restart drops the old transport session but retains its commissioned peer and fabric.
@@ -87,6 +127,13 @@ test('a commissioned controller reconnects after upgrade, reads new Descriptor e
     const aggregateNumber = bridge.node.parts.get('bridge').number;
     const paths = [0, aggregateNumber].map(endpointId => ({ endpointId, clusterId: 0x1d, attributeId: 3 }));
     const descriptors = await read(peer, paths);
+    for (const d of [...original, ...added]) {
+      const number = bridge.endpoints.get(d.did).number;
+      const labels = await read(peer, [{ endpointId: number, clusterId: 0x40, attributeId: 0 },
+        { endpointId: number, clusterId: 0x1d, attributeId: 4 }]);
+      assert.equal(value(labels, number, 0x40, 0).find(l => l.label === 'function').value, d.functionLabel);
+      assert.ok(value(labels, number, 0x1d, 4).some(t => t.mfgCode === 0xfff1 && t.namespaceId === 1 && t.label === d.functionLabel));
+    }
     for (const d of added) {
       const number = bridge.endpoints.get(d.did).number;
       assert.ok(value(descriptors, 0, 0x1d, 3).includes(number));
@@ -119,6 +166,10 @@ test('a commissioned controller reconnects after upgrade, reads new Descriptor e
     const denied = await peer.interaction.write(Write({ writes: [{ path: { endpointId: water, clusterId: 0x45, attributeId: 0 }, data: TlvBoolean.encodeTlv(false) }] }));
     assert.equal(denied.length, 1);
     assert.notEqual(denied[0].status, 0);
+    const deniedLabel = await peer.interaction.write(Write({ chunkLists: false }, { kind: 'attribute', endpoint: water,
+      cluster: FixedLabel, attributes: 'labelList', value: [{ label: 'function', value: 'Changed' }] }));
+    assert.equal(deniedLabel.length, 1);
+    assert.equal(deniedLabel[0].status, 0x88); // UnsupportedWrite: labels are metadata, not a LAN command.
     assert.equal(value(await read(peer, [{ endpointId: water, clusterId: 0x45, attributeId: 0 }]), water, 0x45, 0), true);
     await bridge.sync([...original, ...added.map(d => ({ ...d, reachable: false, attributes: {} }))]);
     const unavailable = await read(peer, [{ endpointId: water, clusterId: 0x39, attributeId: 0x11 }]);

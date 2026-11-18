@@ -5,6 +5,8 @@ import { AggregatorEndpoint } from '@matter/main/endpoints/aggregator';
 import { BridgedNodeEndpoint } from '@matter/main/endpoints/bridged-node';
 import { BridgedDeviceBasicInformationServer } from '@matter/main/behaviors/bridged-device-basic-information';
 import { OnOffServer } from '@matter/main/behaviors/on-off';
+import { DescriptorServer } from '@matter/main/behaviors/descriptor';
+import { FixedLabelServer } from '@matter/main/behaviors/fixed-label';
 
 export function identity(did) {
   return createHash('sha256').update(did).digest('hex').slice(0, 32);
@@ -28,6 +30,26 @@ function names(name) {
   return { nodeLabel: truncateUtf8(name, 32), productName: truncateUtf8(name, 32), productLabel: truncateUtf8(name, 64) };
 }
 
+// Stable MijiaLAN development-vendor namespace 1 function IDs. Standard Number tags
+// describe numbered channels; vendor tags qualify their purpose without inventing standard semantics.
+const functions = {
+  power: [1, 'Power'], light: [2, 'Lighting'], dimmableLight: [3, 'Lighting'], colorTemperatureLight: [4, 'Lighting'],
+  fan: [5, 'Fan'], airPurifier: [6, 'Air Purification'], thermostat: [7, 'Heating Control'], windowCovering: [8, 'Covering'],
+  temperature: [9, 'Temperature'], humidity: [10, 'Humidity'], illuminance: [11, 'Illuminance'],
+  occupancy: [12, 'Occupancy'], contact: [13, 'Contact'], waterShortage: [14, 'Water Shortage'], foodShortage: [15, 'Food Shortage'],
+  outlet: [16, 'Outlet'],
+};
+function functionMetadata(device, channel) {
+  const [tag, fallback] = functions[device.kind];
+  const label = device.functionLabel?.trim() || fallback;
+  const labels = { labelList: [{ label: 'function', value: truncateUtf8(label, 16) }, { label: 'channel', value: String(channel) }] };
+  // CommonNumber defines standard channels 0..30. Larger groups still have FixedLabel,
+  // rather than advertising an out-of-range standard tag or a vendor-only TagList.
+  const tags = channel <= 30 ? [{ mfgCode: null, namespaceId: 7, tag: channel },
+    { mfgCode: VendorId(0xfff1), namespaceId: 1, tag, label: truncateUtf8(label, 64) }] : undefined;
+  return { labels, tags };
+}
+
 function physicalGroups(devices) {
   const groups = new Map();
   for (const device of devices) {
@@ -46,6 +68,7 @@ export function validateDevices(devices) {
   for (const d of devices) {
     if ((d.sourceID !== undefined && (typeof d.sourceID !== 'string' || !d.sourceID)) ||
         (d.sourceName !== undefined && typeof d.sourceName !== 'string')) throw new Error('Invalid physical device identity');
+    if (d.functionLabel !== undefined && (typeof d.functionLabel !== 'string' || !d.functionLabel.trim())) throw new Error('Invalid function label');
     if (d.sourceName !== undefined) {
       const source = physicalID(d);
       if (sourceNames.has(source) && sourceNames.get(source) !== d.sourceName) throw new Error('Conflicting physical device names');
@@ -120,7 +143,7 @@ export async function createBridge(rpc, devices, options = {}) {
         await aggregator.add(parent);
         entities.set(group.id, parent);
       }
-      for (const device of group.functions) {
+      for (const [index, device] of group.functions.entries()) {
         // Override commands, not attribute notifications: LAN polls must never write back to the device.
         class DevicePower extends OnOffServer.with("Lighting") {
           async on() { await write(this, true); return super.on(); }
@@ -150,11 +173,15 @@ export async function createBridge(rpc, devices, options = {}) {
         if (['light', 'outlet', 'power', 'dimmableLight', 'colorTemperatureLight'].includes(device.kind)) behaviors.push(DevicePower);
         const nestedStore = compound ? stores.storeForEndpoint(parent).existingChildStore(endpointID(device.did)) : undefined;
         const oldNumber = nestedStore?.number ?? legacyNumbers.get(device.did);
-        const endpoint = new Endpoint(type.with(...behaviors, ...(compound ? [] : [BridgedDeviceBasicInformationServer])), {
+        const metadata = functionMetadata(device, index + 1);
+        const endpoint = new Endpoint(type.with(...behaviors, FixedLabelServer,
+          ...(metadata.tags ? [DescriptorServer.with('TagList')] : []), ...(compound ? [] : [BridgedDeviceBasicInformationServer])), {
           id: endpointID(device.did),
           // Preserve existing application endpoint numbers when their storage path gains a parent.
           ...(oldNumber === undefined ? {} : { number: oldNumber }),
           ...stateFor(device),
+          fixedLabel: metadata.labels,
+          ...(metadata.tags ? { descriptor: { tagList: metadata.tags } } : {}),
           ...(!compound ? { bridgedDeviceBasicInformation: {
             // Some controllers use the product name or label when importing bridged endpoints.
             ...names(device.sourceName ?? device.name),

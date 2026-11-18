@@ -19,6 +19,8 @@
 
 控制仍发送原逻辑 did。例如壁炉电源用原 did，灯光用 `did:light:<siid>`，由原 MatterDevicePlan 绑定到各自的 MIoT 属性，绝不交叉替代。组合本身不新增 LAN 查询、改轮询、改变协议或调用配对重置。
 
+功能端点另提供 FixedLabel 与 Descriptor.TagList 名称，父端点仍保留整台设备名称；详见 [功能标签与 Aqara 验收](matter-function-labels.md)。
+
 ## 旧存储升级
 
 使用 matter.js 公开的 ServerNodeStore/ServerEndpointStores 接口读取已分配端点编号。在组合子端点迁到新父端点下时预设原应用端点编号，让库保留它；不直接编辑存储文件。顶层组合端点是新增端点，因此有新编号。已经组成组合的实体即使日后只剩一个功能，仍保留组合父端点，避免布局反复变化。
