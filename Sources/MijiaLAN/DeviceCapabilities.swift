@@ -80,6 +80,7 @@ public struct DeviceSchema: Codable, Equatable, Sendable {
         let url = LocalHomeProvider.specCacheDirectory.appendingPathComponent("instances")
             .appendingPathComponent(specType.replacingOccurrences(of: ":", with: "_") + ".json")
         return (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(Self.self, from: $0) }
+            .map { YeelightCeiling20Schema.extending($0, model: model) }
     }
     public static let bundledModels = [
         "dmaker.fan.p28", "zhimi.airpurifier.rma1", "yeelink.light.lamp4", "lumi.acpartner.mcn02",
@@ -407,6 +408,11 @@ public enum DeviceCapabilityCatalog {
                 if model == "giot.heater.v13daf", p.name == "on" {
                     if service.name == "heater" { title = L10n.tr("壁炉主电源", "Fireplace Main Power") }
                     if service.name == "light" { title = L10n.tr("壁炉灯光电源", "Fireplace Light Power") }
+                }
+                if model == "yeelink.light.ceiling20" {
+                    let part = service.iid == 200 ? L10n.tr("副灯", "Ambient Light") : L10n.tr("主灯", "Main Light")
+                    if ["on", "brightness", "color-temperature", "color"].contains(p.name) { title = part + " · " + title }
+                    if service.iid == 2, p.iid == 4 { title = L10n.tr("主灯日光/夜灯模式", "Main Day/Moonlight Mode") }
                 }
                 if model == "dmaker.fan.p28", service.iid == 3, p.iid == 1 { unit = "minutes" }
                 if p.name.contains("swing-included-angle") { unit = "arcdegrees" }

@@ -37,6 +37,8 @@ public struct LegacyMiioProfile: Sendable {
             case notEquals(JSONValue)
             case ifEquals(JSONValue, then: JSONValue, else: JSONValue)
             case ifNonZero(then: JSONValue, else: JSONValue)
+            /// Ceiling20's active main-light brightness; requires a same-reply mode and night brightness.
+            case ceiling20Brightness
         }
 
         /// MIoT value → the legacy setter's arguments (before `suffix`).
@@ -51,6 +53,7 @@ public struct LegacyMiioProfile: Sendable {
             case boolChoice(on: JSONValue, off: JSONValue)
             /// No arguments; the value picks the method instead (`set_usb_on` / `set_usb_off`).
             case methodSwitch(on: String, off: String)
+            case ceiling20Mode
         }
 
         /// Kept for the hand-written tables.
@@ -99,9 +102,10 @@ public struct LegacyMiioProfile: Sendable {
         }
 
         public var isWritable: Bool { setter != nil && write != nil }
+        public var readDependencies: [String] { read == .ceiling20Brightness ? ["nl_br", "active_mode"] : [] }
 
         /// Legacy reply value → MIoT value.
-        func miotValue(_ legacy: JSONValue) -> JSONValue? {
+        func miotValue(_ legacy: JSONValue, context: [String: JSONValue] = [:]) -> JSONValue? {
             switch read {
             case .onOff:
                 if case .bool = legacy { return legacy }
@@ -154,6 +158,12 @@ public struct LegacyMiioProfile: Sendable {
                 return Self.same(legacy, target) ? then : otherwise
             case .ifNonZero(let then, let otherwise):
                 return (Self.number(legacy) ?? 0) != 0 ? then : otherwise
+            case .ceiling20Brightness:
+                guard let mode = context["active_mode"]?.doubleValue, mode == 0 || mode == 1 else { return nil }
+                // Day and moonlight are two modes of the main emitter, not the ambient emitter.
+                let source = mode == 1 ? context["nl_br"] : legacy
+                guard let n = source?.doubleValue, n.isFinite, n.rounded() == n, (1...100).contains(n) else { return nil }
+                return .number(n)
             }
         }
 
@@ -189,6 +199,9 @@ public struct LegacyMiioProfile: Sendable {
             case .methodSwitch(let onMethod, let offMethod):
                 guard let on else { return nil }
                 return (on ? onMethod : offMethod, setterSuffix)
+            case .ceiling20Mode:
+                guard case .number(let mode) = miot, mode == 1 || mode == 2 else { return nil }
+                return (setter, [.string("nightlight"), .string(mode == 2 ? "on" : "off")] + setterSuffix)
             }
             return (setter, [argument] + setterSuffix)
         }
@@ -256,7 +269,22 @@ public struct LegacyMiioProfile: Sendable {
     }
 
     /// The checked table when there is one, else hass-xiaomi-miot's.
-    public static func forModel(_ model: String) -> LegacyMiioProfile? { profiles[model] ?? imported[model] }
+    public static func forModel(_ model: String) -> LegacyMiioProfile? {
+        if model == "yeelink.light.ceiling20" { return ceiling20 }
+        return profiles[model] ?? imported[model]
+    }
+
+    /// Reviewed native port of the skipped ceiling6 template and ceiling10's ambient mappings.
+    /// Keep the imported provenance; encrypted miIO behavior still needs household acceptance.
+    private static let ceiling20: LegacyMiioProfile? = {
+        guard var profile = imported["yeelink.light.ceiling20"] else { return nil }
+        profile.properties.removeAll { $0.siid == 2 && [2, 4].contains($0.piid) }
+        profile.properties += [
+            Property(siid: 2, piid: 2, name: "bright", read: .ceiling20Brightness, setter: "set_bright", write: .value, suffix: []),
+            Property(siid: 2, piid: 4, name: "active_mode", read: .values(["0": 1, "1": 2], fallback: nil), setter: "set_ps", write: .ceiling20Mode, suffix: []),
+        ]
+        return profile
+    }()
 
     public static var supportedModels: [String] { Set(profiles.keys).union(imported.keys).sorted() }
 
@@ -450,7 +478,9 @@ extension MiioClient {
             raw = status
         } else {
             var names: [String] = []
-            for property in mapped where !names.contains(property.name) { names.append(property.name) }
+            for property in mapped {
+                for name in [property.name] + property.readDependencies where !names.contains(name) { names.append(name) }
+            }
             let size = profile.chunkSize ?? names.count
             for start in stride(from: 0, to: names.count, by: size) {
                 let chunk = Array(names[start..<min(start + size, names.count)])
@@ -460,7 +490,7 @@ extension MiioClient {
         }
         var out: [MiotPropKey: JSONValue] = [:]
         for property in mapped {
-            guard let legacy = raw[property.name], let value = property.miotValue(legacy) else { continue }
+            guard let legacy = raw[property.name], let value = property.miotValue(legacy, context: raw) else { continue }
             out[MiotPropKey(did: did, siid: property.siid, piid: property.piid)] = value
         }
         return out
@@ -473,7 +503,7 @@ extension MiioClient {
                   let legacyCall = property.legacyCall(write.value) else {
                 throw MiioError.unsupportedByLegacyDevice
             }
-            let result = try await call(legacyCall.method, params: .array(legacyCall.params))
+            let result = try await call(legacyCall.method, params: .array(legacyCall.params), retryCount: 0)
             guard profile.accepts(result) else {
                 throw MiioError.badResponse(L10n.tr("旧 miIO 写入没有返回 ok", "The legacy miIO write did not return ok."))
             }

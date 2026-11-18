@@ -17,6 +17,11 @@ const original = [
   { did: 'old-lamp', sourceID: 'old-lamp', sourceName: '台灯', name: '台灯', kind: 'light', functionLabel: '照明', reachable: true, on: true },
   { did: 'heater', sourceID: 'heater', sourceName: '壁炉', name: '壁炉', kind: 'power', functionLabel: '加热电源', reachable: true, on: false },
   { did: 'heater:light:3', sourceID: 'heater', sourceName: '壁炉', name: '壁炉 · 灯光', kind: 'light', functionLabel: '照明', reachable: true, on: true },
+  { did: 'towel', sourceID: 'towel', sourceName: '电热毛巾架', name: '电热毛巾架', kind: 'thermostat', functionLabel: '加热温控', reachable: true, on: true,
+    attributes: { temperature: 5900, targetTemperature: 6500, targetTemperatureMin: 4000, targetTemperatureMax: 6500, targetTemperatureStep: 500 } },
+  { did: 'towel:temperature', sourceID: 'towel', sourceName: '电热毛巾架', name: '电热毛巾架 · 温度', kind: 'temperature', functionLabel: '温度',
+    reachable: true, attributes: { temperature: 5900 } },
+  { did: 'ceiling', sourceID: 'ceiling', sourceName: '吸顶灯', name: '吸顶灯', kind: 'light', functionLabel: '照明', reachable: true, on: true },
 ];
 const additions = () => [
   { did: 'pet-water:waterShortage', sourceID: 'pet-water', sourceName: '宠物饮水机', name: '缺水状态',
@@ -33,22 +38,28 @@ async function oldUnlabelledBridge(options) {
       nodeLabel: 'MijiaLAN', serialNumber: 'mijialan-bridge' } });
   const aggregator = new Endpoint(AggregatorEndpoint, { id: 'bridge' });
   await node.add(aggregator);
-  const parent = new Endpoint(BridgedNodeEndpoint, { id: `entity-${identity('heater')}`,
-    bridgedDeviceBasicInformation: { nodeLabel: '壁炉', productName: '壁炉', productLabel: '壁炉', uniqueId: identity('heater'), reachable: true } });
-  await aggregator.add(parent);
-  await parent.set({ bridgedDeviceBasicInformation: { nodeLabel: '自定义壁炉' } });
+  const parents = new Map();
+  for (const source of ['heater', 'towel']) {
+    const name = original.find(d => d.sourceID === source).sourceName;
+    const parent = new Endpoint(BridgedNodeEndpoint, { id: `entity-${identity(source)}`,
+      bridgedDeviceBasicInformation: { nodeLabel: name, productName: name, productLabel: name, uniqueId: identity(source), reachable: true } });
+    await aggregator.add(parent);
+    await parent.set({ bridgedDeviceBasicInformation: { nodeLabel: source === 'heater' ? '自定义壁炉' : '自定义毛巾架' } });
+    parents.set(source, parent);
+  }
   const endpoints = new Map();
   for (const d of original) {
-    const single = d.sourceID === 'old-lamp';
+    const single = !parents.has(d.sourceID);
     const endpoint = new Endpoint(types[d.kind].with(...(single ? [BridgedDeviceBasicInformationServer] : [])), {
       id: `device-${identity(d.did)}`, ...stateFor(d), ...(single ? { bridgedDeviceBasicInformation: {
         nodeLabel: d.sourceName, productName: d.sourceName, productLabel: d.sourceName, uniqueId: identity(d.sourceID), reachable: true,
       } } : {}),
     });
-    await (single ? aggregator : parent).add(endpoint);
+    await (parents.get(d.sourceID) ?? aggregator).add(endpoint);
     endpoints.set(d.did, endpoint);
+    if (d.did === 'ceiling') await endpoint.set({ bridgedDeviceBasicInformation: { nodeLabel: '自定义吸顶灯' } });
   }
-  return { node, endpoints, parent };
+  return { node, endpoints, parent: parents.get('heater'), parents };
 }
 async function collect(result) {
   const reports = [];
@@ -68,7 +79,7 @@ async function until(check) {
   while (!check()) { assert.ok(Date.now() < deadline, 'Expected subscribed update'); await new Promise(resolve => setTimeout(resolve, 10)); }
 }
 
-test('a commissioned controller reconnects after upgrade, reads new Descriptor endpoints and subscribes to read-only statuses', { timeout: 40_000 }, async () => {
+test('a commissioned controller keeps its fabric and grouped identities when a duplicate temperature child is removed and status endpoints added', { timeout: 40_000 }, async () => {
   const simulator = new NetworkSimulator();
   const bridgeStorage = {}, controllerStorage = {}, environments = [];
   function environment(id, network, data) {
@@ -103,18 +114,35 @@ test('a commissioned controller reconnects after upgrade, reads new Descriptor e
     const oldNumber = bridge.endpoints.get('old-lamp').number;
     const oldNumbers = new Map([...bridge.endpoints].map(([id, e]) => [id, e.number]));
     const oldParentNumber = bridge.parent.number;
+    const towelParent = bridge.parents.get('towel').number;
+    const removedNumber = oldNumbers.get('towel:temperature');
     const rootBefore = value(await read(peer, [{ endpointId: 0, clusterId: 0x1d, attributeId: 3 }]), 0, 0x1d, 3);
     assert.ok(rootBefore.includes(oldNumber));
     await controller.close();
     await bridge.node.close();
 
-    const added = additions(), upgraded = [...original, ...added];
+    const added = additions();
+    const retained = original.filter(d => d.did !== 'towel:temperature').map(d => d.did === 'ceiling'
+      ? { ...d, kind: 'colorTemperatureLight', functionLabel: '主灯', attributes: { level: 71, colorTemperature: 250, colorTemperatureMin: 154, colorTemperatureMax: 370 } } : d);
+    retained.push({ did: 'ceiling:light:200', sourceID: 'ceiling', sourceName: '吸顶灯', name: '副灯', kind: 'colorTemperatureLight',
+      functionLabel: '副灯', reachable: true, on: false, attributes: { level: 35, colorTemperature: 333, colorTemperatureMin: 154, colorTemperatureMax: 588 } });
+    const upgraded = [...retained, ...added];
     bridge = await createBridge(rpc, upgraded, options());
     assert.deepEqual(bridge.node.state.commissioning.fabrics, fabrics);
     assert.equal(bridge.endpoints.get('old-lamp').number, oldNumber);
-    for (const [id, number] of oldNumbers) assert.equal(bridge.endpoints.get(id).number, number);
+    for (const [id, number] of oldNumbers) if (id !== 'towel:temperature') assert.equal(bridge.endpoints.get(id).number, number);
     assert.equal(bridge.entities.get('heater').number, oldParentNumber);
     assert.equal(bridge.entities.get('heater').state.bridgedDeviceBasicInformation.nodeLabel, '自定义壁炉');
+    assert.equal(bridge.entities.get('towel').number, towelParent);
+    assert.equal(bridge.entities.get('towel').state.bridgedDeviceBasicInformation.nodeLabel, '自定义毛巾架');
+    assert.equal(bridge.entities.get('towel').state.bridgedDeviceBasicInformation.uniqueId, identity('towel'));
+    assert.equal(bridge.endpoints.get('towel').behaviors.has(BridgedDeviceBasicInformationServer), false);
+    assert.equal(bridge.endpoints.has('towel:temperature'), false);
+    assert.equal(bridge.entities.get('ceiling').state.bridgedDeviceBasicInformation.nodeLabel, '自定义吸顶灯');
+    assert.equal(bridge.entities.get('ceiling').state.bridgedDeviceBasicInformation.uniqueId, identity('ceiling'));
+    assert.equal(bridge.endpoints.get('ceiling').number, oldNumbers.get('ceiling'));
+    assert.equal(bridge.endpoints.get('ceiling').behaviors.has(BridgedDeviceBasicInformationServer), false);
+    assert.ok(![...oldNumbers.values()].includes(bridge.endpoints.get('ceiling:light:200').number));
     assert.equal(bridge.entities.get('old-lamp').state.bridgedDeviceBasicInformation.uniqueId, identity('old-lamp'));
     await bridge.node.start();
     // A controller restart drops the old transport session but retains its commissioned peer and fabric.
@@ -127,13 +155,19 @@ test('a commissioned controller reconnects after upgrade, reads new Descriptor e
     const aggregateNumber = bridge.node.parts.get('bridge').number;
     const paths = [0, aggregateNumber].map(endpointId => ({ endpointId, clusterId: 0x1d, attributeId: 3 }));
     const descriptors = await read(peer, paths);
-    for (const d of [...original, ...added]) {
+    for (const d of upgraded) {
       const number = bridge.endpoints.get(d.did).number;
       const labels = await read(peer, [{ endpointId: number, clusterId: 0x40, attributeId: 0 },
         { endpointId: number, clusterId: 0x1d, attributeId: 4 }]);
       assert.equal(value(labels, number, 0x40, 0).find(l => l.label === 'function').value, d.functionLabel);
       assert.ok(value(labels, number, 0x1d, 4).some(t => t.mfgCode === 0xfff1 && t.namespaceId === 1 && t.label === d.functionLabel));
     }
+    assert.ok(!value(descriptors, 0, 0x1d, 3).includes(removedNumber));
+    assert.ok(!value(descriptors, aggregateNumber, 0x1d, 3).includes(removedNumber));
+    const remaining = await read(peer, [{ endpointId: towelParent, clusterId: 0x1d, attributeId: 3 }]);
+    assert.deepEqual(value(remaining, towelParent, 0x1d, 3), [oldNumbers.get('towel')]);
+    const missing = await read(peer, [{ endpointId: removedNumber, clusterId: 0x1d, attributeId: 3 }]);
+    assert.ok(missing.some(r => r.kind === 'attr-status' && r.status === 0x7f)); // UnsupportedEndpoint.
     for (const d of added) {
       const number = bridge.endpoints.get(d.did).number;
       assert.ok(value(descriptors, 0, 0x1d, 3).includes(number));
@@ -171,7 +205,7 @@ test('a commissioned controller reconnects after upgrade, reads new Descriptor e
     assert.equal(deniedLabel.length, 1);
     assert.equal(deniedLabel[0].status, 0x88); // UnsupportedWrite: labels are metadata, not a LAN command.
     assert.equal(value(await read(peer, [{ endpointId: water, clusterId: 0x45, attributeId: 0 }]), water, 0x45, 0), true);
-    await bridge.sync([...original, ...added.map(d => ({ ...d, reachable: false, attributes: {} }))]);
+    await bridge.sync([...retained, ...added.map(d => ({ ...d, reachable: false, attributes: {} }))]);
     const unavailable = await read(peer, [{ endpointId: water, clusterId: 0x39, attributeId: 0x11 }]);
     assert.equal(value(unavailable, water, 0x39, 0x11), false);
     assert.equal(calls, 0);

@@ -15,3 +15,5 @@
 - `extend_model` entries are merged into their model, and the base model is kept under `base`.
 
 Hand-checked tables in `LegacyMiio.swift` take priority over the converted ones for the same model.
+
+For `yeelink.light.ceiling20`, `YeelightCeiling20Schema.swift` adapts the same revision's `custom_components/xiaomi_miot/core/miot_specs_extend.json` (`ceiling20` → `ceiling4`) into logical ambient-light service 200. The native brightness/mode transform ports the skipped ceiling6 mapping with strict mode/telemetry validation. These derived additions retain this Apache-2.0 attribution; they are not native MIoT wire addresses or a claim of household firmware verification.

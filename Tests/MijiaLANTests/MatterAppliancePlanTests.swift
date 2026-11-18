@@ -19,6 +19,7 @@ struct MatterAppliancePlanTests {
         s.readings["p:2:5"] = DeviceReading(value: .number(65))
         s.readings["p:2:6"] = DeviceReading(value: .number(59))
         let entry = try #require(MatterDevicePlan.entries([s]).first)
+        #expect(MatterDevicePlan.entries([s]).map { $0.device.kind } == ["thermostat"])
         #expect(entry.device.kind == "thermostat" && entry.device.reachable)
         #expect(entry.device.attributes["targetTemperature"] == .number(6500))
         #expect(entry.device.attributes["temperature"] == .number(5900))
@@ -29,6 +30,51 @@ struct MatterAppliancePlanTests {
         #expect(MatterDevicePlan.entries([s]).first?.device.reachable == false)
         s.readings["p:2:5"] = DeviceReading(value: .bool(true)) // A code-zero type conflict remains unavailable.
         #expect(MatterDevicePlan.entries([s]).first?.device.reachable == false)
+    }
+
+    @Test("A thermostat suppresses only its exact bound measurement; a second sensor remains independent even with the same title and value")
+    func distinctThermostatSensor() throws {
+        var s = try snapshot("iot.tow_w.jd015", model: "test.generic.multisensor-heater")
+        var schema = s.schema
+        let serviceIndex = try #require(schema.services.firstIndex { $0.iid == 2 })
+        var extra = schema.services[serviceIndex]
+        extra.iid = 20
+        extra.properties = extra.properties.filter { $0.iid == 6 }
+        // Leave this sensor before the thermostat's source in one ordering, and after it in the other.
+        for first in [false, true] {
+            schema = s.schema
+            if first { schema.services.insert(extra, at: 0) } else { schema.services.append(extra) }
+            var measured = DeviceSnapshot(device: s.device, schema: schema,
+                capabilities: DeviceCapabilityCatalog.capabilities(schema: schema, model: s.device.model), health: s.health)
+            for (key, value) in [("p:2:1", JSONValue.bool(true)), ("p:2:5", .number(65)), ("p:2:6", .number(59)), ("p:20:6", .number(59))] {
+                measured.readings[key] = DeviceReading(value: value)
+            }
+            let entries = MatterDevicePlan.entries([measured])
+            #expect(entries.map { $0.device.kind } == ["thermostat", "temperature"])
+            #expect(entries.first?.bindings["temperature"]?.id == "p:2:6")
+            #expect(entries.last?.bindings["temperature"]?.id == "p:20:6")
+            #expect(entries.last?.device.did == "123:temperature")
+            #expect(entries.allSatisfy { $0.device.reachable })
+        }
+        // An unavailable thermostat must not cause the same property to reappear as a fallback endpoint.
+        s.readings["p:2:6"] = DeviceReading(value: .number(59))
+        #expect(!MatterDevicePlan.entries([s]).contains { $0.device.kind == "temperature" })
+    }
+
+    @Test("Two different temperature PIIDs in the same service are not deduplicated by service or display name")
+    func distinctSensorInSameService() throws {
+        let original = try snapshot("iot.tow_w.jd015", model: "test.generic.same-service-sensors")
+        var schema = original.schema
+        let index = try #require(schema.services.firstIndex { $0.iid == 2 })
+        var extra = try #require(schema.services[index].properties.first { $0.iid == 6 })
+        extra.iid = 26
+        schema.services[index].properties.append(extra)
+        let measured = DeviceSnapshot(device: original.device, schema: schema,
+            capabilities: DeviceCapabilityCatalog.capabilities(schema: schema, model: original.device.model))
+        let entries = MatterDevicePlan.entries([measured])
+        #expect(entries.first?.bindings["temperature"]?.id == "p:2:6")
+        #expect(entries.last?.bindings["temperature"]?.id == "p:2:26")
+        #expect(entries.map { $0.device.kind } == ["thermostat", "temperature"])
     }
 
     @Test("Heating never combines one service instance's power with another instance's target or sensor", arguments: ["target-temperature", "temperature"])

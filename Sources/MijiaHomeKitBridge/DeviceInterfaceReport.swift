@@ -65,7 +65,7 @@ public enum DeviceInterfaceReport {
     }
 
     static func legacyProtocol(_ property: LegacyMiioProfile.Property, statusMethod: String?) -> String {
-        let read = statusMethod.map { "\($0) [] → \(property.name)" } ?? "get_prop [\(property.name)]"
+        let read = statusMethod.map { "\($0) [] → \(property.name)" } ?? "get_prop [\(([property.name] + property.readDependencies).joined(separator: ","))]"
         guard let setter = property.setter, let write = property.write else { return read + "; 只读" }
         let suffix = property.setterSuffix.map(\.compactJSONString)
         func call(_ method: String, _ arguments: [String]) -> String {
@@ -81,6 +81,7 @@ public enum DeviceInterfaceReport {
             argument = table.sorted { ($0.value, $0.key) < ($1.value, $1.key) }.map { "\($0.value)→\($0.key)" }.joined(separator: ",")
         case .boolChoice(let on, let off): argument = "true→\(on.compactJSONString), false→\(off.compactJSONString)"
         case .methodSwitch(let on, let off): return read + "; true→" + call(on, []) + "; false→" + call(off, [])
+        case .ceiling20Mode: return read + "; " + call(setter, ["nightlight", "1→off / 2→on"])
         }
         return read + "; " + call(setter, [argument])
     }

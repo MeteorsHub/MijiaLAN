@@ -7,12 +7,12 @@ public enum CapabilityCommand: Equatable, Sendable {
     case invoke(String)
     case adjust(String, Double)
     case batch([CapabilityCommand])
-    case setLightBrightness(Double)
+    case setLightBrightness(Double, siid: Int? = nil)
     var coalescingID: String? {
         switch self {
         case .set(let id, _): id
         case .batch(let commands): commands.first?.coalescingID.map { "batch:" + $0 }
-        case .setLightBrightness: "light:brightness"
+        case .setLightBrightness(_, let siid): siid.map { "light:\($0):brightness" } ?? "light:brightness"
         default: nil
         }
     }
@@ -128,10 +128,11 @@ public final class DeviceController {
             // The restriction is independent of whether a specification was imported/cached.
             let restrictedPlaceholder: DeviceSchema? = DeviceLANPolicy.allowsPropertyRequests(for: device.model) ? nil
                 : DeviceSchema(model: device.model, type: device.specType ?? "motor-controller", description: nil, services: [])
-            guard let schema = DeviceSchema.bundled(model: device.model) ?? cached ?? restrictedPlaceholder else {
+            guard let baseSchema = DeviceSchema.bundled(model: device.model) ?? cached ?? restrictedPlaceholder else {
                 snapshots[device.did] = nil
                 continue
             }
+            let schema = YeelightCeiling20Schema.extending(baseSchema, model: device.model)
             var template = DeviceSnapshot(device: device, schema: schema,
                 capabilities: DeviceCapabilityCatalog.capabilities(schema: schema, model: device.model))
             template.device = LocalDevice(did: "", name: "", model: device.model, host: "", token: "", specType: device.specType)
@@ -355,15 +356,18 @@ public final class DeviceController {
         }
         guard let snapshot = snapshots[did] else { throw DeviceControlError.unavailable(did) }
         if let reason = snapshot.lanReadingsRestriction { throw DeviceControlError.unsupported(reason) }
-        if case .setLightBrightness(let number) = command {
-            guard snapshot.schema.category == "light", let brightness = snapshot.capability("light", "brightness"),
+        if case .setLightBrightness(let number, let siid) = command {
+            let channel = siid ?? snapshot.primaryPower?.siid ?? snapshot.capability("light", "brightness")?.siid
+            guard snapshot.schema.category == "light", let channel,
+                  let brightness = snapshot.capabilities.first(where: { $0.siid == channel && ["light", "ambient-light"].contains($0.service) && $0.name == "brightness" }),
                   brightness.writable, brightness.control == .number else {
                 throw DeviceControlError.unsupported(L10n.tr("亮度", "Brightness"))
             }
             let value = try brightness.validated(.number(number))
             guard snapshot.isOnline else { throw DeviceControlError.offline }
             // Evaluate power in the device queue, after any earlier command has finished.
-            if let power = snapshot.primaryPower, snapshot.value(power.id)?.boolValue != true {
+            let power = snapshot.capabilities.first { $0.siid == channel && $0.service == brightness.service && $0.name == "on" && $0.readable && $0.writable && $0.format == "bool" }
+            if let power, snapshot.value(power.id)?.boolValue != true {
                 try await perform(did: did, .set(power.id, .bool(true)))
             }
             if !Self.matches(snapshots[did]?.value(brightness.id), value) {
@@ -399,9 +403,15 @@ public final class DeviceController {
             snapshots[did]?.commandReceipt?.acceptedAt = Date()
             snapshots[did]?.lastCommand = L10n.tr("设备已接受指令，正在确认状态", "Command accepted. Confirming device state.")
             if cap.readable {
+                var confirmations = [cap]
+                if snapshot.device.model == "yeelink.light.ceiling20", cap.siid == 2, [2, 3, 4].contains(cap.iid) {
+                    for dependent in snapshot.capabilities where dependent.siid == 2 && [2, 4].contains(dependent.iid) && dependent.readable {
+                        if !confirmations.contains(where: { $0.id == dependent.id }) { confirmations.append(dependent) }
+                    }
+                }
                 for attempt in 0..<3 {
                     if attempt > 0 { try await Task.sleep(for: .milliseconds(250)) }
-                    await refresh(did: did, capabilities: [cap])
+                    await refresh(did: did, capabilities: confirmations)
                     if Self.matches(snapshots[did]?.value(id), value) { break }
                 }
                 let confirmed = snapshots[did]?.value(id)

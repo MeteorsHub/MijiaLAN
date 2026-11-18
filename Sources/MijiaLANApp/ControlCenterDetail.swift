@@ -29,6 +29,8 @@ struct ControlCenterDeviceDetail: View {
                         Text(L10n.tr("家庭中的当前温度使用设定温度占位，此设备没有实测室温读数。", "Home uses the target temperature as a placeholder for the current temperature. This device does not report measured room temperature."))
                             .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         additionalControls(snapshot, excluding: ["p:2:1", "p:2:2", "p:2:3", "p:3:1", "p:3:2"])
+                    } else if device.model == "yeelink.light.ceiling20" {
+                        Ceiling20LightControls(controller: model.devices, snapshot: snapshot)
                     } else if snapshot.schema.category == "light", let brightness = snapshot.capability("light", "brightness") {
                         LampControl(controller: model.devices, snapshot: snapshot, brightness: brightness)
                         if let temperature = snapshot.capability("light", "color-temperature"), temperature.control == .number {
@@ -184,18 +186,19 @@ private struct AirConditionerControl: View {
     }
 }
 
-private struct LampControl: View {
+struct LampControl: View {
     let snapshot: DeviceSnapshot
     let brightness: DeviceCapability
+    let siid: Int?
     @State private var writer: ContinuousValueWriter
     @Environment(\.panelPresented) private var panelPresented
 
-    init(controller: DeviceController, snapshot: DeviceSnapshot, brightness: DeviceCapability) {
-        self.snapshot = snapshot; self.brightness = brightness
+    init(controller: DeviceController, snapshot: DeviceSnapshot, brightness: DeviceCapability, siid: Int? = nil) {
+        self.snapshot = snapshot; self.brightness = brightness; self.siid = siid
         let did = snapshot.id
         // This view owns edit intent for one device; the detail's identity is the device ID.
         _writer = State(initialValue: ContinuousValueWriter { value in
-            try await controller.execute(did: did, .setLightBrightness(value))
+            try await controller.execute(did: did, .setLightBrightness(value, siid: siid))
         })
     }
 
@@ -203,10 +206,10 @@ private struct LampControl: View {
         VStack(spacing: 12) {
             BrightnessBar(value: writer.pendingValue ?? snapshot.value(brightness.id)?.doubleValue,
                           range: (brightness.min ?? 1)...(brightness.max ?? 100), step: brightness.step, commit: writer.submit)
-            .disabled(!snapshot.isOnline)
+            .disabled(!snapshot.isOnline || snapshot.controlUnavailableReason(brightness) != nil)
             Text(hint)
                 .font(.system(size: 12))
-                .foregroundStyle(writer.error == nil ? Color.secondary : Color.orange)
+                .foregroundStyle(writer.error == nil && snapshot.controlUnavailableReason(brightness) == nil ? Color.secondary : Color.orange)
                 .lineLimit(1).frame(maxWidth: .infinity).frame(height: 16)
                 .help(hint)
         }
@@ -215,12 +218,14 @@ private struct LampControl: View {
     }
 
     private var hint: String {
-        writer.error ?? (snapshot.primaryPower.flatMap { snapshot.value($0.id)?.boolValue } == false
+        if let error = writer.error ?? snapshot.controlUnavailableReason(brightness) { return error }
+        let power = siid.flatMap { channel in snapshot.capabilities.first { $0.siid == channel && $0.name == "on" } } ?? snapshot.primaryPower
+        return (power.flatMap { snapshot.value($0.id)?.boolValue } == false
                         ? L10n.tr("已关闭 · 拖动滑块即可开灯", "Off · Drag the slider to turn on") : L10n.tr("拖动调节亮度", "Drag to adjust brightness"))
     }
 }
 
-private struct LampColorTemperatureControl: View {
+struct LampColorTemperatureControl: View {
     let snapshot: DeviceSnapshot
     let capability: DeviceCapability
     @State private var writer: ContinuousValueWriter

@@ -125,7 +125,7 @@ public actor MiioClient {
         case "set_properties": kind = .write
         case "action": kind = .action
         case "get_prop": kind = .legacyRead
-        default: kind = method.hasPrefix("set_") ? .legacyWrite : .other
+        default: kind = method.hasPrefix("set_") || method.hasPrefix("bg_set_") ? .legacyWrite : .other
         }
         let writing = [.write, .legacyWrite, .action].contains(kind)
         let source = DeviceCommunicationContext.source ?? (writing ? .userControl : .backgroundPoll)
@@ -282,7 +282,7 @@ public actor MiioClient {
         let stamp = policy.stamp == .helloAnchored ? Self.anchoredStamp(base: clock.stamp, elapsed: age) : Self.outgoingStamp(base: clock.stamp, elapsed: age)
         var diagnostic = MiioPacketDiagnostics()
         diagnostic.requestID = UInt16(id); diagnostic.requestStamp = stamp
-        diagnostic.method = MiioPacketDiagnostics.Method(rawValue: method) ?? (method.hasPrefix("set_") ? .legacyWrite : .other)
+        diagnostic.method = MiioPacketDiagnostics.Method(rawValue: method) ?? (method.hasPrefix("set_") || method.hasPrefix("bg_set_") ? .legacyWrite : .other)
         if case .array(let rows) = params {
             diagnostic.addresses = rows.prefix(15).compactMap { row in
                 guard let siid = Self.address(row["siid"]), let piid = Self.address(row["piid"]) else { return nil }

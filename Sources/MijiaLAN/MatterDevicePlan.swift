@@ -115,8 +115,10 @@ public enum MatterDevicePlan {
                 case "airPurifier": label = L10n.tr("空气净化", "Air Purification")
                 default: label = title(kind)
                 }
+                let functionLabel = s.device.model == "yeelink.light.ceiling20" && ["light", "dimmableLight", "colorTemperatureLight"].contains(kind)
+                    ? (bindings["on"]?.siid == 200 ? L10n.tr("副灯", "Ambient Light") : L10n.tr("主灯", "Main Light")) : label
                 result.append(Entry(device: Device(did: s.id + suffix, name: s.device.name + (suffix.isEmpty ? "" : " · " + title(kind)),
-                    sourceID: s.id, sourceName: s.device.name, functionLabel: label,
+                    sourceID: s.id, sourceName: s.device.name, functionLabel: functionLabel,
                     kind: kind, reachable: s.isOnline && valid, on: values["on"]?.boolValue, attributes: values),
                     sourceID: s.id, bindings: bindings))
             }
@@ -128,9 +130,9 @@ public enum MatterDevicePlan {
                power.readable, power.writable, power.format == "bool", power.control == .toggle {
                 var bindings = ["on": power]
                 var kind = s.schema.category
-                if kind == "light", let brightness = writable("brightness", service: "light"), brightness.max != nil {
+                if kind == "light", let brightness = writable("brightness", service: power.service, siid: power.siid), brightness.isNumeric, brightness.max != nil {
                     bindings["level"] = brightness; kind = "dimmableLight"
-                    if let temp = writable("color-temperature", service: "light"), temp.min != nil, temp.max != nil {
+                    if let temp = writable("color-temperature", service: power.service, siid: power.siid), temp.isNumeric, temp.min != nil, temp.max != nil {
                         bindings["colorTemperature"] = temp; kind = "colorTemperatureLight"
                     }
                 }
@@ -165,21 +167,28 @@ public enum MatterDevicePlan {
                 }
             }
             // Secondary lighting has its own service and power; never substitute it for the appliance's main power.
-            for power in s.capabilities where power.kind == .property && power.service == "light" && power.name == "on" &&
+            for power in s.capabilities where power.kind == .property && ["light", "ambient-light"].contains(power.service) && power.name == "on" &&
                 power.readable && power.writable && power.format == "bool" && power.control == .toggle && !power.prepared {
                 guard !result.contains(where: { $0.bindings["on"]?.id == power.id }) else { continue }
                 var bindings = ["on": power]
                 var kind = "light"
-                if let brightness = s.capabilities.first(where: { $0.siid == power.siid && $0.name == "brightness" && $0.isNumeric && $0.control == .number && $0.readable && $0.writable && !$0.prepared && $0.max != nil }) {
+                if let brightness = s.capabilities.first(where: { $0.siid == power.siid && $0.service == power.service && $0.name == "brightness" && $0.isNumeric && $0.control == .number && $0.readable && $0.writable && !$0.prepared && $0.max != nil }) {
                     bindings["level"] = brightness; kind = "dimmableLight"
+                    if let temp = writable("color-temperature", service: power.service, siid: power.siid), temp.isNumeric,
+                       let minimum = temp.min, minimum > 0, temp.max != nil {
+                        bindings["colorTemperature"] = temp; kind = "colorTemperatureLight"
+                    }
                 }
                 add(":light:\(power.siid)", kind, bindings)
             }
             let sensors: [(String, String)] = [("temperature", "temperature"), ("relative-humidity", "humidity"),
                 ("illumination", "illuminance"), ("illuminance", "illuminance"), ("motion-state", "occupancy"), ("contact-state", "contact")]
+            // A measurement already carried by an appliance endpoint must not be exposed twice.
+            // Compare property identities, not titles, values or service names; another sensor stays independent.
+            let boundProperties = Set(result.flatMap { $0.bindings.values.map(\.id) })
             var added: Set<String> = []
             for (name, kind) in sensors {
-                if let cap = s.capabilities.first(where: { $0.kind == .property && $0.name == name && $0.readable &&
+                if let cap = s.capabilities.first(where: { $0.kind == .property && $0.name == name && $0.readable && !boundProperties.contains($0.id) &&
                     (kind == "occupancy" || kind == "contact" ? $0.format == "bool" : $0.isNumeric) &&
                     (kind != "temperature" || $0.unit == nil || celsius($0)) }), added.insert(kind).inserted {
                     add(":" + kind, kind, [kind: cap])
