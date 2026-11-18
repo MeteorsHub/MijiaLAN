@@ -19,3 +19,11 @@ CLI 使用 `@main struct MijiaLANCommand`，将文件重命名为 `MijiaLANComma
 CI 明确使用该镜像预装的 Xcode 26.2，并打印 Xcode/Swift 版本，避免随默认工具链变化。macOS 15 部署目标不变；升级工具链本身并未消除上述 Bool 崩溃，仍需源代码适配。不能宣称所有旧 Swift 版本已通过原生验证。
 
 CI 回归选择加入 `PanelMemoryTests|PanelToggleTests`，覆盖先前面板生命周期失败的确定性修复；原有构建与回归保持执行。最终完整结果以新提交的原生 CI、本机编译和验证脚本为准，Linux 语法解析不代替 SwiftUI 类型检查。
+
+## ARM64 runner 容量不足
+
+最近三个提交 `8a7f486`、`07c842c`、`54e4743` 的 PR Swift 作业均没有开始任何步骤，约 15 分钟后取消，整个 workflow 显示 failure。GitHub 的 Annotations 明确包含 `The job was not acquired by Runner of type hosted even after multiple attempts`、`Internal server error` 和 `Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.` 这是分配机器失败，不能视为这些提交已经编译失败或通过。对应 [54e4743 作业](https://github.com/MeteorsHub/MijiaLAN/actions/runs/44345396007/job/134946284503)、[07c842c 作业](https://github.com/MeteorsHub/MijiaLAN/actions/runs/44335404704/job/134910606132)、[8a7f486 作业](https://github.com/MeteorsHub/MijiaLAN/actions/runs/43901679857/job/133419642884)；同次 Linux Matter 作业均通过。
+
+Swift 作业改用 GitHub 标准 `macos-15-intel` 池，继续固定 Xcode 26.2，打印实际机器架构，原 CLI/App 编译、核心库与 App/协议回归保持执行。[官方 runner 列表](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) 区分 Intel 标签与默认 ARM64 的 `macos-15`；[Intel 镜像清单](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md) 列有 Xcode 26.2。切换只改变 CI 执行架构，不改变 App 部署目标、设备协议或本地家庭 Mac 的 ARM64 验证要求；Intel 通过不等同于 ARM64 原生验证通过。
+
+每次提交同时触发 push 与 pull_request 两次运行；这是当前配置的正常行为，故同一基础设施故障可能出现两条失败通知。不能把它当作两个独立代码错误，也不为减少红色提示而跳过检查。

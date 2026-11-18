@@ -25,7 +25,9 @@ jobs:
       - run: npm ci
       - run: npm test
   swift:
-    runs-on: macos-15
+    # macos-15 uses arm64; recent jobs never acquired a runner due to capacity constraints.
+    # Use the standard Intel pool, keeping native macOS builds and the same regression suites.
+    runs-on: macos-15-intel
     # The image defaults to Xcode 16.4, whose Swift 6.1.2 crashes in SwiftUI actor-binding IRGen.
     # Pin an installed toolchain; keep the deployment target at macOS 15.
     env:
@@ -34,6 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify selected Xcode and Swift
         run: |
+          uname -m
           xcodebuild -version
           swift --version
       - run: swift build --product mijia-lan --force-resolved-versions
