@@ -4,9 +4,9 @@ import { Endpoint, ServerNode, ServerNodeStore, VendorId, Seconds, Logger } from
 import { AggregatorEndpoint } from '@matter/main/endpoints/aggregator';
 import { BridgedNodeEndpoint } from '@matter/main/endpoints/bridged-node';
 import { BridgedDeviceBasicInformationServer } from '@matter/main/behaviors/bridged-device-basic-information';
-import { BasicInformationServer } from '@matter/main/behaviors/basic-information';
 import { WindowCovering } from '@matter/main/clusters/window-covering';
 import { BasicInformation } from '@matter/main/clusters/basic-information';
+import { BridgedDeviceBasicInformation } from '@matter/main/clusters/bridged-device-basic-information';
 import { Invoke, Subscribe } from '@matter/protocol';
 import { createBridge, identity } from '../src/bridge.js';
 import { types, stateFor } from '../src/devices.js';
@@ -14,6 +14,7 @@ import { MatterDiagnostics } from '../src/diagnostics.js';
 import { fixture, commission, read, value, collect, until } from '../test-support/protocol.js';
 Logger.level = 'error';
 const cfg = BasicInformation.Cluster.attributes.configurationVersion.id;
+const bridgedCfg = BridgedDeviceBasicInformation.Cluster.attributes.configurationVersion.id;
 const ceiling = {did:'private-ceiling',sourceID:'private-ceiling',sourceName:'private-name',name:'private-name',logAlias:4,kind:'light',reachable:false,on:false};
 const bright = () => [ { ...ceiling, kind:'colorTemperatureLight',reachable:true,on:true,
   attributes:{level:1,colorTemperature:358,colorTemperatureMin:154,colorTemperatureMax:370}, nativeValues:{level:1,colorTemperature:2793} },
@@ -42,7 +43,7 @@ async function historical(options, grouped = false) {
   return {node,main,parent};
 }
 
-test('a cached paired controller keeps the old light/Reachable paths through the previously broken compound migration and sees configuration changes', {timeout:40000}, async()=>{
+test('a paired controller sees configuration changes while compound identity and both application paths retain their endpoint numbers', {timeout:40000}, async()=>{
   const f=fixture(), records=[];let bridge,controller,sub;
   try {
     bridge=await historical(f.options());await bridge.node.start();controller=await f.controller();let peer=await commission(controller);
@@ -55,43 +56,64 @@ test('a cached paired controller keeps the old light/Reachable paths through the
     bridge=await historical(f.options(),true);await bridge.node.start();
     controller=await f.controller();peer=controller.peers.get(address);await peer.start();
     const unsupported=await read(peer,[cachedReachable]);assert.ok(unsupported.some(r=>r.kind==='attr-status'&&r.status===0xc3));
-    const displacedParent=bridge.parent.number, ambient=bridge.parent.parts.get(`device-${identity(ceiling.did+':light:200')}`).number;
+    const parentNumber=bridge.parent.number, ambient=bridge.parent.parts.get(`device-${identity(ceiling.did+':light:200')}`).number;
     await controller.close();controller=undefined;await bridge.node.close();
     bridge=await createBridge({request(){throw Error('Reads must use cache');}},bright(),{...f.options(),diagnostics:new MatterDiagnostics(r=>records.push(r))});
-    assert.equal(bridge.entities.get(ceiling.did),bridge.endpoints.get(ceiling.did));
-    assert.equal(bridge.entities.get(ceiling.did).number,oldNumber);
-    assert.notEqual(oldNumber,displacedParent);
-    assert.equal(bridge.endpoints.get(ceiling.did+':light:200').number,ambient);
-    assert.equal(bridge.entities.get(ceiling.did).state.bridgedDeviceBasicInformation.nodeLabel,'Custom ceiling');
-    assert.deepEqual(bridge.node.state.commissioning.fabrics,fabrics);
+    const parent = bridge.entities.get(ceiling.did);
+    assert.equal(parent.number, parentNumber);
+    assert.notEqual(parent.number, oldNumber);
+    assert.equal(bridge.endpoints.get(ceiling.did).number, oldNumber);
+    assert.equal(bridge.endpoints.get(ceiling.did+':light:200').number, ambient);
+    assert.equal(parent.state.bridgedDeviceBasicInformation.nodeLabel, 'Custom ceiling');
+    assert.equal(parent.state.bridgedDeviceBasicInformation.uniqueId, identity(ceiling.did));
+    assert.deepEqual(bridge.node.state.commissioning.fabrics, fabrics);
     await bridge.node.start();controller=await f.controller();peer=controller.peers.get(address);await peer.start();
-    // The same cached path now works without requiring the controller to discover a different physical node.
-    assert.equal(value(await read(peer,[cachedReachable]),oldNumber,0x39,0x11),true);
-    assert.equal(value(await read(peer,[{endpointId:oldNumber,clusterId:6,attributeId:0}]),oldNumber,6,0),true);
-    assert.ok(bridge.node.state.basicInformation.configurationVersion>cachedVersion);
-    const received=[];
-    sub=await peer.interaction.subscribe({...Subscribe({attributes:[{endpointId:0,clusterId:0x28,attributeId:cfg}],minIntervalFloor:Seconds(0),maxIntervalCeiling:Seconds(5)}),
-      includeKnownVersions:true,updated:async result=>{received.push(...await collect(result));}});
-    await until(()=>received.some(r=>r.kind==='attr-value'&&r.value>cachedVersion));
-    // Prove actual version reports and standards-based rediscovery on an already commissioned CASE session.
-    const version=bridge.node.state.basicInformation.configurationVersion;
-    await bridge.node.act(agent=>agent.get(BasicInformationServer).increaseConfigurationVersion());
-    await until(()=>received.some(r=>r.kind==='attr-value'&&r.value===version+1));
-    const descriptor=await read(peer,[{endpointId:oldNumber,clusterId:0x1d,attributeId:3}]);
-    assert.deepEqual(value(descriptor,oldNumber,0x1d,3),[ambient]);
-    const childIdentity=await read(peer,[{endpointId:ambient,clusterId:0x39,attributeId:0x11}]);
-    assert.ok(childIdentity.some(r=>r.kind==='attr-status'&&r.status===0xc3));
-    assert.ok(records.some(r=>r.event==='reportSent'&&r.endpoint===ambient&&r.cluster===0x39&&r.status===0xc3));
+
+    // Retain the controller's old lookup across the upgrade to check the actual compatibility boundary.
+    const oldPath = await read(peer, [cachedReachable]);
+    assert.ok(oldPath.some(row => row.kind === 'attr-status' && row.status === 0xc3));
+    assert.equal(value(await read(peer, [{endpointId:oldNumber,clusterId:6,attributeId:0}]),oldNumber,6,0),true);
+
+    const versionPaths = [
+      {endpointId:0,clusterId:0x28,attributeId:cfg},
+      {endpointId:parentNumber,clusterId:0x39,attributeId:bridgedCfg},
+    ];
+    const received = [];
+    sub = await peer.interaction.subscribe({
+      ...Subscribe({attributes:versionPaths,minIntervalFloor:Seconds(0),maxIntervalCeiling:Seconds(5)}),
+      includeKnownVersions:true,
+      updated:async result => { received.push(...await collect(result)); },
+    });
+    await until(() => received.some(row => row.kind === 'attr-value' && row.path.endpointId === 0 && row.value === cachedVersion + 1) &&
+      received.some(row => row.kind === 'attr-value' && row.path.endpointId === parentNumber && row.value === 2));
+
+    // Emulate a controller refreshing its descriptor after receiving the new configuration version.
+    const descriptor = await read(peer, [0, 1, 3].map(attributeId => ({endpointId:parentNumber,clusterId:0x1d,attributeId})));
+    assert.deepEqual(value(descriptor,parentNumber,0x1d,0).map(type=>type.deviceType), [0x13]);
+    const services = value(descriptor,parentNumber,0x1d,1);
+    assert.ok(services.includes(0x39));
+    assert.ok([6, 8, 0x300].every(cluster => !services.includes(cluster)));
+    assert.deepEqual(value(descriptor,parentNumber,0x1d,3), [oldNumber, ambient].sort((a,b)=>a-b));
+    assert.equal(value(await read(peer,[{endpointId:parentNumber,clusterId:0x39,attributeId:0x11}]),parentNumber,0x39,0x11),true);
+    for (const endpointId of [oldNumber, ambient]) {
+      const rows = await read(peer,[{endpointId,clusterId:0x39,attributeId:0x11},{endpointId,clusterId:0x1d,attributeId:3}]);
+      assert.ok(rows.some(row => row.kind === 'attr-status' && row.status === 0xc3));
+      assert.deepEqual(value(rows,endpointId,0x1d,3), []);
+    }
     const beforeRestart=bridge.node.state.basicInformation.configurationVersion;
-    const ids=[oldNumber,ambient];
+    const ids=[parentNumber,oldNumber,ambient];
+    const entityVersion=parent.state.bridgedDeviceBasicInformation.configurationVersion;
     await sub.close();sub=undefined;await controller.close();controller=undefined;await bridge.node.close();
     bridge=await createBridge({request(){throw Error('Unexpected write');}},bright(),f.options());
     assert.equal(bridge.node.state.basicInformation.configurationVersion,beforeRestart);
-    assert.deepEqual([bridge.entities.get(ceiling.did).number,bridge.endpoints.get(ceiling.did+':light:200').number],ids);
-    assert.ok(records.some(r=>r.event==='layoutChanged'&&r.previousEndpoint===displacedParent&&r.endpoint===oldNumber));
+    assert.deepEqual([bridge.entities.get(ceiling.did).number,bridge.endpoints.get(ceiling.did).number,bridge.endpoints.get(ceiling.did+':light:200').number],ids);
+    assert.equal(bridge.entities.get(ceiling.did).state.bridgedDeviceBasicInformation.configurationVersion,entityVersion);
+    assert.ok(records.some(r=>r.event==='layoutChanged'&&r.configurationVersion===cachedVersion+1));
+    assert.ok(!records.some(r=>r.event==='layoutChanged'&&r.previousEndpoint!==undefined));
     assert.ok(records.some(r=>r.event==='readRequest'&&r.endpoint===oldNumber&&r.cluster===0x39));
-    assert.ok(records.some(r=>r.event==='reportSent'&&r.cluster===0x39&&r.boolean===true));
-    assert.ok(records.some(r=>r.event==='reportSent'&&r.cluster===0x28&&r.attribute===cfg&&r.value===version+1));
+    assert.ok(records.some(r=>r.event==='reportSent'&&r.endpoint===oldNumber&&r.cluster===0x39&&r.status===0xc3));
+    assert.ok(records.some(r=>r.event==='reportSent'&&r.endpoint===parentNumber&&r.cluster===0x39&&r.boolean===true));
+    assert.ok(records.some(r=>r.event==='reportSent'&&r.cluster===0x28&&r.attribute===cfg&&r.value===cachedVersion+1));
     const exported=JSON.stringify(records);
     for(const secret of [ceiling.did,ceiling.name,'Custom ceiling','20202021','MT:'])assert.ok(!exported.includes(secret),secret);
   } finally {await sub?.close();await controller?.close();await bridge?.node.close();await f.close();}

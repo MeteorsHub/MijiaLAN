@@ -143,7 +143,7 @@ test('flat-to-compound migration preserves application numbers, primary UniqueID
     assert.equal(bridge.entities.get('heater').number, parentNumber);
     assert.equal(bridge.entities.get('heater').state.bridgedDeviceBasicInformation.nodeLabel, 'Grouped custom label');
     assert.equal(bridge.endpoints.get('heater').number, numbers.get('heater'));
-    assert.equal(bridge.endpoints.get('heater'), bridge.entities.get('heater'));
-    assert.equal(bridge.endpoints.get('heater').behaviors.has(BridgedDeviceBasicInformationServer), true);
+    assert.notEqual(bridge.endpoints.get('heater'), bridge.entities.get('heater'));
+    assert.equal(bridge.endpoints.get('heater').behaviors.has(BridgedDeviceBasicInformationServer), false);
   } finally { await bridge?.node.close(); await rm(dir, { recursive: true, force: true }); }
 });
