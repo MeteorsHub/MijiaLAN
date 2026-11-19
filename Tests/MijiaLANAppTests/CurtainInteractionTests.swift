@@ -95,7 +95,7 @@ private actor InteractionTransport: MiioTransport {
     func matterCacheAndControl() async throws {
         let f = try await make()
         let catalog = DeviceController(api: f.api, config: { f.config }, pollingDefaults: f.defaults)
-        let bridge = MatterBridgeController(defaults: f.defaults, ephemeral: true)
+        let bridge = MatterBridgeController(defaults: f.defaults, ephemeral: true, journal: f.controller.events)
         bridge.attach(catalog, curtains: f.controller)
         defer { bridge.shutdown(); catalog.shutdown() }
         let before = await f.transport.methods
@@ -106,7 +106,7 @@ private actor InteractionTransport: MiioTransport {
             #expect(entry.attributes["position"] == .number(29) && entry.attributes["movement"] == .number(0))
         }
         #expect(await f.transport.methods == before)
-        let devices = try await bridge.handleRPC(method: "set", did: did, value: .number(34), property: "position")
+        let devices = try await bridge.handleRPC(method: "set", did: did, value: .number(34), property: "position", requestID: 701)
         #expect(devices.first?.attributes["position"] == .number(34))
         #expect(f.controller.states[did]?.confirmed == true)
         let writes = await f.transport.writes
@@ -119,6 +119,11 @@ private actor InteractionTransport: MiioTransport {
             return fields["piid"] != .number(5)
         })
         #expect(f.controller.events.snapshot().contains { $0.source == .matter && $0.outcome == .confirmed })
+        let trace = f.controller.events.snapshot().first { $0.matter?.event == .rpcRequest && $0.matter?.request == 701 }
+        let operation = try #require(trace?.operation)
+        #expect(f.controller.events.snapshot().contains { $0.operation == operation && $0.source == .matter && $0.outcome == .attempt && $0.kind == .write })
+        #expect(f.controller.events.snapshot().contains { $0.operation == operation && $0.outcome == .confirmed })
+        #expect(f.controller.events.snapshot().contains { $0.operation == operation && $0.matter?.event == .rpcResult && $0.matter?.status == 0 })
         let after = await f.transport.methods
         await #expect(throws: DeviceControlError.self) {
             _ = try await bridge.handleRPC(method: "set", did: did, value: .number(101), property: "position")

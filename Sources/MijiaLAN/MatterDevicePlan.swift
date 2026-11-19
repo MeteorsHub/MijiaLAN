@@ -11,6 +11,10 @@ public enum MatterDevicePlan {
         public var sourceName: String? = nil
         /// Human-readable function name, distinct from the physical device name and its identity.
         public var functionLabel: String? = nil
+        /// Ephemeral local journal alias; no identifier or address. Not used for routing or identity.
+        public var logAlias: Int? = nil
+        /// Reviewed numeric cache inputs for diagnostic conversion tracing only.
+        public var nativeValues: [String: Double]? = nil
         public var kind: String
         public var reachable: Bool
         public var on: Bool?
@@ -71,6 +75,7 @@ public enum MatterDevicePlan {
             var result: [Entry] = []
             func add(_ suffix: String, _ kind: String, _ bindings: [String: DeviceCapability]) {
                 var values: [String: JSONValue] = [:]
+                var nativeValues: [String: Double] = [:]
                 for (key, cap) in bindings {
                     if kind == "waterShortage" || kind == "foodShortage" {
                         guard let timestamp = s.readings[cap.id]?.updatedAt,
@@ -79,6 +84,7 @@ public enum MatterDevicePlan {
                     }
                     guard let value = s.value(cap.id), (try? cap.validatedReading(value)) != nil else { continue }
                     if let n = value.doubleValue {
+                        if n.isFinite, abs(n) <= 4_294_967_295 { nativeValues[key] = n }
                         switch key {
                         case "foodShortage":
                             // Reviewed uint8 enum, not an implicit numeric-to-Boolean conversion.
@@ -118,7 +124,7 @@ public enum MatterDevicePlan {
                 let functionLabel = s.device.model == "yeelink.light.ceiling20" && ["light", "dimmableLight", "colorTemperatureLight"].contains(kind)
                     ? (bindings["on"]?.siid == 200 ? L10n.tr("副灯", "Ambient Light") : L10n.tr("主灯", "Main Light")) : label
                 result.append(Entry(device: Device(did: s.id + suffix, name: s.device.name + (suffix.isEmpty ? "" : " · " + title(kind)),
-                    sourceID: s.id, sourceName: s.device.name, functionLabel: functionLabel,
+                    sourceID: s.id, sourceName: s.device.name, functionLabel: functionLabel, nativeValues: nativeValues.isEmpty ? nil : nativeValues,
                     kind: kind, reachable: s.isOnline && valid, on: values["on"]?.boolValue, attributes: values),
                     sourceID: s.id, bindings: bindings))
             }

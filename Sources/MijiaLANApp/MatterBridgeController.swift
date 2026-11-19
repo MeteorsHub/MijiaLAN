@@ -20,6 +20,7 @@ final class MatterBridgeController {
     private(set) var excluded: Set<String>
     @ObservationIgnored private let defaults: UserDefaults
     let storageDirectory: URL
+    @ObservationIgnored private let journal: DeviceEventLog?
     @ObservationIgnored private let ephemeral: Bool
     @ObservationIgnored private var isShuttingDown = false
     @ObservationIgnored private var controller: DeviceController?
@@ -36,14 +37,16 @@ final class MatterBridgeController {
     @ObservationIgnored private var failed = false
     @ObservationIgnored private var activity: NSObjectProtocol?
     @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var diagnosticRun: UUID?
     @ObservationIgnored private var lastPairingReport: Bool?
 
     struct ResetTimeouts {
         var exit: Duration = .seconds(10)
         var ready: Duration = .seconds(20)
     }
-    init(defaults: UserDefaults = .standard, ephemeral: Bool = false, storageDirectory: URL? = nil,
+    init(defaults: UserDefaults = .standard, ephemeral: Bool = false, journal: DeviceEventLog? = nil, storageDirectory: URL? = nil,
          resetTimeouts: ResetTimeouts = .init(), makeProcess: (@MainActor (URL) throws -> Process)? = nil) {
+        self.journal = journal
         self.defaults = defaults
         self.ephemeral = ephemeral
         self.resetTimeouts = resetTimeouts
@@ -82,7 +85,13 @@ final class MatterBridgeController {
         controller.map { MatterDevicePlan.entries(Array($0.snapshots.values), managedCoverings: curtains?.matterCoverings ?? [:],
             cacheMaxAge: Double(max(120, 3 * max($0.pollingIntervals.foregroundSeconds, $0.pollingIntervals.backgroundSeconds)))) } ?? []
     }
-    var selected: [MatterDevicePlan.Device] { supported.filter { includes($0.sourceID) }.map(\.device) }
+    var selected: [MatterDevicePlan.Device] {
+        supported.filter { includes($0.sourceID) }.map { entry in
+            var device = entry.device
+            device.logAlias = journal?.alias(for: entry.sourceID)
+            return device
+        }
+    }
     func restart() {
         guard !isResetting, !isShuttingDown else { return }
         resetError = nil; stop(); failed = false
@@ -154,6 +163,7 @@ final class MatterBridgeController {
         }
     }
     private struct Message: Decodable {
+        var diagnostic: MatterDiagnosticsRecord?
         var event: String?; var code: String?; var uri: String?; var paired: Bool?
         var id: Int?; var method: String?; var did: String?; var on: Bool?; var property: String?; var value: JSONValue?
     }
@@ -164,7 +174,12 @@ final class MatterBridgeController {
         while let newline = buffer.firstIndex(of: 10) {
             let line = Data(buffer[..<newline]); buffer.removeSubrange(...newline)
             guard let message = try? JSONDecoder().decode(Message.self, from: line) else { continue }
-            if message.event == "ready" {
+            if message.event == "diagnostic" {
+                if let diagnostic = message.diagnostic, diagnostic.validated() != nil {
+                    if let run = diagnostic.run { diagnosticRun = run }
+                    journal?.recordMatter(diagnostic)
+                }
+            } else if message.event == "ready" {
                 lastPairingReport = message.paired
                 isRunning = true; isPaired = message.paired ?? false
                 setupCode = message.code; setupURI = message.uri
@@ -176,7 +191,7 @@ final class MatterBridgeController {
                     var reply = Reply(id: id)
                     do {
                         reply.devices = try await handleRPC(method: message.method, did: message.did,
-                            value: message.value ?? message.on.map(JSONValue.bool), property: message.property)
+                            value: message.value ?? message.on.map(JSONValue.bool), property: message.property, requestID: id)
                     } catch { reply.error = "Device operation failed" }
                     guard generation == token, var bytes = try? JSONEncoder().encode(reply) else { return }
                     bytes.append(10); try? input?.write(contentsOf: bytes)
@@ -185,15 +200,21 @@ final class MatterBridgeController {
         }
     }
     // A snapshot reads the shared cache only. It must never trigger a second LAN polling loop.
-    func handleRPC(method: String?, did: String? = nil, value: JSONValue? = nil, property: String? = nil) async throws -> [MatterDevicePlan.Device] {
+    func handleRPC(method: String?, did: String? = nil, value: JSONValue? = nil, property: String? = nil, requestID: Int? = nil) async throws -> [MatterDevicePlan.Device] {
         guard let controller else { throw DeviceControlError.offline }
+        let operation = UUID()
+        var trace = MatterDiagnosticsRecord(event: .rpcRequest)
+        trace.run = diagnosticRun ?? generation; trace.request = requestID; trace.status = 1
+        if let did, let entry = supported.first(where: { $0.device.did == did }) { trace.device = journal?.alias(for: entry.sourceID) }
+        journal?.recordMatter(trace, operation: operation)
+        defer { trace.event = .rpcResult; journal?.recordMatter(trace, operation: operation) }
         switch method {
         case "snapshot": break
         case "set":
             guard !isResetting, !isShuttingDown else { throw DeviceControlError.busy }
             guard let did, selected.contains(where: { $0.did == did }), let value else { throw DeviceControlError.unsupported("Matter") }
             try await DeviceCommunicationContext.$source.withValue(.matter) {
-                try await DeviceCommunicationContext.$operation.withValue(UUID()) {
+                try await DeviceCommunicationContext.$operation.withValue(operation) {
                     if let entry = supported.first(where: { $0.device.did == did }), entry.device.kind == "windowCovering" {
                         guard let curtains else { throw DeviceControlError.unsupported("Covering driver") }
                         let command: CurtainControlSession.Command
@@ -214,6 +235,7 @@ final class MatterBridgeController {
             }
         default: throw DeviceControlError.unsupported("RPC")
         }
+        trace.status = 0
         return selected
     }
     private func updateAwake() {
@@ -335,7 +357,7 @@ final class MatterBridgeController {
         generation = UUID()
         output?.readabilityHandler = nil
         try? input?.close(); try? output?.close()
-        input = nil; output = nil; buffer = Data()
+        input = nil; output = nil; buffer = Data(); diagnosticRun = nil
         if let child = process, child.isRunning {
             retiring[previousGeneration] = child
             child.terminate()

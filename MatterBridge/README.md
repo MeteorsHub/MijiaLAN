@@ -171,3 +171,5 @@ matter.js 使用 Apache-2.0 许可。此原型使用开发 Vendor ID `0xfff1`，
 日志保存在 `/tmp/mijialan-validation.*`，不修改已跟踪的源码，也不执行 commit 或 push。
 依赖、构建产物和日志都是本地验证输出。将错误日志带回云端后修复，再拉取下一次远端提交。
 脚本通过不等于原生界面及 M200 实机验收通过。
+
+布局兼容修复与正式 Matter 协议诊断（读取、订阅、报告及确认）见 [迁移与报告日志](../docs/matter-migration-reporting-diagnostics.md)。日志复用 App 的 64 MiB 完整历史；升级保留配对。

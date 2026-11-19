@@ -73,3 +73,35 @@ struct MatterStorageSecurityTests {
         first.shutdown(); second.shutdown(); production.shutdown()
     }
 }
+
+@MainActor
+struct MatterJournalIntegrationTests {
+    @Test("Supervised sidecar diagnostics enter the existing journal with local aliases, while raw stderr remains excluded")
+    func structuredChild() async throws {
+        let suite = "matter-journal-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let config = LocalHomeConfig(devices: [LocalDevice(did: "private-fixture", name: "Private name", model: "zhimi.airpurifier.rma1", host: "192.0.2.1", token: String(repeating: "0", count: 32))])
+        let journal = DeviceEventLog(scope: .offlineTest)
+        journal.registerDevices(config.devices)
+        let network = MatterSelectionNoNetwork()
+        let api = LANMiotAPI(config: { config }, transport: network, curtainEvents: journal)
+        let catalog = DeviceController(api: api, config: { config }, pollingDefaults: defaults)
+        let bridge = MatterBridgeController(defaults: defaults, ephemeral: true, journal: journal, makeProcess: { _ in
+            let child = Process()
+            child.executableURL = URL(fileURLWithPath: "/bin/sh")
+            child.arguments = ["-c", #"printf '%s\n' '{"event":"diagnostic","diagnostic":{"event":"reportSent","device":1,"endpoint":2,"cluster":258,"attribute":14,"value":8100,"token":"private-secret"}}' '{"event":"ready","paired":true}'; printf '%s\n' 'raw-private-stderr' >&2; while IFS= read -r line; do :; done"#]
+            return child
+        })
+        bridge.attach(catalog)
+        bridge.isEnabled = true; bridge.reconcile()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while !journal.snapshot().contains(where: { $0.matter?.event == .reportSent }) && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(journal.snapshot().contains { $0.device == 1 && $0.matter?.value == 8100 })
+        #expect(bridge.selected.allSatisfy { $0.logAlias == 1 })
+        let exported = journal.exportText()
+        for secret in ["private-fixture", "Private name", "192.0.2.1", "private-secret", "raw-private-stderr"] { #expect(!exported.contains(secret)) }
+        #expect(await network.calls == 0)
+        bridge.shutdown(); catalog.shutdown(); await api.shutdown()
+    }
+}

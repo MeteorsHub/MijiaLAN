@@ -141,7 +141,8 @@ test('a commissioned controller keeps its fabric and grouped identities when a d
     assert.equal(bridge.entities.get('ceiling').state.bridgedDeviceBasicInformation.nodeLabel, '自定义吸顶灯');
     assert.equal(bridge.entities.get('ceiling').state.bridgedDeviceBasicInformation.uniqueId, identity('ceiling'));
     assert.equal(bridge.endpoints.get('ceiling').number, oldNumbers.get('ceiling'));
-    assert.equal(bridge.endpoints.get('ceiling').behaviors.has(BridgedDeviceBasicInformationServer), false);
+    assert.equal(bridge.endpoints.get('ceiling'), bridge.entities.get('ceiling'));
+    assert.equal(bridge.endpoints.get('ceiling').behaviors.has(BridgedDeviceBasicInformationServer), true);
     assert.ok(![...oldNumbers.values()].includes(bridge.endpoints.get('ceiling:light:200').number));
     assert.equal(bridge.entities.get('old-lamp').state.bridgedDeviceBasicInformation.uniqueId, identity('old-lamp'));
     await bridge.node.start();

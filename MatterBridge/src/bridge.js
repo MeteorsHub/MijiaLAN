@@ -1,4 +1,6 @@
 import { types, stateFor, controls } from './devices.js';
+import { MatterDiagnostics, failureReason } from './diagnostics.js';
+import { BasicInformationServer } from '@matter/main/behaviors/basic-information';
 import { createHash } from 'node:crypto';
 import { Endpoint, ServerNode, ServerNodeStore, VendorId } from '@matter/main';
 import { AggregatorEndpoint } from '@matter/main/endpoints/aggregator';
@@ -110,25 +112,44 @@ export async function createBridge(rpc, devices, options = {}) {
       nodeLabel: 'MijiaLAN', serialNumber: 'mijialan-bridge',
     },
   });
+  const diagnostics = options.diagnostics ?? new MatterDiagnostics();
+  diagnostics.install(node);
   const endpoints = new Map();
   const entities = new Map();
   const available = new Map(devices.map(d => [d.did, d.reachable]));
   const owners = new Map(devices.map(d => [d.did, physicalID(d)]));
   const syncing = new Set();
+  const oldEntities = new Map();
   try {
     const aggregator = new Endpoint(AggregatorEndpoint, { id: 'bridge' });
     await node.add(aggregator);
-    const stores = node.env.get(ServerNodeStore).endpointStores;
+    const nodeStore = node.env.get(ServerNodeStore);
+    const stores = nodeStore.endpointStores;
+    const layoutStore = nodeStore.storage.createContext('mijialan-layout-v2');
+    const previousLayout = await layoutStore.get('manifest', null);
+    const previousVersion = await layoutStore.get('configurationVersion', 1);
+    if (previousVersion > node.state.basicInformation.configurationVersion) await node.set({ basicInformation: { configurationVersion: previousVersion } });
     const aggregateStore = stores.storeForEndpoint(aggregator);
     for (const group of physicalGroups(devices)) {
       const entityId = `entity-${identity(group.id)}`;
       const previousEntity = aggregateStore.existingChildStore(entityId);
+      oldEntities.set(group.id, previousEntity?.number);
       // Keep the compound layout if a later schema exposes just one remaining function.
       const compound = group.functions.length > 1 || previousEntity !== undefined;
       let parent = aggregator;
+      const primary = group.functions.find(d => d.did === group.id) ?? group.functions[0];
+      const flat = aggregateStore.existingChildStore(endpointID(primary.did));
+      const historicalIdentity = flat?.initialValues.get('bridgedDeviceBasicInformation');
+      // A single bridged light may itself be a composed parent: retain its BDBI and application
+      // paths, adding only secondary functions below it. Never duplicate the identity on children.
+      const integratedNumber = flat?.number ?? previousEntity?.existingChildStore(endpointID(primary.did))?.number;
+      const integrated = compound && Number.isInteger(integratedNumber) && primary.did === group.id && (flat !== undefined ||
+        previousLayout?.integrated?.includes(identity(group.id)));
+      let entityInfo = names(primary.sourceName ?? primary.name);
+      const savedInfo = previousEntity?.initialValues.get('bridgedDeviceBasicInformation') ?? historicalIdentity;
+      if (typeof savedInfo?.nodeLabel === 'string') entityInfo.nodeLabel = truncateUtf8(savedInfo.nodeLabel, 32);
       const legacyNumbers = new Map(group.functions.map(d => [d.did, aggregateStore.existingChildStore(endpointID(d.did))?.number]));
-      if (compound) {
-        const primary = group.functions.find(d => d.did === group.id) ?? group.functions[0];
+      if (compound && !integrated) {
         const info = names(primary.sourceName ?? primary.name);
         if (!previousEntity) {
           // Public store API; consume only the obsolete flat root's public label, never fabric state.
@@ -138,12 +159,12 @@ export async function createBridge(rpc, devices, options = {}) {
         }
         parent = new Endpoint(BridgedNodeEndpoint, {
           id: entityId,
-          bridgedDeviceBasicInformation: { ...info, uniqueId: identity(group.id), reachable: group.functions.some(d => d.reachable) },
+          bridgedDeviceBasicInformation: { ...info, uniqueId: identity(group.id), reachable: group.functions.some(d => d.reachable), configurationVersion: savedInfo?.configurationVersion ?? 1 },
         });
         await aggregator.add(parent);
         entities.set(group.id, parent);
       }
-      for (const [index, device] of group.functions.entries()) {
+      for (const [index, device] of (integrated ? [primary, ...group.functions.filter(d => d !== primary)] : group.functions).entries()) {
         // Override commands, not attribute notifications: LAN polls must never write back to the device.
         class DevicePower extends OnOffServer.with("Lighting") {
           async on() { await write(this, true); return super.on(); }
@@ -151,6 +172,7 @@ export async function createBridge(rpc, devices, options = {}) {
           async toggle() { return this.state.onOff ? this.off() : this.on(); }
         }
         async function set(property, value) {
+          try {
           if (['waterShortage', 'foodShortage'].includes(device.kind)) throw new Error('Read-only sensor');
           if (!available.get(device.did)) throw new Error('Device offline');
           const result = validateDevices(await rpc.request('set', property === 'on'
@@ -161,61 +183,151 @@ export async function createBridge(rpc, devices, options = {}) {
             const a = confirmed.attributes;
             const target = property === 'open' ? 100 : property === 'close' ? 0 : value;
             if (a.movement !== 0 || (property !== 'stop' && a.position !== target)) throw new Error('Covering movement not confirmed');
+            diagnostics.emit('commandConfirmed', { device:device.logAlias,value:a.position,native:true });
             return confirmed;
           }
           if (property === 'on' && confirmed.on !== value) throw new Error('Device state not confirmed');
           if (property !== 'on' && !Number.isFinite(confirmed.attributes?.[property])) throw new Error('Device state not confirmed');
+          diagnostics.emit('commandConfirmed', {device:device.logAlias,boolean:property==='on'?confirmed.on:undefined,value:confirmed.attributes?.[property],native:false});
           return confirmed;
+          } catch (error) { diagnostics.emit('commandFailed', { device: device.logAlias, reason: failureReason(error) }); throw error; }
         }
         async function write(behavior, on) { await set('on', on); }
         const type = types[device.kind];
         const behaviors = controls(device, set, syncing, () => available.get(device.did) === true);
         if (['light', 'outlet', 'power', 'dimmableLight', 'colorTemperatureLight'].includes(device.kind)) behaviors.push(DevicePower);
-        const nestedStore = compound ? stores.storeForEndpoint(parent).existingChildStore(endpointID(device.did)) : undefined;
-        const oldNumber = nestedStore?.number ?? legacyNumbers.get(device.did);
+        const nestedStore = compound && parent !== aggregator ? stores.storeForEndpoint(parent).existingChildStore(endpointID(device.did)) : undefined;
+        const oldNumber = integrated && device.did === primary.did ? integratedNumber : nestedStore?.number ?? legacyNumbers.get(device.did) ??
+          (integrated ? previousEntity?.existingChildStore(endpointID(device.did))?.number : undefined);
+        const ownsIdentity = !compound || (integrated && device.did === primary.did);
         const metadata = functionMetadata(device, index + 1);
         const endpoint = new Endpoint(type.with(...behaviors, FixedLabelServer,
-          ...(metadata.tags ? [DescriptorServer.with('TagList')] : []), ...(compound ? [] : [BridgedDeviceBasicInformationServer])), {
+          ...(metadata.tags ? [DescriptorServer.with('TagList')] : []), ...(ownsIdentity ? [BridgedDeviceBasicInformationServer] : [])), {
           id: endpointID(device.did),
           // Preserve existing application endpoint numbers when their storage path gains a parent.
           ...(oldNumber === undefined ? {} : { number: oldNumber }),
           ...stateFor(device),
           fixedLabel: metadata.labels,
           ...(metadata.tags ? { descriptor: { tagList: metadata.tags } } : {}),
-          ...(!compound ? { bridgedDeviceBasicInformation: {
+          ...(ownsIdentity ? { bridgedDeviceBasicInformation: {
             // Some controllers use the product name or label when importing bridged endpoints.
-            ...names(device.sourceName ?? device.name),
-            uniqueId: identity(group.id), reachable: device.reachable,
+            ...(integrated ? entityInfo : names(device.sourceName ?? device.name)),
+            uniqueId: identity(group.id), reachable: device.reachable, configurationVersion: savedInfo?.configurationVersion ?? 1,
           } } : {}),
         });
         await parent.add(endpoint);
         endpoints.set(device.did, endpoint);
-        if (!compound) entities.set(group.id, endpoint);
+        if (ownsIdentity) { entities.set(group.id, endpoint); if (integrated) parent = endpoint; }
+        diagnostics.bind(endpoint, device);
       }
     }
+    function describe(endpoint) {
+      return [...node.protocol[endpoint.number]].map(cluster => ({ id:cluster.type.id,
+        attributes:[...cluster.type.attributes].map(a=>a.id).sort((a,b)=>a-b),
+        commands:[...cluster.type.commands].map(c=>c.id).sort((a,b)=>a-b),
+      })).sort((a,b)=>a.id-b.id);
+    }
+    const layouts = [...entities].map(([source, entity]) => ({
+      source: identity(source), endpoint: entity.number,
+      integrated: [...endpoints.values()].includes(entity) && entity.parts.size > 0,
+      functions: [...owners].filter(([, owner]) => owner === source).map(([did]) => {
+        const endpoint = endpoints.get(did);
+        return { id: identity(did), endpoint: endpoint.number, parent: endpoint.owner.number,
+          types: endpoint.state.descriptor.deviceTypeList.map(t => t.deviceType), services: endpoint.state.descriptor.serverList, clusters:describe(endpoint) };
+      }).sort((a,b) => a.endpoint-b.endpoint),
+    })).sort((a,b) => a.endpoint-b.endpoint);
+    const serialized = JSON.stringify(layouts);
+    const signature = createHash('sha256').update(JSON.stringify(layouts.map(({source, functions, ...rest}) =>
+      ({...rest, functions: functions.map(({id,...f})=>f)})))).digest('hex');
+    const changed = previousLayout?.layout !== serialized;
+    const hadLayout = previousLayout !== null || Object.keys(node.state.commissioning.fabrics).length > 0;
+    const versionBefore = node.state.basicInformation.configurationVersion;
+    const oldGroups = new Map((previousLayout?.layout ? JSON.parse(previousLayout.layout) : []).map(g=>[g.source,JSON.stringify(g)]));
+    const changedSources = new Set(layouts.filter(g=>oldGroups.get(g.source)!==JSON.stringify(g)).map(g=>g.source));
+    if (changed && hadLayout) {
+      await node.act(async agent => {
+        await agent.get(BasicInformationServer).increaseConfigurationVersion(async context => {
+          for (const [source,entity] of entities) if (changedSources.has(identity(source))) {
+            const info = entity.agentFor(context).get(BridgedDeviceBasicInformationServer);
+            await context.transaction.addResources(info);
+            await context.transaction.begin();
+            await info.increaseConfigurationVersion(undefined, context);
+          }
+        });
+      });
+    }
+    const configurationVersion = node.state.basicInformation.configurationVersion;
+    await layoutStore.set({ manifest: { layout: serialized, integrated: layouts.filter(l=>l.integrated).map(l=>l.source) }, configurationVersion });
+    diagnostics.emit(changed && hadLayout ? 'layoutChanged' : 'layout', { signature, configurationVersion, previousVersion: versionBefore, changed });
+    for (const endpoint of [node,aggregator]) diagnostics.emit('layout', {endpoint:endpoint.number,
+      parts:endpoint.state.descriptor.partsList, numbers:endpoint.state.descriptor.serverList, deviceTypes:endpoint.state.descriptor.deviceTypeList.map(t=>t.deviceType)});
+    for (const layout of layouts) {
+      const source = [...entities].find(([,e])=>e.number===layout.endpoint)?.[0];
+      const logAlias = devices.find(d=>physicalID(d)===source)?.logAlias;
+      const entity = entities.get(source);
+      diagnostics.bind(entity, {logAlias});
+      diagnostics.emit('layout', {device:logAlias,endpoint:entity.number,parent:aggregator.number,parts:entity.state.descriptor.partsList,
+        numbers:entity.state.descriptor.serverList,deviceTypes:entity.state.descriptor.deviceTypeList.map(t=>t.deviceType)});
+      for (const f of layout.functions) {
+        diagnostics.emit('layout', { device: logAlias, endpoint: f.endpoint, parent: f.parent, numbers: f.services, deviceTypes: f.types, count: f.types.length, configurationVersion });
+        for (const c of f.clusters) diagnostics.emit('layout', {device:logAlias,endpoint:f.endpoint,cluster:c.id,numbers:c.attributes});
+      }
+      if (oldEntities.get(source) !== undefined && oldEntities.get(source) !== layout.endpoint) diagnostics.emit('layoutChanged', { device: logAlias, endpoint: layout.endpoint, previousEndpoint: oldEntities.get(source), parts: entities.get(source).state.descriptor.partsList });
+      diagnostics.emit('configuration', { device: logAlias, endpoint: layout.endpoint, configurationVersion: entities.get(source).state.bridgedDeviceBasicInformation.configurationVersion });
+    }
+    let syncTail = Promise.resolve();
+    const lastInputs = new Map();
+    const applySnapshot = async snapshot => {
+      const round = diagnostics.nextSnapshot();
+      const byId = new Map(validateDevices(snapshot).map(d => [d.did, d]));
+      const inputs = new Map([...owners].map(([did]) => { const d=byId.get(did); return [did,JSON.stringify(d ? {reachable:d.reachable,on:d.on,attributes:d.attributes,nativeValues:d.nativeValues}:null)]; }));
+      diagnostics.emit('snapshot', { snapshot: round, count: byId.size, changed: [...inputs].some(([did,input])=>lastInputs.get(did)!==input) });
+      for (const [did, source] of owners) {
+        const d = byId.get(did);
+        if (d && physicalID(d) !== source) {
+          diagnostics.emit('protocolFailure',{device:d.logAlias,reason:'layout'});
+          throw new Error('Physical device layout changed; restart the bridge');
+        }
+        available.set(did, d?.reachable ?? false);
+      }
+      // Publish a single-function/integrated entity's state and Reachable in one transaction.
+      // For pure composition parents commit children first, then advertise recovery on the parent.
+      for (const [did, endpoint] of endpoints) {
+        const d = byId.get(did), source = owners.get(did), entity = entities.get(source);
+        const reachable = [...owners].some(([id, owner]) => owner === source && available.get(id));
+        const state = d?.reachable ? stateFor(d) : d && ['temperature','humidity','illuminance','windowCovering'].includes(d.kind)
+          ? stateFor({ ...d, attributes: {} }) : {};
+        if (endpoint === entity) state.bridgedDeviceBasicInformation = { reachable };
+        const inputChanged = lastInputs.get(did) !== inputs.get(did);
+        if (inputChanged && d?.kind === 'windowCovering') {
+          for (const [attribute, value] of [[8,state.windowCovering.currentPositionLiftPercentage], [14,state.windowCovering.currentPositionLiftPercent100ths], [11,state.windowCovering.targetPositionLiftPercent100ths]])
+            diagnostics.path('attributeInput', {endpointId:endpoint.number,clusterId:0x102,attributeId:attribute},
+              {value: typeof value==='number'?value:undefined,isNull:value===null,reachable,native:false,reason:d.reachable?undefined:'unavailable'});
+          diagnostics.emit('attributeInput', { device:d.logAlias, endpoint:endpoint.number, value:d.attributes?.position, reachable, snapshot:round, native:true });
+        }
+        if (inputChanged && d && ['light','dimmableLight','colorTemperatureLight'].includes(d.kind)) {
+          const rows = [[6,0,d.on,d.on], [8,0,d.nativeValues?.level ?? d.attributes?.level,state.levelControl?.currentLevel],
+            [0x300,7,d.nativeValues?.colorTemperature ?? d.attributes?.colorTemperature,state.colorControl?.colorTemperatureMireds]];
+          for (const [cluster,attribute,input,output] of rows) for (const [native,value] of [[true,input],[false,output]]) if (value !== undefined)
+            diagnostics.path('attributeInput', {endpointId:endpoint.number,clusterId:cluster,attributeId:attribute},
+              {value:typeof value==='number'?value:undefined,boolean:typeof value==='boolean'?value:undefined,native,reachable,reason:d.reachable?undefined:'unavailable'});
+        }
+        syncing.add(did);
+        try { await endpoint.set(state); lastInputs.set(did, inputs.get(did)); }
+        finally { syncing.delete(did); }
+      }
+      for (const [source, entity] of entities) if (![...endpoints.values()].includes(entity)) {
+        const reachable = [...owners].some(([did, owner]) => owner === source && available.get(did));
+        await entity.set({ bridgedDeviceBasicInformation: { reachable } });
+      }
+    };
     const bridge = {
-      node, endpoints, entities,
-      async sync(snapshot) {
-        const byId = new Map(validateDevices(snapshot).map(d => [d.did, d]));
-        for (const [did, source] of owners) {
-          const d = byId.get(did);
-          if (d && physicalID(d) !== source) throw new Error('Physical device layout changed; restart the bridge');
-          available.set(did, d?.reachable ?? false);
-        }
-        for (const [source, entity] of entities) {
-          const reachable = [...owners].some(([did, owner]) => owner === source && available.get(did));
-          await entity.set({ bridgedDeviceBasicInformation: { reachable } });
-        }
-        for (const [did, endpoint] of endpoints) {
-          const d = byId.get(did);
-          syncing.add(did);
-          try {
-            if (d?.reachable) await endpoint.set(stateFor(d));
-            else if (d && ['temperature', 'humidity', 'illuminance', 'windowCovering'].includes(d.kind)) {
-              await endpoint.set(stateFor({ ...d, attributes: {} }));
-            }
-          } finally { syncing.delete(did); }
-        }
+      node, endpoints, entities, diagnostics,
+      sync(snapshot) {
+        const copy = structuredClone(snapshot);
+        const task = syncTail.then(() => applySnapshot(copy));
+        syncTail = task.catch(() => {});
+        return task;
       },
     };
     await bridge.sync(devices);

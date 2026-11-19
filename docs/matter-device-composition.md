@@ -6,7 +6,7 @@
 
 单功能设备沿用原端点：应用设备类型、功能 Cluster 和 Bridged Device Basic Information 在同一端点，PartsList 为空。
 
-多功能设备使用 matter.js 0.18.0 的 BridgedNodeEndpoint 组合结构：顶层仅承载一个实体身份；所有应用功能（包括主电源）放在子端点。顶层 Descriptor PartsList 列出各子端点；功能子端点不再有 Bridged Device Basic Information。这样避免多项功能各自被公布为独立的桥接实体，并遵守库的 Separate Endpoints 组合模型。Aqara 是否以单条实体、嵌套功能或其他形式呈现，仍需实测。
+多功能设备使用 matter.js 0.18.0 的组合结构：顶层承载唯一实体身份。原本就是组合的设备沿用纯 BridgedNodeEndpoint 父端点及应用子端点；从单功能升级且能定位历史存储时，原主功能端点同时作为组合父端点，保留 Reachable 和主功能原路径，其余功能成为子端点。顶层 Descriptor PartsList 列出各子端点；功能子端点不再有 Bridged Device Basic Information。这样避免多项功能各自被公布为独立的桥接实体，并遵守库的 Separate Endpoints 组合模型。Aqara 是否以单条实体、嵌套功能或其他形式呈现，仍需实测。
 
 | 实体 | 顶层 | 功能子端点 |
 |---|---|---|
@@ -23,7 +23,7 @@
 
 ## 旧存储升级
 
-使用 matter.js 公开的 ServerNodeStore/ServerEndpointStores 接口读取已分配端点编号。在组合子端点迁到新父端点下时预设原应用端点编号，让库保留它；不直接编辑存储文件。顶层组合端点是新增端点，因此有新编号。已经组成组合的实体即使日后只剩一个功能，仍保留组合父端点，避免布局反复变化。
+使用 matter.js 公开的 ServerNodeStore/ServerEndpointStores 接口读取已分配端点编号。在组合子端点迁到新父端点下时预设原应用端点编号，让库保留它；不直接编辑存储文件。没有历史平铺主端点的组合需要新的父编号；有历史主端点时沿用其编号承载身份和主功能。已过中间版本的迁移兼容及配置版本通知见 [迁移与报告诊断](matter-migration-reporting-diagnostics.md)。已经组成组合的实体即使日后只剩一个功能，仍保留组合父端点，避免布局反复变化。
 
 有原主端点的实体沿用其 sourceID 哈希 UniqueID，并迁移自定义 NodeLabel。没有原主端点的传感器组合获得基于实体 sourceID 的唯一身份；原来的多个传感器身份收敛为一个，不能同时保留多个顶层 UniqueID。子端点不再独立宣称身份。现有单功能设备的编号、UniqueID 和名称保持原布局。
 

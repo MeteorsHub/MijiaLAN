@@ -21,6 +21,7 @@ export class AppRPC {
   }
   request(method, params = {}) {
     const id = this.#next++;
+    this.onRequest?.({ id, method, ...params });
     return new Promise((resolve, reject) => {
       // Native covering readback is bounded at 120 s, plus identity/preflight. Each request remains single-shot.
       const covering = method === 'set' && ['position', 'open', 'close', 'stop'].includes(params.property);

@@ -201,7 +201,10 @@ final class CurtainControlController {
         } else if isWorking(did) {
             return reject(did, command, reason: .busy, message: L10n.tr("请求未接收：已有用户操作进行中，请等待结果；停止仍可用。", "Request not accepted: another user operation is active. Wait for its result; Stop remains available."))
         }
-        let id = UUID(), precedingRead = command == .stop ? nil : reads[did]?.task
+        // Preserve a bridge request's journal correlation; scheduling and deduplication remain unchanged.
+        let bridgeOperation = DeviceCommunicationContext.source == .matter || DeviceCommunicationContext.source == .homeKit
+        let id = bridgeOperation ? (DeviceCommunicationContext.operation ?? UUID()) : UUID()
+        let precedingRead = command == .stop ? nil : reads[did]?.task
         working.insert(did); errors[did] = nil
         submissions[did] = Submission(id: id, command: command, phase: precedingRead == nil ? .running : .waiting)
         events.record(did, operation: id, source: source(command), stage: .requested, outcome: .queued, target: command?.target)

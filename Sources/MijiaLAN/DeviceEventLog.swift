@@ -44,6 +44,7 @@ public final class DeviceEventLog: @unchecked Sendable {
         public let writeAttempted: Bool?
         public let writeSent: Bool?
         public let writeAcknowledged: Bool?
+        public let matter: MatterDiagnosticsRecord?
         public let packet: MiioPacketDiagnostics?
         public let scope: Scope
     }
@@ -106,7 +107,7 @@ public final class DeviceEventLog: @unchecked Sendable {
     }
     public func record(_ identifier: String, operation: UUID? = nil, source: Source, stage: Stage, outcome: Outcome,
                        reason: Reason? = nil, code: Int? = nil, kind: Kind? = nil, siid: Int? = nil, aiid: Int? = nil, piid: Int? = nil, value: Int? = nil, valueType: ValueType? = nil, booleanValue: Bool? = nil, target: Int? = nil,
-                       position: Int? = nil, motorStatus: Int? = nil, elapsedMilliseconds: Int64? = nil, writeAttempted: Bool? = nil, writeSent: Bool? = nil, writeAcknowledged: Bool? = nil, packet: MiioPacketDiagnostics? = nil) {
+                       position: Int? = nil, motorStatus: Int? = nil, elapsedMilliseconds: Int64? = nil, writeAttempted: Bool? = nil, writeSent: Bool? = nil, writeAcknowledged: Bool? = nil, packet: MiioPacketDiagnostics? = nil, matter: MatterDiagnosticsRecord? = nil) {
         let device = alias(for: identifier)
         lock.withLock {
             sequence += 1
@@ -118,7 +119,7 @@ public final class DeviceEventLog: @unchecked Sendable {
                 piid: piid.flatMap { (1...65_535).contains($0) ? $0 : nil },
                 value: value.flatMap { (0...100).contains($0) ? $0 : nil }, valueType: valueType, booleanValue: booleanValue, target: target.flatMap { (0...100).contains($0) ? $0 : nil },
                 position: position.flatMap { (0...100).contains($0) ? $0 : nil }, motorStatus: motorStatus.flatMap { (0...4).contains($0) ? $0 : nil },
-                elapsedMilliseconds: elapsedMilliseconds, writeAttempted: writeAttempted, writeSent: writeSent, writeAcknowledged: writeAcknowledged, packet: packet, scope: scope)
+                elapsedMilliseconds: elapsedMilliseconds, writeAttempted: writeAttempted, writeSent: writeSent, writeAcknowledged: writeAcknowledged, matter: matter?.validated(), packet: packet, scope: scope)
             events.append(event)
             if events.count > maxEvents { events.removeFirst(events.count - maxEvents) }
             var keep = Self.isImportant(event)
@@ -131,10 +132,24 @@ public final class DeviceEventLog: @unchecked Sendable {
                     lastBackgroundArchive[signature] = event.milliseconds
                 }
             }
+            if keep, let matter = event.matter, matter.event == .protocolFailure || matter.status.map({ $0 != 0 }) == true {
+                let signature = "matter:\(matter.run?.uuidString ?? "-"):\(matter.event.rawValue):\(matter.session ?? 0):\(matter.endpoint ?? 0):\(matter.cluster ?? 0):\(matter.attribute ?? 0):\(matter.status ?? 0):\(matter.reason?.rawValue ?? "-")"
+                if let last = lastBackgroundArchive[signature], event.milliseconds - last < 1_800_000 { keep = false }
+                else {
+                    if lastBackgroundArchive.count >= 512 { lastBackgroundArchive = [:] }
+                    lastBackgroundArchive[signature] = event.milliseconds
+                }
+            }
             var critical: [Event] = []
             if keep {
                 let batch: [Event]
-                if event.outcome == .paused || (event.code != nil && event.code != 0), let operation = event.operation {
+                if let matter = event.matter, (matter.event == .protocolFailure || matter.status.map({ $0 != 0 }) == true) {
+                    batch = Array(events.filter { row in
+                        guard let candidate = row.matter, candidate.run == matter.run else { return false }
+                        return (matter.exchange != nil && candidate.exchange == matter.exchange) ||
+                            (matter.endpoint != nil && candidate.endpoint == matter.endpoint) || row.sequence == event.sequence
+                    }.suffix(64))
+                } else if event.outcome == .paused || (event.code != nil && event.code != 0), let operation = event.operation {
                     // Preserve the matching request/sent/reply context before normal polling rolls it out.
                     batch = events.filter { $0.run == event.run && $0.operation == operation }
                 } else { batch = [event] }
@@ -153,6 +168,11 @@ public final class DeviceEventLog: @unchecked Sendable {
                 }
             }
         }
+    }
+    public func recordMatter(_ input: MatterDiagnosticsRecord, operation: UUID? = nil) {
+        guard let record = input.validated() else { return }
+        let identifier = lock.withLock { aliases.first(where: { $0.value == record.device })?.key ?? "application" }
+        self.record(identifier, operation: operation, source: .matter, stage: .idle, outcome: .sample, matter: record)
     }
     public func snapshot() -> [Event] { lock.withLock { events } }
     public func recentText(importantOnly: Bool = false) -> String {
@@ -237,6 +257,7 @@ public final class DeviceEventLog: @unchecked Sendable {
     public func exportText() -> String { String(decoding: exportData(), as: UTF8.self) }
     public func flush() { queue.sync {} }
     private static func isImportant(_ event: Event) -> Bool {
+        if let matter = event.matter { return matter.isImportant }
         let manual: Set<Source> = [.preference, .startup, .experiment, .manualRead, .manualPosition, .manualOpen, .manualClose, .manualStop, .postWriteRead, .userControl, .homeKit, .matter, .manualAdd]
         return manual.contains(event.source) || (event.code != nil && event.code != 0) || event.outcome == .paused || event.outcome == .cancelled || event.kind == .write || event.kind == .legacyWrite || event.kind == .action
     }

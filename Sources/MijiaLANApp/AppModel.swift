@@ -112,7 +112,7 @@ final class AppModel {
             save: { vault.set($0, for: AppModel.bridgeAccount) }
         ), defaults: bridgeDefaults)
 
-        matter = MatterBridgeController(defaults: bridgeDefaults, ephemeral: ephemeral)
+        matter = MatterBridgeController(defaults: bridgeDefaults, ephemeral: ephemeral, journal: journal)
         if ephemeral { matter.isEnabled = false }
         matter.attach(controller, curtains: curtains)
 
