@@ -102,6 +102,36 @@ final class CurtainControlController {
     @discardableResult func send(_ did: String, _ command: CurtainControlSession.Command) -> Bool { request(did, command) }
     @discardableResult func read(_ did: String) -> Bool { request(did, nil) }
 
+    /// Capability adapter for bridges: expose this driver's cache, never a second property reader.
+    var matterCoverings: [String: MatterDevicePlan.Covering] {
+        Dictionary(uniqueKeysWithValues: devices.values.filter {
+            $0.model == CurtainValidationSession.model && $0.specType == CurtainValidationSession.specification
+        }.map { device in
+            let state = states[device.did]
+            let movement: Int? = switch state?.motorStatus {
+            case 1: 0
+            case 2, 3: 1
+            case 0, 4: 2
+            default: nil
+            }
+            let active = submissions[device.did].map { $0.phase == .waiting || $0.phase == .running } ?? false
+            let ready = state?.phase == .ready || state?.phase == .moving || state?.phase == .stopping
+            return (device.did, MatterDevicePlan.Covering(position: state?.position,
+                target: active ? submissions[device.did]?.command?.target : state?.position, movement: movement,
+                reachable: ready && state?.sampledAt != nil && state?.failureReason == nil && readFailures[device.did] == nil))
+        })
+    }
+
+    /// Await the same operation used by the App. Stop still preempts movement through request()/session.stop().
+    func execute(_ did: String, _ command: CurtainControlSession.Command) async throws -> CurtainControlSession.State {
+        guard request(did, command), let accepted = actions[did] else { throw DeviceControlError.busy }
+        await accepted.task.value
+        try Task.checkCancellation()
+        guard submissions[did]?.id == accepted.id, submissions[did]?.phase == .succeeded,
+              let state = states[did], state.confirmed else { throw DeviceControlError.notConfirmed }
+        return state
+    }
+
     /// One shared round. Defer this device during editing; never cancel an already in-flight read.
     func pollConfigured() async {
         guard !shuttingDown else { return }
@@ -143,7 +173,8 @@ final class CurtainControlController {
         retryStates[did] = nil
     }
     private func source(_ command: CurtainControlSession.Command?) -> DeviceEventLog.Source {
-        switch command { case .position: .manualPosition; case .open: .manualOpen; case .close: .manualClose; case .stop: .manualStop; case nil: .manualRead }
+        if let source = DeviceCommunicationContext.source, source == .matter || source == .homeKit { return source }
+        return switch command { case .position: .manualPosition; case .open: .manualOpen; case .close: .manualClose; case .stop: .manualStop; case nil: .manualRead }
     }
     private func reject(_ did: String, _ command: CurtainControlSession.Command?, reason: DeviceEventLog.Reason, message: String) -> Bool {
         errors[did] = message
@@ -170,7 +201,10 @@ final class CurtainControlController {
         } else if isWorking(did) {
             return reject(did, command, reason: .busy, message: L10n.tr("请求未接收：已有用户操作进行中，请等待结果；停止仍可用。", "Request not accepted: another user operation is active. Wait for its result; Stop remains available."))
         }
-        let id = UUID(), precedingRead = command == .stop ? nil : reads[did]?.task
+        // Preserve a bridge request's journal correlation; scheduling and deduplication remain unchanged.
+        let bridgeOperation = DeviceCommunicationContext.source == .matter || DeviceCommunicationContext.source == .homeKit
+        let id = bridgeOperation ? (DeviceCommunicationContext.operation ?? UUID()) : UUID()
+        let precedingRead = command == .stop ? nil : reads[did]?.task
         working.insert(did); errors[did] = nil
         submissions[did] = Submission(id: id, command: command, phase: precedingRead == nil ? .running : .waiting)
         events.record(did, operation: id, source: source(command), stage: .requested, outcome: .queued, target: command?.target)

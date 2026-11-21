@@ -29,6 +29,8 @@ struct ControlCenterDeviceDetail: View {
                         Text(L10n.tr("家庭中的当前温度使用设定温度占位，此设备没有实测室温读数。", "Home uses the target temperature as a placeholder for the current temperature. This device does not report measured room temperature."))
                             .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         additionalControls(snapshot, excluding: ["p:2:1", "p:2:2", "p:2:3", "p:3:1", "p:3:2"])
+                    } else if device.model == "yeelink.light.ceiling20" {
+                        Ceiling20LightControls(controller: model.devices, snapshot: snapshot)
                     } else if snapshot.schema.category == "light", let brightness = snapshot.capability("light", "brightness") {
                         LampControl(controller: model.devices, snapshot: snapshot, brightness: brightness)
                         if let temperature = snapshot.capability("light", "color-temperature"), temperature.control == .number {
@@ -184,18 +186,19 @@ private struct AirConditionerControl: View {
     }
 }
 
-private struct LampControl: View {
+struct LampControl: View {
     let snapshot: DeviceSnapshot
     let brightness: DeviceCapability
+    let siid: Int?
     @State private var writer: ContinuousValueWriter
     @Environment(\.panelPresented) private var panelPresented
 
-    init(controller: DeviceController, snapshot: DeviceSnapshot, brightness: DeviceCapability) {
-        self.snapshot = snapshot; self.brightness = brightness
+    init(controller: DeviceController, snapshot: DeviceSnapshot, brightness: DeviceCapability, siid: Int? = nil) {
+        self.snapshot = snapshot; self.brightness = brightness; self.siid = siid
         let did = snapshot.id
         // This view owns edit intent for one device; the detail's identity is the device ID.
         _writer = State(initialValue: ContinuousValueWriter { value in
-            try await controller.execute(did: did, .setLightBrightness(value))
+            try await controller.execute(did: did, .setLightBrightness(value, siid: siid))
         })
     }
 
@@ -203,10 +206,10 @@ private struct LampControl: View {
         VStack(spacing: 12) {
             BrightnessBar(value: writer.pendingValue ?? snapshot.value(brightness.id)?.doubleValue,
                           range: (brightness.min ?? 1)...(brightness.max ?? 100), step: brightness.step, commit: writer.submit)
-            .disabled(!snapshot.isOnline)
+            .disabled(!snapshot.isOnline || snapshot.controlUnavailableReason(brightness) != nil)
             Text(hint)
                 .font(.system(size: 12))
-                .foregroundStyle(writer.error == nil ? Color.secondary : Color.orange)
+                .foregroundStyle(writer.error == nil && snapshot.controlUnavailableReason(brightness) == nil ? Color.secondary : Color.orange)
                 .lineLimit(1).frame(maxWidth: .infinity).frame(height: 16)
                 .help(hint)
         }
@@ -215,12 +218,14 @@ private struct LampControl: View {
     }
 
     private var hint: String {
-        writer.error ?? (snapshot.primaryPower.flatMap { snapshot.value($0.id)?.boolValue } == false
+        if let error = writer.error ?? snapshot.controlUnavailableReason(brightness) { return error }
+        let power = siid.flatMap { channel in snapshot.capabilities.first { $0.siid == channel && $0.name == "on" } } ?? snapshot.primaryPower
+        return (power.flatMap { snapshot.value($0.id)?.boolValue } == false
                         ? L10n.tr("已关闭 · 拖动滑块即可开灯", "Off · Drag the slider to turn on") : L10n.tr("拖动调节亮度", "Drag to adjust brightness"))
     }
 }
 
-private struct LampColorTemperatureControl: View {
+struct LampColorTemperatureControl: View {
     let snapshot: DeviceSnapshot
     let capability: DeviceCapability
     @State private var writer: ContinuousValueWriter
@@ -243,35 +248,8 @@ private struct LampColorTemperatureControl: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            HStack {
-                Text(L10n.tr("色温", "Color Temperature")).font(.system(size: 12, weight: .medium))
-                Spacer()
-                CapabilityNumberInput(capability: capability,
-                                      value: displayed.map(JSONValue.number), working: writer.isSending,
-                                      persistedDraft: session?.numberDraft(deviceID: snapshot.id, capabilityID: capability.id)) {
-                    writer.submit($0)
-                    draft = nil
-                }
-                .font(.caption)
-            }
-            // On macOS 27, a 1 K stepped Slider lays out thousands of native marks.
-            // Keep the slider continuous and quantize the requested value instead.
-            Slider(value: Binding(get: { displayed ?? range.lowerBound }, set: { raw in
-                draft = min(range.upperBound, max(range.lowerBound,
-                    range.lowerBound + ((raw - range.lowerBound) / capability.step).rounded() * capability.step))
-            }), in: range) { Text(L10n.tr("色温", "Color Temperature")) } onEditingChanged: { editing in
-                isEditing = editing
-                guard !editing, let draft else { return }
-                guard draft != (writer.pendingValue ?? actual) else { self.draft = nil; return }
-                writer.submit(draft)
-            }
-            .labelsHidden()
-            .accessibilityValue((draft ?? writer.pendingValue).map { L10n.tr("目标 \(DevicePresentation.number($0)) K", "Target: \(DevicePresentation.number($0)) K") }
-                                ?? actual.map { "\(DevicePresentation.number($0)) K" } ?? L10n.tr("尚无读数", "No Reading"))
-            .accessibilityHint(L10n.tr("向左调暖，向右调冷", "Move left for warmer light and right for cooler light."))
-            .accessibilityAdjustableAction { adjust($0 == .increment ? 1 : -1) }
-            .onKeyPress(.leftArrow) { adjust(-1); return .handled }
-            .onKeyPress(.rightArrow) { adjust(1); return .handled }
+            temperatureHeader
+            temperatureSlider
             HStack {
                 Text(L10n.tr("暖光", "Warm"))
                 Spacer()
@@ -288,6 +266,55 @@ private struct LampColorTemperatureControl: View {
         .onChange(of: panelPresented) {
             if !panelPresented { writer.cancelPending(); draft = nil; isEditing = false }
         }
+    }
+
+    private var temperatureHeader: some View {
+        HStack {
+            Text(L10n.tr("色温", "Color Temperature")).font(.system(size: 12, weight: .medium))
+            Spacer()
+            CapabilityNumberInput(capability: capability,
+                                  value: displayed.map(JSONValue.number), working: writer.isSending,
+                                  persistedDraft: session?.numberDraft(deviceID: snapshot.id, capabilityID: capability.id)) {
+                writer.submit($0)
+                draft = nil
+            }
+            .font(.caption)
+        }
+    }
+
+    private var temperatureSlider: some View {
+        // Keep the native slider continuous: a 1 K step produces thousands of marks on macOS 27.
+        // Quantization and submission remain in their original edit callbacks.
+        Slider(value: sliderValue, in: range, onEditingChanged: { editing in editingChanged(editing) }) {
+            Text(L10n.tr("色温", "Color Temperature"))
+        }
+        .labelsHidden()
+        .accessibilityValue(sliderAccessibilityValue)
+        .accessibilityHint(L10n.tr("向左调暖，向右调冷", "Move left for warmer light and right for cooler light."))
+        .accessibilityAdjustableAction { adjust($0 == .increment ? 1 : -1) }
+        .onKeyPress(.leftArrow) { adjust(-1); return .handled }
+        .onKeyPress(.rightArrow) { adjust(1); return .handled }
+    }
+
+    private var sliderValue: Binding<Double> {
+        Binding(get: { displayed ?? range.lowerBound }, set: { raw in updateDraft(raw) })
+    }
+    private var sliderAccessibilityValue: String {
+        if let target = draft ?? writer.pendingValue {
+            return L10n.tr("目标 \(DevicePresentation.number(target)) K", "Target: \(DevicePresentation.number(target)) K")
+        }
+        if let actual { return "\(DevicePresentation.number(actual)) K" }
+        return L10n.tr("尚无读数", "No Reading")
+    }
+    private func updateDraft(_ raw: Double) {
+        draft = min(range.upperBound, max(range.lowerBound,
+            range.lowerBound + ((raw - range.lowerBound) / capability.step).rounded() * capability.step))
+    }
+    private func editingChanged(_ editing: Bool) {
+        isEditing = editing
+        guard !editing, let draft else { return }
+        guard draft != (writer.pendingValue ?? actual) else { self.draft = nil; return }
+        writer.submit(draft)
     }
 
     private func adjust(_ direction: Double) {

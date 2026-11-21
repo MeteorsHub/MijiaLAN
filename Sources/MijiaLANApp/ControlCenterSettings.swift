@@ -159,8 +159,9 @@ struct SettingsMatterManagement: View {
                     SettingsToggleRow(L10n.tr("启用 Matter 桥接", "Enable Matter Bridge"), symbol: "point.3.connected.trianglepath.dotted", isOn: $bridge.isEnabled, subtitle: bridge.status)
                     SettingsToggleRow(L10n.tr("保持 Mac 唤醒", "Keep Mac Awake"), symbol: "moon", isOn: $bridge.keepsMacAwake)
                     if bridge.isEnabled { Button(L10n.tr("重新连接", "Reconnect")) { bridge.restart() }.padding(10) }
-                }
+                }.disabled(bridge.isResetting)
             }
+            MatterPairingResetSection(bridge: bridge)
             if bridge.isRunning {
                 SettingsSection(L10n.tr("添加到 Aqara 或其他 Matter 平台", "Add to Aqara or Another Matter Platform")) {
                     SettingsGroup {
@@ -207,13 +208,47 @@ struct SettingsMatterManagement: View {
                             if index > 0 { SettingsDivider() }
                             SettingsMatterDeviceRow(model: model, bridge: bridge, device: device,
                                 plans: plansByDevice[device.did] ?? [])
+                                .disabled(bridge.isResetting)
                         }
                     }
                 }
-                Text(L10n.tr("设备选择独立于 HomeKit。移除设备会影响目标平台中的场景和自动化。当前支持开关、调光、色温、风扇、空气净化器、温湿度、光照、人体及接触传感器；以设备实际提供的能力为准。M200 兼容性尚待实测。", "Device selection is independent of HomeKit. Removing a device affects scenes and automations. Supported mappings include power, brightness, color temperature, fans, air purifiers, temperature, humidity, light, occupancy and contact sensors, subject to device capabilities. M200 compatibility awaits hardware testing."))
+                Text(L10n.tr("设备选择独立于 HomeKit。同一实体的功能组成一个桥接设备；平台呈现以实际导入为准。移除设备会影响目标平台中的场景和自动化。当前支持开关、调光、色温、风扇、空气净化器、受支持的卷帘、加热温控及多种传感器，含已适配型号的只读缺水、缺粮状态；按实际能力开放。通用电源可能显示为插座；模式、档位和目标湿度等未桥接能力会另行标注。新增端点的自动导入取决于目标平台。", "Device selection is independent of HomeKit. Functions of one physical device share a bridged identity; presentation depends on the controller. Removing a device affects scenes and automations. Supported mappings include power, brightness, color temperature, fans, air purifiers, supported coverings, heating thermostats and sensors, including read-only water/food shortage on reviewed models. Generic power may appear as a plug; unmapped controls such as modes, levels and target humidity are listed separately. Automatic import of added endpoints depends on the controller."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }.padding(.horizontal, 16).padding(.vertical, 8)
+    }
+}
+
+private struct MatterPairingResetSection: View {
+    @Bindable var bridge: MatterBridgeController
+    @State private var confirming = false
+
+    var body: some View {
+        SettingsSection(L10n.tr("Matter 配对管理", "Matter Pairing")) {
+            Button(L10n.tr("重置 Matter 配对…", "Reset Matter Pairing…"), role: .destructive) { confirming = true }
+                .disabled(bridge.isResetting)
+            if bridge.isResetting {
+                ProgressView(L10n.tr("正在重置配对，请稍候…", "Resetting pairing, please wait…")).controlSize(.small)
+            }
+            if let error = bridge.resetError {
+                Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
+            if let message = bridge.resetMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if let backup = bridge.resetBackupURL {
+                Text(L10n.tr("本机配对备份：\(backup.path)", "Local pairing backup: \(backup.path)"))
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .alert(L10n.tr("重置 Matter 配对？", "Reset Matter Pairing?"), isPresented: $confirming) {
+            Button(L10n.tr("重置配对", "Reset Pairing"), role: .destructive) {
+                Task { await bridge.resetPairing() }
+            }
+            Button(L10n.tr("取消", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.tr("此操作会重置本桥接与所有 Matter 平台的连接，之后需重新添加桥接和设备。控制器中可能仍有旧条目，需要另行移除。旧 Matter 节点资料会保存在本机私有备份中。米家设备清单、其他设置、Matter 设备选择及 HomeKit 独立配对均保留。", "This resets this bridge's connections to all Matter platforms. You will need to add the bridge and devices again. Controllers may retain old entries that must be removed separately. Old Matter node data is kept in a private local backup. Mijia devices, other settings, Matter device selections and independent HomeKit pairing are retained."))
+        }
     }
 }
 
@@ -235,6 +270,16 @@ private struct SettingsMatterDeviceRow: View {
             .filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
+    private var unavailable: String {
+        guard let snapshot = model.devices.snapshots[device.did] else {
+            return L10n.tr("设备规格尚未加载", "Device specification not loaded yet")
+        }
+        if ["pet-feeder", "pet-drinking-fountain"].contains(snapshot.schema.category), snapshot.primaryPower == nil {
+            return L10n.tr("喂食或饮水能力暂未适配；规格未定义主电源，不能作为电源开关接入。", "Feeding or watering controls are not mapped yet. The specification has no main power switch to bridge.")
+        }
+        return L10n.tr("当前设备能力暂未适配 Matter", "This device's capabilities are not mapped to Matter yet")
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -242,12 +287,16 @@ private struct SettingsMatterDeviceRow: View {
                 if !context.isEmpty {
                     Text(context).font(.caption).foregroundStyle(.secondary)
                 }
-                Text(DeviceLANPolicy.restriction(for: device.model) ?? (plans.isEmpty
-                     ? (model.devices.snapshots[device.did] == nil
-                        ? L10n.tr("设备规格尚未加载", "Device specification not loaded yet")
-                        : L10n.tr("当前设备能力暂未适配 Matter", "This device's capabilities are not mapped to Matter yet"))
-                     : plans.map { MatterDevicePlan.title($0.device.kind) }.joined(separator: " · ")))
+                Text(plans.isEmpty ? unavailable
+                     : plans.map { MatterDevicePlan.title($0.device.kind) }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary)
+                if !plans.isEmpty, let snapshot = model.devices.snapshots[device.did] {
+                    let unmapped = MatterDevicePlan.unmappedControls(snapshot, entries: plans)
+                    if !unmapped.isEmpty {
+                        Text(L10n.tr("尚未桥接：", "Not bridged: ") + unmapped.prefix(3).joined(separator: "、") + (unmapped.count > 3 ? "…" : ""))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -858,7 +907,7 @@ private struct LaunchAtLoginSettings: View {
         SettingsSection(L10n.tr("启动", "Startup")) {
             SettingsGroup {
                 SettingsToggleRow(L10n.tr("登录时启动", "Launch at Login"), symbol: "power",
-                                  isOn: Binding(get: { registered == true }, set: setRegistered),
+                                  isOn: Binding(get: { registered == true }, set: { requested in setRegistered(requested) }),
                                   subtitle: subtitle, statusColor: status == .requiresApproval ? .orange : nil)
                     .disabled(registered == nil)
             }

@@ -112,9 +112,9 @@ final class AppModel {
             save: { vault.set($0, for: AppModel.bridgeAccount) }
         ), defaults: bridgeDefaults)
 
-        matter = MatterBridgeController(defaults: bridgeDefaults, ephemeral: ephemeral)
+        matter = MatterBridgeController(defaults: bridgeDefaults, ephemeral: ephemeral, journal: journal)
         if ephemeral { matter.isEnabled = false }
-        matter.attach(controller)
+        matter.attach(controller, curtains: curtains)
 
         if preview || (ephemeral && environment["MIJIALAN_SNAPSHOT"] != nil) { bridge.isEnabled = false }
         curtains.prepare = { [weak self] in

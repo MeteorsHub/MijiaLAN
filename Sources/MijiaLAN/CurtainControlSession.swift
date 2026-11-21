@@ -136,7 +136,8 @@ public actor CurtainControlSession {
         case .stop: requestSource = .manualStop
         case nil: requestSource = .manualRead
         }
-        let effectiveSource = override ?? requestSource
+        let bridgeSource = DeviceCommunicationContext.source.flatMap { $0 == .matter || $0 == .homeKit ? $0 : nil }
+        let effectiveSource = override ?? bridgeSource ?? requestSource
         return try await runOperation(command, id: id, requestSource: effectiveSource, body: body)
     }
     private func runOperation(_ command: Command?, id: UUID, requestSource: CurtainEventLog.Source, body: @escaping @Sendable () async throws -> State) async throws -> State {

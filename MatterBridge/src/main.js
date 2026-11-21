@@ -1,3 +1,4 @@
+import { MatterDiagnostics, failureReason } from './diagnostics.js';
 import { AppRPC } from './app-rpc.js';
 import { mkdir, chmod, readFile, writeFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
@@ -41,7 +42,12 @@ try {
   credentials = { passcode, discriminator: randomInt(0, 4096) };
   await writeFile(credentialsPath, JSON.stringify(credentials), { mode: 0o600, flag: 'wx' });
 }
+const diagnostics = new MatterDiagnostics(record => {
+  if (appMode) process.stdout.write(JSON.stringify({ event: 'diagnostic', diagnostic: record }) + '\n');
+});
+const aliases = new Map();
 const rpc = appMode ? new AppRPC() : new DeviceRPC(resolve(args[0]), resolve(args[1]));
+rpc.onRequest = ({ id, did }) => diagnostics.emit('rpcRequest', { request: id, device: aliases.get(did) });
 function report() {
   if (appMode && bridge) process.stdout.write(JSON.stringify({ event: "ready",
     code: bridge.node.state.commissioning.pairingCodes.manualPairingCode,
@@ -64,7 +70,9 @@ if (appMode) rpc.onClose = () => void stop();
 process.once('SIGINT', () => void stop());
 process.once('SIGTERM', () => void stop());
 try {
-  bridge = await createBridge(rpc, await rpc.request('snapshot'), { ...credentials, port });
+  const snapshot = await rpc.request('snapshot');
+  for (const d of snapshot) aliases.set(d.did, d.logAlias);
+  bridge = await createBridge(rpc, snapshot, { ...credentials, port, diagnostics });
   if (stopping) {
     await bridge.node.close();
   } else {
@@ -78,8 +86,9 @@ try {
         await bridge.sync(await rpc.request('snapshot'));
         report();
         if (!stopping) timer = setTimeout(poll, 5000);
-      } catch {
+      } catch (error) {
         if (stopping) return;
+        diagnostics.emit('protocolFailure',{reason:failureReason(error)});
         try { await bridge.sync([]); } catch { /* Still close if the Matter transport failed. */ }
         console.error('设备进程通信失败，桥接已停止；请检查配置和设备后重启。');
         await stop(1);
@@ -87,7 +96,8 @@ try {
     }
     if (!stopping) timer = setTimeout(poll, 5000);
   }
-} catch {
+} catch (error) {
+  if (!stopping) diagnostics.emit('protocolFailure',{reason:failureReason(error)});
   console.error('Matter 桥接启动失败。请检查设备清单、可执行文件及网络权限。');
   await stop(1);
 }

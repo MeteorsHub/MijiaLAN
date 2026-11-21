@@ -20,6 +20,54 @@ test('reject ambiguous or incomplete device snapshots', () => {
   assert.notEqual(identity('123'), identity('456'));
 });
 
+test('bridged endpoints publish readable names without changing persisted identities', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mijia-names-'));
+  Environment.default.vars.set('storage.path', dir);
+  const prefix = '卷帘'.repeat(5);
+  const name = prefix + '🪟' + '书房'.repeat(5) + '遮阳';
+  const unnamed = { ...outlet, did: 'blank', name: ' \n\t ' };
+  const devices = [outlet, { ...light, name }, unnamed];
+  const options = { port: 5541, passcode: 20202021, discriminator: 3840 };
+  const rpc = { request() { throw new Error('Naming must not issue LAN commands'); } };
+  let bridge;
+  try {
+    bridge = await createBridge(rpc, devices, options);
+    const first = bridge.endpoints.get(outlet.did).state.bridgedDeviceBasicInformation;
+    assert.equal(first.nodeLabel, outlet.name);
+    assert.equal(first.productName, outlet.name);
+    assert.equal(first.productLabel, outlet.name);
+    const fallback = bridge.endpoints.get(unnamed.did).state.bridgedDeviceBasicInformation;
+    assert.equal(fallback.nodeLabel, 'MijiaLAN');
+    assert.equal(fallback.productName, 'MijiaLAN');
+    assert.equal(fallback.productLabel, 'MijiaLAN');
+
+    const endpoint = bridge.endpoints.get(light.did);
+    const originalNumber = endpoint.number;
+    const actual = endpoint.state.bridgedDeviceBasicInformation;
+    assert.equal(actual.nodeLabel, prefix);
+    assert.equal(actual.productName, prefix);
+    assert.equal(actual.productLabel, prefix + '🪟' + '书房'.repeat(5));
+    assert.equal(Buffer.byteLength(actual.productName), 30);
+    assert.equal(Buffer.byteLength(actual.productLabel), 64);
+    assert.equal(actual.uniqueId, identity(light.did));
+    await endpoint.set({ bridgedDeviceBasicInformation: { nodeLabel: 'Home label' } });
+    await bridge.sync(devices);
+    assert.equal(endpoint.state.bridgedDeviceBasicInformation.nodeLabel, 'Home label');
+
+    await bridge.node.close();
+    bridge = await createBridge(rpc, [...devices].reverse(), options);
+    const reopened = bridge.endpoints.get(light.did);
+    assert.equal(reopened.number, originalNumber);
+    assert.equal(reopened.state.bridgedDeviceBasicInformation.uniqueId, identity(light.did));
+    assert.equal(reopened.state.bridgedDeviceBasicInformation.productName, prefix);
+    assert.equal(reopened.state.bridgedDeviceBasicInformation.productLabel, prefix + '🪟' + '书房'.repeat(5));
+    assert.equal(reopened.state.bridgedDeviceBasicInformation.nodeLabel, 'Home label');
+  } finally {
+    await bridge?.node.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('real Matter endpoints: confirmed writes, poll updates, failures, offline and stable IDs', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'mijia-matter-'));
   Environment.default.vars.set('storage.path', dir);

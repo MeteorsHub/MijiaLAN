@@ -7,6 +7,7 @@ import SwiftUI
 @MainActor @Observable
 final class PanelPresentation {
     enum Phase: String { case closed, opening, open, closing }
+    typealias WindowAnimation = @MainActor (NSWindow, CGFloat, TimeInterval, @escaping @MainActor () -> Void) -> Void
 
     private(set) var phase: Phase = .closed
     private(set) var isPresented = false
@@ -17,12 +18,14 @@ final class PanelPresentation {
     @ObservationIgnored var didClose: (() -> Void)?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private let reduceMotion: () -> Bool
+    @ObservationIgnored private let windowAnimation: WindowAnimation
 
     init(window: NSWindow, reduceMotion: @escaping () -> Bool = {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-    }) {
+    }, windowAnimation: @escaping WindowAnimation = PanelPresentation.animateWindow) {
         self.window = window
         self.reduceMotion = reduceMotion
+        self.windowAnimation = windowAnimation
         window.animationBehavior = .none
         window.alphaValue = 0
     }
@@ -88,19 +91,24 @@ final class PanelPresentation {
         withAnimation(usesReducedMotion ? nil : PanelMotion.animation) { progress = target }
         PanelTransitionDiagnostics.record("presentationBegin", ["generation": request,
             "presented": isPresented, "reducedMotion": usesReducedMotion, "duration": duration])
+        windowAnimation(window, target, duration) { [weak self] in
+            guard let self, self.generation == request else { return }
+            completion()
+            PanelTransitionDiagnostics.record("presentationEnd", ["generation": request,
+                "presented": self.isPresented, "visible": self.window.isVisible, "alpha": self.window.alphaValue])
+            PanelTransitionDiagnostics.flushSoon()
+        }
+    }
+
+    private static func animateWindow(_ window: NSWindow, _ target: CGFloat, _ duration: TimeInterval,
+                                      _ completion: @escaping @MainActor () -> Void) {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
             context.timingFunction = PanelMotion.timingFunction
             window.animator().alphaValue = target
-        } completionHandler: { [weak self] in
+        } completionHandler: {
             // AppKit delivers the completion on the main thread.
-            MainActor.assumeIsolated {
-                guard let self, self.generation == request else { return }
-                completion()
-                PanelTransitionDiagnostics.record("presentationEnd", ["generation": request,
-                    "presented": self.isPresented, "visible": self.window.isVisible, "alpha": self.window.alphaValue])
-                PanelTransitionDiagnostics.flushSoon()
-            }
+            MainActor.assumeIsolated { completion() }
         }
     }
 }

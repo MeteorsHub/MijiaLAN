@@ -118,6 +118,23 @@ final class FakeMiioNetwork: MiioTransport, @unchecked Sendable {
             } else if let result = device.legacyReplies[method] {
                 if !method.hasPrefix("get_") { device.legacyCalls.append("\(method) \(params.compactJSONString)") }
                 reply["result"] = result
+            } else if device.model == "yeelink.light.ceiling20", method.hasPrefix("set_") || method.hasPrefix("bg_set_") {
+                device.legacyCalls.append("\(method) \(params.compactJSONString)")
+                let args = params.arrayValue ?? []
+                switch method {
+                case "set_ps" where args.first == .string("nightlight"):
+                    legacy["active_mode"] = .number(args.last == .string("on") ? 1 : 0)
+                case "set_bright": legacy[legacy["active_mode"]?.intValue == 1 ? "nl_br" : "bright"] = args.first
+                case "set_ct_abx": legacy["ct"] = args.first
+                case "set_power": legacy["power"] = args.first
+                case "bg_set_power": legacy["bg_power"] = args.first
+                case "bg_set_bright": legacy["bg_bright"] = args.first
+                case "bg_set_ct_abx": legacy["bg_ct"] = args.first
+                case "bg_set_rgb": legacy["bg_rgb"] = args.first
+                default: throw MiioError.unsupportedByLegacyDevice
+                }
+                device.legacyProps = legacy
+                reply["result"] = .array([.string("ok")])
             } else if method.hasPrefix("set_") {
                 device.legacyCalls.append("\(method) \(params.compactJSONString)")
                 if let value = params.arrayValue?.first {

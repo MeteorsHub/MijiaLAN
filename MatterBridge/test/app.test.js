@@ -67,6 +67,10 @@ test('App mode uses an isolated port with 5540 occupied, exchanges JSON and exit
             assert.equal(frame.paired, false);
             clearTimeout(timeout);
             resolve();
+          } else if (frame.event === 'diagnostic') {
+            assert.equal(typeof frame.diagnostic.event, 'string');
+            assert.match(frame.diagnostic.run, /^[0-9a-f-]{36}$/);
+            assert.ok(!line.includes('app-outlet') && !line.includes('Outlet') && !line.includes('MT:'));
           } else reject(new Error('Unexpected protocol frame'));
         } catch (error) { reject(error); }
       });
