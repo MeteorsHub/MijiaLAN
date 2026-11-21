@@ -52,18 +52,23 @@ struct YeelightCeiling20Tests {
         #expect(mode.legacyCall(.number(1))?.params == [.string("nightlight"), .string("off")])
     }
 
-    @Test("Only the exact reviewed model gets logical ambient properties; extension is idempotent and never replaces a supplied service")
+    @Test("Only the exact model gets the ambient extension and obsolete logical CT is removed from cached schemas")
     func exactSchema() throws {
         let raw = try schema(), extended = YeelightCeiling20Schema.extending(raw, model: model)
         #expect(raw.services.count == 1 && extended.services.count == 2)
         #expect(YeelightCeiling20Schema.extending(extended, model: model) == extended)
         #expect(YeelightCeiling20Schema.extending(raw, model: "yeelink.light.ceiling19") == raw)
         let caps = DeviceCapabilityCatalog.capabilities(schema: extended, model: model)
-        for (siid, iid) in [(2, 1), (2, 2), (2, 3), (2, 4), (200, 201), (200, 202), (200, 203), (200, 204)] {
+        for (siid, iid) in [(2, 1), (2, 2), (2, 3), (2, 4), (200, 201), (200, 202), (200, 204)] {
             let cap = try #require(caps.first { $0.siid == siid && $0.iid == iid })
             #expect(cap.readable && cap.writable)
         }
-        #expect(caps.first { $0.id == "p:200:203" }?.range == [1700, 6500, 1])
+        #expect(!caps.contains { $0.id == "p:200:203" })
+        let obsolete = try JSONDecoder().decode(DeviceSchema.Property.self, from: Data(#"{"iid":203,"type":"urn:miot-spec-v2:property:color-temperature","format":"uint32","access":["read","write"]}"#.utf8))
+        var cached = extended
+        cached.services[1].properties.append(obsolete)
+        #expect(YeelightCeiling20Schema.extending(cached, model: model) == extended)
+        #expect(LegacyMiioProfile.forModel(model)?.property(siid: 200, piid: 203) == nil)
         #expect(caps.first { $0.id == "p:2:3" }?.range == [2700, 6500, 1])
     }
 
@@ -84,10 +89,15 @@ struct YeelightCeiling20Tests {
         #expect(lamp.legacyReads.contains { Set(["bright", "nl_br", "active_mode"]).isSubset(of: Set($0)) })
         let plan = MatterDevicePlan.entries([initial])
         #expect(plan.map { $0.device.did } == ["123", "123:light:200"])
-        #expect(plan.allSatisfy { $0.device.kind == "colorTemperatureLight" && $0.device.reachable && $0.device.sourceID == "123" })
+        #expect(plan.map { $0.device.kind } == ["colorTemperatureLight", "extendedColorLight"])
+        #expect(plan.allSatisfy { $0.device.reachable && $0.device.sourceID == "123" })
         #expect(plan.map { $0.device.functionLabel } == [L10n.tr("主灯", "Main Light"), L10n.tr("副灯", "Ambient Light")])
         #expect(plan[0].bindings["level"]?.id == "p:2:2" && plan[1].bindings["level"]?.id == "p:200:202")
-        #expect(plan[0].bindings["colorTemperature"]?.id == "p:2:3" && plan[1].bindings["colorTemperature"]?.id == "p:200:203")
+        #expect(plan[0].bindings["colorTemperature"]?.id == "p:2:3" && plan[0].bindings["rgb"] == nil)
+        #expect(plan[1].bindings["rgb"]?.id == "p:200:204" && plan[1].bindings["colorTemperature"] == nil)
+        #expect(plan[1].device.attributes["rgb"] == .number(16_711_680))
+        #expect(lamp.legacyReads.flatMap { $0 }.contains("bg_rgb"))
+        #expect(!lamp.legacyReads.flatMap { $0 }.contains("bg_ct"))
         // Snapshot projection is cache-only.
         let before = network.exchangeCount
         for _ in 0..<10 { _ = MatterDevicePlan.entries(Array(controller.snapshots.values)) }
@@ -112,9 +122,20 @@ struct YeelightCeiling20Tests {
         #expect(controller.snapshots["123"]?.value("p:2:2") == .number(50))
         try await MatterDevicePlan.execute(controller: controller, endpoint: "123:light:200", property: "level", value: .number(60))
         try await MatterDevicePlan.execute(controller: controller, endpoint: "123", property: "colorTemperature", value: .number(200))
-        try await MatterDevicePlan.execute(controller: controller, endpoint: "123:light:200", property: "colorTemperature", value: .number(250))
+        await #expect(throws: DeviceControlError.self) {
+            try await MatterDevicePlan.execute(controller: controller, endpoint: "123:light:200", property: "colorTemperature", value: .number(250))
+        }
+        for invalid in [JSONValue.number(0), .number(16_777_216), .number(1.5), .string("255")] {
+            await #expect(throws: DeviceControlError.self) {
+                try await MatterDevicePlan.execute(controller: controller, endpoint: "123:light:200", property: "rgb", value: invalid)
+            }
+        }
+        try await MatterDevicePlan.execute(controller: controller, endpoint: "123:light:200", property: "rgb", value: .number(0x00ff00))
         try await controller.execute(did: "123", .set("p:200:204", .number(255)))
-        #expect(Array(lamp.legacyCalls.suffix(4)) == ["bg_set_bright [60]", #"set_ct_abx [5000,"smooth",500]"#, #"bg_set_ct_abx [4000,"smooth",500]"#, "bg_set_rgb [255]"])
+        #expect(Array(lamp.legacyCalls.suffix(4)) == ["bg_set_bright [60]", #"set_ct_abx [5000,"smooth",500]"#, "bg_set_rgb [65280]", "bg_set_rgb [255]"])
+        #expect(controller.snapshots["123"]?.value("p:2:3") == .number(5000))
+        #expect(controller.snapshots["123"]?.value("p:200:204") == .number(255))
+        #expect(!lamp.receivedMethods.contains("bg_set_ct_abx"))
         #expect(!lamp.receivedMethods.contains("get_properties") && !lamp.receivedMethods.contains("set_properties"))
         var unavailable = try #require(controller.snapshots["123"])
         unavailable.readings["p:200:202"] = DeviceReading(value: .number(42), code: -4004, error: "rejected")

@@ -2,6 +2,8 @@ import { OnOffServer } from '@matter/main/behaviors/on-off';
 import { AirPurifierDevice } from '@matter/main/devices/air-purifier';
 import { OnOffLightDevice } from '@matter/main/devices/on-off-light';
 import { OnOffPlugInUnitDevice } from '@matter/main/devices/on-off-plug-in-unit';
+import { ExtendedColorLightDevice } from '@matter/main/devices/extended-color-light';
+import { ambientColorBehavior, ambientColorState, isAmbientRgb, minMireds, maxMireds } from './ambient-color.js';
 import { DimmableLightDevice } from '@matter/main/devices/dimmable-light';
 import { ColorTemperatureLightDevice } from '@matter/main/devices/color-temperature-light';
 import { FanDevice } from '@matter/main/devices/fan';
@@ -19,12 +21,12 @@ import { OccupancySensingServer } from '@matter/main/behaviors/occupancy-sensing
 import { applianceTypes, applianceState, applianceControls } from './appliances.js';
 
 export const types = { ...applianceTypes, light: OnOffLightDevice, outlet: OnOffPlugInUnitDevice, power: OnOffPlugInUnitDevice,
-  dimmableLight: DimmableLightDevice, colorTemperatureLight: ColorTemperatureLightDevice, fan: FanDevice, airPurifier: AirPurifierDevice,
+  dimmableLight: DimmableLightDevice, colorTemperatureLight: ColorTemperatureLightDevice, extendedColorLight: ExtendedColorLightDevice, fan: FanDevice, airPurifier: AirPurifierDevice,
   temperature: TemperatureSensorDevice, humidity: HumiditySensorDevice, illuminance: LightSensorDevice,
   contact: ContactSensorDevice, occupancy: OccupancySensorDevice,
   waterShortage: OnOffSensorDevice.with(BooleanStateServer), foodShortage: OnOffSensorDevice.with(BooleanStateServer) };
 
-export function stateFor(d) {
+export function stateFor(d, previousColor) {
   if (Object.hasOwn(applianceTypes, d.kind)) return applianceState(d);
   const a = d.attributes ?? {};
   const v = a[d.kind];
@@ -42,7 +44,13 @@ export function stateFor(d) {
       percentSetting: d.on ? Math.round(a.percent ?? 0) : 0, percentCurrent: d.on ? Math.round(a.percent ?? 0) : 0 } };
     default: return {
       onOff: { onOff: d.on ?? false },
-      ...(['dimmableLight', 'colorTemperatureLight'].includes(d.kind) ? { levelControl: { currentLevel: Math.max(1, Math.round((a.level ?? 1) * 254 / 100)) } } : {}),
+      ...(['dimmableLight', 'colorTemperatureLight', 'extendedColorLight'].includes(d.kind) ? { levelControl: { currentLevel: Math.max(1, Math.round((a.level ?? 1) * 254 / 100)) } } : {}),
+      ...(d.kind === 'extendedColorLight' ? { colorControl: {
+        colorTempPhysicalMinMireds: minMireds, colorTempPhysicalMaxMireds: maxMireds,
+        coupleColorTempToLevelMinMireds: minMireds,
+        ...(!previousColor ? {remainingTime: 0, colorMode: 1, enhancedColorMode: 1} : {}),
+        ...(isAmbientRgb(a.rgb) ? ambientColorState(a.rgb, previousColor) : {}),
+      } } : {}),
       ...(d.kind === 'colorTemperatureLight' ? { colorControl: { coupleColorTempToLevelMinMireds: a.colorTemperatureMin ?? 1, remainingTime: 0, colorMode: 2, enhancedColorMode: 2, colorTemperatureMireds: a.colorTemperature ?? 250, colorTempPhysicalMinMireds: a.colorTemperatureMin ?? 1, colorTempPhysicalMaxMireds: a.colorTemperatureMax ?? 65279 } } : {}),
     };
   }
@@ -50,7 +58,7 @@ export function stateFor(d) {
 
 export function controls(device, write, syncing, isReachable) {
   const result = applianceControls(device, write, syncing, isReachable);
-  if (['dimmableLight', 'colorTemperatureLight'].includes(device.kind)) {
+  if (['dimmableLight', 'colorTemperatureLight', 'extendedColorLight'].includes(device.kind)) {
     class DeviceLevel extends LevelControlServer.with('OnOff', 'Lighting') {
       moveToLevelLogic(level, _time, withOnOff) { return this.apply(level, withOnOff); }
       async moveToLevel({ level }) { await this.apply(level, false); }
@@ -72,6 +80,7 @@ export function controls(device, write, syncing, isReachable) {
     }
     result.push(DeviceLevel);
   }
+  if (device.kind === 'extendedColorLight') result.push(ambientColorBehavior(write));
   if (device.kind === 'colorTemperatureLight') {
     class DeviceColor extends ColorControlServer.with('ColorTemperature') {
       moveToColorTemperatureLogic(value) { return this.moveToColorTemperature({ colorTemperatureMireds: value }); }

@@ -83,7 +83,7 @@ test('every published device kind has a label fallback, including legacy outlet 
   let bridge;
   const current = Object.keys(types).map(kind => device(kind, kind, undefined, {
     attributes: { position: 29, movement: 0, temperature: 2150, targetTemperature: 4000, targetTemperatureMin: 3000,
-      targetTemperatureMax: 6500, targetTemperatureStep: 500, waterShortage: false, foodShortage: false },
+      targetTemperatureMax: 6500, targetTemperatureStep: 500, waterShortage: false, foodShortage: false, rgb: 0xff0000 },
   }));
   try {
     bridge = await createBridge({ request() { throw new Error('Metadata must not issue commands'); } }, current, options);

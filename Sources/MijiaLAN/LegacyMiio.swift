@@ -278,7 +278,9 @@ public struct LegacyMiioProfile: Sendable {
     /// Keep the imported provenance; encrypted miIO behavior still needs household acceptance.
     private static let ceiling20: LegacyMiioProfile? = {
         guard var profile = imported["yeelink.light.ceiling20"] else { return nil }
-        profile.properties.removeAll { $0.siid == 2 && [2, 4].contains($0.piid) }
+        profile.properties.removeAll {
+            ($0.siid == 2 && [2, 4].contains($0.piid)) || ($0.siid == 200 && $0.piid == 203)
+        }
         profile.properties += [
             Property(siid: 2, piid: 2, name: "bright", read: .ceiling20Brightness, setter: "set_bright", write: .value, suffix: []),
             Property(siid: 2, piid: 4, name: "active_mode", read: .values(["0": 1, "1": 2], fallback: nil), setter: "set_ps", write: .ceiling20Mode, suffix: []),

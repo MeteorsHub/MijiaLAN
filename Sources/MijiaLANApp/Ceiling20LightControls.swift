@@ -24,7 +24,12 @@ private struct LightChannelControls: View {
     let siid: Int
     private var capabilities: [DeviceCapability] { snapshot.capabilities.filter { $0.siid == siid } }
     private var brightness: DeviceCapability? { capabilities.first { $0.name == "brightness" && $0.control == .number } }
-    private var temperature: DeviceCapability? { capabilities.first { $0.name == "color-temperature" && $0.control == .number } }
+    private var temperature: DeviceCapability? {
+        siid == 2 ? capabilities.first { $0.name == "color-temperature" && $0.control == .number } : nil
+    }
+    private var rgb: DeviceCapability? {
+        siid == 200 ? capabilities.first { $0.iid == 204 && $0.name == "color" && $0.unit == "rgb" && $0.writable } : nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -40,8 +45,12 @@ private struct LightChannelControls: View {
             if let temperature {
                 LampColorTemperatureControl(controller: controller, snapshot: snapshot, capability: temperature)
             }
-            let primary = Set([brightness?.id, temperature?.id, capabilities.first { $0.name == "on" }?.id].compactMap { $0 })
-            let remaining = Set(capabilities.map(\.id)).subtracting(primary)
+            if let rgb {
+                AmbientColorPalette(controller: controller, snapshot: snapshot, capability: rgb)
+                    .id(snapshot.id)
+            }
+            let primary = Set([brightness?.id, temperature?.id, rgb?.id, capabilities.first { $0.name == "on" }?.id].compactMap { $0 })
+            let remaining = Set(capabilities.filter { siid != 200 || $0.name != "color-temperature" }.map(\.id)).subtracting(primary)
             CapabilityControls(controller: controller, snapshot: snapshot,
                 excluding: Set(snapshot.controls.map(\.id)).subtracting(remaining))
             if siid == 2 {

@@ -42,6 +42,7 @@ public enum MatterDevicePlan {
         case "light": L10n.tr("灯光开关", "Light")
         case "outlet": L10n.tr("插座", "Outlet")
         case "dimmableLight": L10n.tr("调光灯", "Dimmable Light")
+        case "extendedColorLight": L10n.tr("调光与 RGB 调色", "Brightness & RGB Color")
         case "colorTemperatureLight": L10n.tr("调光与色温", "Brightness & Color Temperature")
         case "fan": L10n.tr("风扇开关与风速", "Fan Power & Speed")
         case "airPurifier": L10n.tr("净化器开关与手动风速", "Purifier Power & Manual Speed")
@@ -91,6 +92,8 @@ public enum MatterDevicePlan {
                             if case .number = value, n == 0 || n == 1 { values[key] = .bool(n == 1) }
                         case "level", "percent":
                             if let max = cap.max, max > 0 { values[key] = .number(n / max * 100) }
+                        case "rgb":
+                            if case .number = value, n.rounded() == n, (1...16_777_215).contains(n) { values[key] = .number(n) }
                         case "colorTemperature": if n > 0 { values[key] = .number((1_000_000 / n).rounded()) }
                         case "temperature", "targetTemperature":
                             if (-273.15...327.67).contains(n) { values[key] = .number((n * 100).rounded()) }
@@ -115,13 +118,13 @@ public enum MatterDevicePlan {
                 switch kind {
                 case "power": label = ["heater", "towel-rack", "water-heater", "radiator", "thermostat"].contains(bindings["on"]?.service ?? "")
                     ? L10n.tr("加热电源", "Heating Power") : L10n.tr("电源", "Power")
-                case "light", "dimmableLight", "colorTemperatureLight": label = L10n.tr("照明", "Lighting")
+                case "light", "dimmableLight", "colorTemperatureLight", "extendedColorLight": label = L10n.tr("照明", "Lighting")
                 case "thermostat": label = L10n.tr("加热温控", "Heating Control")
                 case "fan": label = L10n.tr("风扇", "Fan")
                 case "airPurifier": label = L10n.tr("空气净化", "Air Purification")
                 default: label = title(kind)
                 }
-                let functionLabel = s.device.model == "yeelink.light.ceiling20" && ["light", "dimmableLight", "colorTemperatureLight"].contains(kind)
+                let functionLabel = s.device.model == "yeelink.light.ceiling20" && ["light", "dimmableLight", "colorTemperatureLight", "extendedColorLight"].contains(kind)
                     ? (bindings["on"]?.siid == 200 ? L10n.tr("副灯", "Ambient Light") : L10n.tr("主灯", "Main Light")) : label
                 result.append(Entry(device: Device(did: s.id + suffix, name: s.device.name + (suffix.isEmpty ? "" : " · " + title(kind)),
                     sourceID: s.id, sourceName: s.device.name, functionLabel: functionLabel, nativeValues: nativeValues.isEmpty ? nil : nativeValues,
@@ -180,8 +183,13 @@ public enum MatterDevicePlan {
                 var kind = "light"
                 if let brightness = s.capabilities.first(where: { $0.siid == power.siid && $0.service == power.service && $0.name == "brightness" && $0.isNumeric && $0.control == .number && $0.readable && $0.writable && !$0.prepared && $0.max != nil }) {
                     bindings["level"] = brightness; kind = "dimmableLight"
-                    if let temp = writable("color-temperature", service: power.service, siid: power.siid), temp.isNumeric,
-                       let minimum = temp.min, minimum > 0, temp.max != nil {
+                    if s.device.model == "yeelink.light.ceiling20", power.siid == 200 {
+                        if let rgb = writable("color", service: power.service, siid: power.siid),
+                           rgb.iid == 204, rgb.format == "uint32", rgb.unit == "rgb" {
+                            bindings["rgb"] = rgb; kind = "extendedColorLight"
+                        }
+                    } else if let temp = writable("color-temperature", service: power.service, siid: power.siid), temp.isNumeric,
+                              let minimum = temp.min, minimum > 0, temp.max != nil {
                         bindings["colorTemperature"] = temp; kind = "colorTemperatureLight"
                     }
                 }
@@ -223,6 +231,13 @@ public enum MatterDevicePlan {
               !["waterShortage", "foodShortage"].contains(entry.device.kind),
               let cap = entry.bindings[property], cap.writable else { throw DeviceControlError.unsupported("Matter attribute") }
         var raw = value
+        if property == "rgb" {
+            guard case .number(let rgb) = value, rgb.rounded() == rgb, (1...16_777_215).contains(rgb) else {
+                throw DeviceControlError.invalidValue(property)
+            }
+            try await controller.execute(did: entry.sourceID, .set(cap.id, value))
+            return
+        }
         if let n = value.doubleValue {
             var converted = n
             switch property {

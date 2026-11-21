@@ -1,6 +1,7 @@
 import { types, stateFor, controls } from './devices.js';
 import { MatterDiagnostics, failureReason } from './diagnostics.js';
 import { BasicInformationServer } from '@matter/main/behaviors/basic-information';
+import { isAmbientRgb } from './ambient-color.js';
 import { createHash } from 'node:crypto';
 import { Endpoint, ServerNode, ServerNodeStore, VendorId } from '@matter/main';
 import { AggregatorEndpoint } from '@matter/main/endpoints/aggregator';
@@ -39,7 +40,7 @@ const functions = {
   fan: [5, 'Fan'], airPurifier: [6, 'Air Purification'], thermostat: [7, 'Heating Control'], windowCovering: [8, 'Covering'],
   temperature: [9, 'Temperature'], humidity: [10, 'Humidity'], illuminance: [11, 'Illuminance'],
   occupancy: [12, 'Occupancy'], contact: [13, 'Contact'], waterShortage: [14, 'Water Shortage'], foodShortage: [15, 'Food Shortage'],
-  outlet: [16, 'Outlet'],
+  outlet: [16, 'Outlet'], extendedColorLight: [4, 'Lighting'],
 };
 function functionMetadata(device, channel) {
   const [tag, fallback] = functions[device.kind];
@@ -79,7 +80,9 @@ export function validateDevices(devices) {
     if (typeof d.did !== 'string' || !d.did || ids.has(d.did) ||
         typeof d.name !== 'string' || !Object.hasOwn(types, d.kind) ||
         typeof d.reachable !== 'boolean' || !(d.on == null || typeof d.on === 'boolean') ||
-        (d.reachable && ['light', 'outlet', 'power', 'thermostat', 'dimmableLight', 'colorTemperatureLight', 'fan', 'airPurifier'].includes(d.kind) && typeof d.on !== 'boolean')) throw new Error('Invalid device snapshot');
+        (d.reachable && ['light', 'outlet', 'power', 'thermostat', 'dimmableLight', 'colorTemperatureLight', 'extendedColorLight', 'fan', 'airPurifier'].includes(d.kind) && typeof d.on !== 'boolean')) throw new Error('Invalid device snapshot');
+    if (d.kind === 'extendedColorLight' && (d.reachable || d.attributes?.rgb !== undefined) &&
+        !isAmbientRgb(d.attributes?.rgb)) throw new Error('Invalid ambient RGB cache');
     if (d.kind === 'windowCovering' && d.reachable &&
         (!Number.isInteger(d.attributes?.position) || d.attributes.position < 0 || d.attributes.position > 100 ||
          !Number.isInteger(d.attributes?.movement) || d.attributes.movement < 0 || d.attributes.movement > 2)) throw new Error('Invalid covering cache');
@@ -178,6 +181,7 @@ export async function createBridge(rpc, devices, options = {}) {
             diagnostics.emit('commandConfirmed', { device:device.logAlias,value:a.position,native:true });
             return confirmed;
           }
+          if (property === 'rgb' && confirmed.attributes?.rgb !== value) throw new Error('Ambient color not confirmed');
           if (property === 'on' && confirmed.on !== value) throw new Error('Device state not confirmed');
           if (property !== 'on' && !Number.isFinite(confirmed.attributes?.[property])) throw new Error('Device state not confirmed');
           diagnostics.emit('commandConfirmed', {device:device.logAlias,boolean:property==='on'?confirmed.on:undefined,value:confirmed.attributes?.[property],native:false});
@@ -187,7 +191,7 @@ export async function createBridge(rpc, devices, options = {}) {
         async function write(behavior, on) { await set('on', on); }
         const type = types[device.kind];
         const behaviors = controls(device, set, syncing, () => available.get(device.did) === true);
-        if (['light', 'outlet', 'power', 'dimmableLight', 'colorTemperatureLight'].includes(device.kind)) behaviors.push(DevicePower);
+        if (['light', 'outlet', 'power', 'dimmableLight', 'colorTemperatureLight', 'extendedColorLight'].includes(device.kind)) behaviors.push(DevicePower);
         const nestedStore = compound ? stores.storeForEndpoint(parent).existingChildStore(endpointID(device.did)) : undefined;
         const oldNumber = nestedStore?.number ?? legacyNumbers.get(device.did);
         const metadata = functionMetadata(device, index + 1);
@@ -284,7 +288,7 @@ export async function createBridge(rpc, devices, options = {}) {
       for (const [did, endpoint] of endpoints) {
         const d = byId.get(did), source = owners.get(did), entity = entities.get(source);
         const reachable = [...owners].some(([id, owner]) => owner === source && available.get(id));
-        const state = d?.reachable ? stateFor(d) : d && ['temperature','humidity','illuminance','windowCovering'].includes(d.kind)
+        const state = d?.reachable ? stateFor(d, d.kind === 'extendedColorLight' ? endpoint.state.colorControl : undefined) : d && ['temperature','humidity','illuminance','windowCovering'].includes(d.kind)
           ? stateFor({ ...d, attributes: {} }) : {};
         if (endpoint === entity) state.bridgedDeviceBasicInformation = { reachable };
         const inputChanged = lastInputs.get(did) !== inputs.get(did);
@@ -294,9 +298,12 @@ export async function createBridge(rpc, devices, options = {}) {
               {value: typeof value==='number'?value:undefined,isNull:value===null,reachable,native:false,reason:d.reachable?undefined:'unavailable'});
           diagnostics.emit('attributeInput', { device:d.logAlias, endpoint:endpoint.number, value:d.attributes?.position, reachable, snapshot:round, native:true });
         }
-        if (inputChanged && d && ['light','dimmableLight','colorTemperatureLight'].includes(d.kind)) {
+        if (inputChanged && d && ['light','dimmableLight','colorTemperatureLight','extendedColorLight'].includes(d.kind)) {
           const rows = [[6,0,d.on,d.on], [8,0,d.nativeValues?.level ?? d.attributes?.level,state.levelControl?.currentLevel],
             [0x300,7,d.nativeValues?.colorTemperature ?? d.attributes?.colorTemperature,state.colorControl?.colorTemperatureMireds]];
+          if (d.kind === 'extendedColorLight') {
+            rows.push([0x300,3,d.attributes?.rgb,state.colorControl?.currentX], [0x300,4,undefined,state.colorControl?.currentY]);
+          }
           for (const [cluster,attribute,input,output] of rows) for (const [native,value] of [[true,input],[false,output]]) if (value !== undefined)
             diagnostics.path('attributeInput', {endpointId:endpoint.number,clusterId:cluster,attributeId:attribute},
               {value:typeof value==='number'?value:undefined,boolean:typeof value==='boolean'?value:undefined,native,reachable,reason:d.reachable?undefined:'unavailable'});
